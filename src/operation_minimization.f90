@@ -1,43 +1,48 @@
 !=====================================================================!
-! THE MINIMIZATION OF A DISCRETE LAGRANGIAN, a graph of pairs: the
-! data each level reads, paired with the operation that solves it,
-! the operation's inner one paired with the data it forms,
+! THE DISCRETE MINIMIZER M_h of a discrete Lagrangian L_h.
 !
-!      (march)            over the blocks of the chain, forward for
-!         |               the state, in reverse for the multipliers
-!      [R_b] - (newton)   the rows of block b at the state
+! L_h is solved block by block along its chain of instants.
+! M_h pairs the rows of every block with a minimizer.
+! The pairing is like that of a condition with its multiplier in L.
+! The minimizer of a block may contain inner minimizers.
+! tree(M_h) prints the whole structure:
+!
+!      (march)            over the blocks, forward for the state,
+!         |               in reverse for the multipliers
+!      [R_b] - (newton)   the rows of block b
 !                 |
 !              [J_b] - (elimination)       the jacobian of the rows
 !                         |
-!                      [S_b] - (dense direct)   the complement of the
-!                                               rows the elimination
-!                                               removes
+!                      [S_b] - (dense direct)   the rows that remain
+!                                               after the elimination
 !
-! THE PAIRING. A stack of minimizers is stated on the rows of a block
-! as a multiplier is stated on its condition: on their own unknowns,
-! and refused where the rows do not provide what a vertex of the stack
-! reads - the elimination reads the rows' tying rows, and rows without
-! them are refused. A stack the program states is one value for every
-! block, its options those of its vertices: the chord method on
-! newton's, the tolerances, the sweeps. Where none is stated each
-! block's rows choose the default (default_minimizer).
+! THE PAIRING. The minimizer stated for M_h is copied to every block.
+! Each copy reads from the block's rows what it needs.
+! The elimination reads the tying rows: the rows that define a
+! derivative from other unknowns, such as a velocity from the
+! positions by the time scheme.
+! Rows without tying rows are refused, and the reason is named.
+! Where no minimizer is stated, the rows of each block choose the
+! default (default_minimizer).
 !
-! THE MINIMAND is the data a minimization reads: an abstract type the
-! discrete residual extends, stating the blocks and the history each
-! reads, a block's rows at the state, the right sides of every order of
-! the expansion and of the adjoint, where the multipliers are placed,
-! and the solution assembled. The minimization reads nothing else of
-! it: the data are the residual's, the operations the minimization's.
+! THE MINIMAND is the data M_h reads from L_h.
+! It is an abstract type, and the discrete Lagrangian extends it.
+! It states the blocks, and the earlier blocks each one reads.
+! It gives the rows of a block at the state.
+! It gives the right sides of every order of the expansion and of the
+! adjoint.
+! It places the multipliers and assembles the solution.
+! M_h reads nothing else of L_h.
 !
-! THE FACTORS OF A BLOCK. The jacobian of a block's rows at its
-! solution is stated once on the inner minimizer of its stack and
-! serves every order of the expansion along every direction; its
-! transpose is stated once and serves every order of the adjoint. A
-! direct inner minimizer factorises each once: a solve of every order
-! along every direction substitutes against the factors, where it
-! formed and factorised its own. Over several images, where the rows
-! of a block are cut into parts, each right side is solved by the
-! stack on the rows linearized at the solution, part by part.
+! THE FACTORS OF A BLOCK. The jacobian of the rows of a block at its
+! solution is formed once.
+! It serves every order of the expansion along every direction.
+! Its transpose is formed once, and serves every order of the adjoint.
+! A direct solve factorises each of them once.
+! Every later right side is substituted against those factors.
+! Over several images the rows of a block are cut into parts.
+! Then each right side is solved on the rows linearized at the
+! solution, part by part.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -63,8 +68,8 @@ module operation_minimization
   implicit none
 
   private
-  public :: minimand, march_state, block_facts, minimization
-  public :: default_minimizer, stack_for, system_solution, rows_evaluated
+  public :: minimand, march_state, block_facts, discrete_minimizer
+  public :: default_minimizer, minimizer_of, system_solution, rows_evaluated
 
   !===================================================================!
   ! THE STATE OF A MARCH: the data the blocks read and write - the
@@ -77,10 +82,12 @@ module operation_minimization
   end type march_state
 
   !===================================================================!
-  ! WHAT A BLOCK'S DEFAULT STACK IS CHOSEN FROM: whether the manifold
-  ! has space, whether a block is the whole line at one moment, whether
-  ! a march continues from the instant before each block, whether the
-  ! rows state tying rows, the cells, and the components of a point.
+  ! THE FACTS A BLOCK'S DEFAULT MINIMIZER IS CHOSEN FROM:
+  ! whether the manifold has space;
+  ! whether a block is the whole line at one moment;
+  ! whether the march continues from the instant before each block;
+  ! whether the rows have tying rows;
+  ! the number of cells, and the components of a point.
   !===================================================================!
 
   type :: block_facts
@@ -104,7 +111,7 @@ module operation_minimization
      procedure(count_of_blocks)   , deferred :: num_blocks
      procedure(blocks_read)       , deferred :: history_of
      procedure(announcement)      , deferred :: block_label
-     ! the facts a default stack is chosen from, and the image owning
+     ! the facts a default minimizer is chosen from, and the image owning
      ! each unknown of a block's rows
      procedure(facts_of_blocks)   , deferred :: facts
      procedure(owners_of_rows)    , deferred :: unknown_owners
@@ -262,26 +269,27 @@ module operation_minimization
   end interface
 
   !===================================================================!
-  ! THE MINIMIZATION: the stack stated for every block's rows - the
-  ! default, chosen from each block's rows, where none is - and the
-  ! march over the blocks, the driver of the stack over the digraph
-  ! of the blocks and the data each writes and reads.
+  ! THE DISCRETE MINIMIZER: the minimizer stated for the rows of every
+  ! block, or none, where the rows of each block choose the default.
+  ! The march visits the blocks in the order of the digraph of the
+  ! blocks and the data each one writes and reads.
   !===================================================================!
 
-  type :: minimization
-     class(minimizer), allocatable :: block
-     type(driver)    , allocatable :: march
+  type :: discrete_minimizer
+     class(minimizer) , allocatable :: block
+     type(driver)     , allocatable :: march
+     type(block_facts) :: facts
      integer :: blocks = 0
    contains
      procedure :: minimize => minimization_minimize
      procedure :: reversed => minimization_reversed
-     procedure :: view     => minimization_view
+     procedure :: tree     => minimizer_tree
      procedure, private :: block_solved
-  end type minimization
+  end type discrete_minimizer
 
-  interface minimization
-     module procedure minimization_of
-  end interface minimization
+  interface discrete_minimizer
+     module procedure discrete_minimizer_of
+  end interface discrete_minimizer
 
   ! the systems stated for their factors to be retained, numbered from one:
   ! a direct minimizer retains a factorisation for the system of its
@@ -291,16 +299,18 @@ module operation_minimization
 contains
 
   !===================================================================!
-  ! THE MINIMIZATION OF A MINIMAND, with the stack stated for its
-  ! blocks' rows or the default: the march, rule b writing the datum of
-  ! block b and reading those of the blocks its history reads.
+  ! THE DISCRETE MINIMIZER OF A MINIMAND, with the minimizer stated for
+  ! the rows of every block, or with none for the default.
+  ! The march has one rule per block.
+  ! Rule b writes the datum of block b.
+  ! It reads the data of the blocks in the history of block b.
   !===================================================================!
 
-  function minimization_of(data, block) result(this)
+  function discrete_minimizer_of(data, block) result(this)
 
     class(minimand) , intent(in)           :: data
     class(minimizer), intent(in), optional :: block
-    type(minimization) :: this
+    type(discrete_minimizer) :: this
 
     integer, allocatable :: from_part(:), from_vertex(:), to_part(:), to_vertex(:), read(:)
     type(bipartite_digraph) :: over
@@ -308,6 +318,7 @@ contains
     integer :: b
 
     if (present(block)) allocate(this % block, source=block)
+    this % facts  = data % facts()
     this % blocks = data % num_blocks()
     allocate(from_part(0), from_vertex(0), to_part(0), to_vertex(0))
     do b = 1, this % blocks
@@ -324,11 +335,11 @@ contains
        this % march = driver(plain, over)
     end if
 
-  end function minimization_of
+  end function discrete_minimizer_of
 
   !===================================================================!
   ! THE MARCH. Forward, each block's rows at the state solved by its
-  ! stack, the solution written, and each column of the expansion
+  ! minimizer, the solution written, and each column of the expansion
   ! solved against the factors of the jacobian at the solution; the
   ! solution assembled; with the equations paired, the adjoint in
   ! reverse (reversed) and the solution completed with the
@@ -338,7 +349,7 @@ contains
 
   subroutine minimization_minimize(this, data, estimate, solution, converged, state)
 
-    class(minimization) , intent(in)  :: this
+    class(discrete_minimizer), intent(in)  :: this
     class(minimand)     , intent(in)  :: data
     type(discrete_field), intent(in)  :: estimate
     type(discrete_field), intent(out) :: solution
@@ -410,7 +421,7 @@ contains
 
   subroutine minimization_reversed(this, data, solution, state)
 
-    class(minimization) , intent(in)    :: this
+    class(discrete_minimizer), intent(in)    :: this
     class(minimand)     , intent(in)    :: data
     type(discrete_field), intent(in)    :: solution
     class(march_state)  , intent(inout) :: state
@@ -455,28 +466,29 @@ contains
   end subroutine minimization_reversed
 
   !===================================================================!
-  ! THE ROWS OF A BLOCK SOLVED: its stack - stated, or the default of
-  ! its rows - paired with the rows, newton from the block's estimate;
-  ! expanded, the rows' inputs at the solution stored in the block, from
-  ! which its jacobian there is formed.
+  ! THE ROWS OF A BLOCK SOLVED by the minimizer of the block, from the
+  ! estimate of the block.
+  ! The minimizer is the one stated, or the default of the rows.
+  ! expanded: the inputs of the rows at the solution are stored in the
+  ! block, and the jacobian there is formed from them.
   !===================================================================!
 
   subroutine block_solved(this, data, blk, converged, expanded)
 
-    class(minimization), intent(in)    :: this
-    class(minimand)    , intent(in)    :: data
-    type(chain_block)  , intent(inout) :: blk
-    logical            , intent(out)   :: converged
-    logical            , intent(in)    :: expanded
+    class(discrete_minimizer), intent(in)    :: this
+    class(minimand)          , intent(in)    :: data
+    type(chain_block)        , intent(inout) :: blk
+    logical                  , intent(out)   :: converged
+    logical                  , intent(in)    :: expanded
 
-    class(minimizer), allocatable :: stack
+    class(minimizer), allocatable :: M_b
 
-    call stack_of(this, blk % rows, data % facts(), stack)
+    call minimizer_of(blk % rows, data % facts(), M_b, this)
     if (rows_in_parts(data)) then
-       call system_solution(stack, blk % rows, blk % design, blk % q, converged, &
+       call system_solution(M_b, blk % rows, blk % design, blk % q, converged, &
             & owners=data % unknown_owners(size(blk % q), blk % rows % degrees, size(blk % rows % at)))
     else
-       call system_solution(stack, blk % rows, blk % design, blk % q, converged)
+       call system_solution(M_b, blk % rows, blk % design, blk % q, converged)
     end if
     if (converged .and. expanded) call inputs_ensured(this, data, blk)
 
@@ -493,145 +505,140 @@ contains
   end function rows_in_parts
 
   !===================================================================!
-  ! THE STACK OF ROWS: by, the one stated, paired with the rows, or the
-  ! default the rows choose; of a block's rows, the minimization's.
+  ! THE MINIMIZER OF ROWS: a copy of the minimizer of by, paired with
+  ! the rows. Without by, or where by states no minimizer, the default
+  ! the rows choose.
   !===================================================================!
 
-  subroutine stack_for(rows, facts, stack, by)
+  subroutine minimizer_of(rows, facts, M_b, by)
 
     type(residual_operator)      , intent(in)  :: rows
     type(block_facts)            , intent(in)  :: facts
-    class(minimizer), allocatable, intent(out) :: stack
-    class(minimizer)             , intent(in), optional :: by
+    class(minimizer), allocatable, intent(out) :: M_b
+    type(discrete_minimizer)     , intent(in), optional :: by
 
     if (present(by)) then
-       allocate(stack, source=by)
-       call paired_with(stack, rows, facts)
-    else
-       call default_minimizer(rows, facts, stack)
+       if (allocated(by % block)) then
+          allocate(M_b, source=by % block)
+          call paired_with(M_b, rows, facts)
+          return
+       end if
     end if
+    call default_minimizer(facts, M_b, rows)
 
-  end subroutine stack_for
-
-  subroutine stack_of(this, rows, facts, stack)
-
-    class(minimization)          , intent(in)  :: this
-    type(residual_operator)      , intent(in)  :: rows
-    type(block_facts)            , intent(in)  :: facts
-    class(minimizer), allocatable, intent(out) :: stack
-
-    if (allocated(this % block)) then
-       call stack_for(rows, facts, stack, this % block)
-    else
-       call stack_for(rows, facts, stack)
-    end if
-
-  end subroutine stack_of
+  end subroutine minimizer_of
 
   !===================================================================!
-  ! THE PAIRING OF A STACK WITH ROWS: what each vertex reads of them.
-  ! The elimination removes the rows' tying rows: rows without them are
-  ! refused, the reason named. The blocks of Gauss-Seidel's sweeps are
-  ! the rows' points, or the whole line at one moment where the rows
-  ! couple every point of a moment through the line.
+  ! THE PAIRING OF A MINIMIZER WITH ROWS: each minimizer in it reads
+  ! from the rows what it needs.
+  ! The elimination removes the tying rows of the rows.
+  ! Rows without tying rows are refused, and the reason is named.
+  ! A block of the Gauss-Seidel sweeps is a point of the rows.
+  ! Where the rows couple every point of a moment through the line, a
+  ! block of the sweeps is the whole line at one moment.
   !===================================================================!
 
-  recursive subroutine paired_with(stack, rows, facts)
+  recursive subroutine paired_with(M_b, rows, facts)
 
-    class(minimizer)       , intent(inout) :: stack
+    class(minimizer)       , intent(inout) :: M_b
     type(residual_operator), intent(in)    :: rows
     type(block_facts)      , intent(in)    :: facts
 
-    select type (stack)
+    select type (M_b)
     type is (newton)
-       if (allocated(stack % inner)) call paired_with(stack % inner, rows, facts)
+       if (allocated(M_b % inner)) call paired_with(M_b % inner, rows, facts)
     type is (elimination)
        if (.not. allocated(rows % tying)) then
           error stop 'operation_minimization: an elimination removes the tying rows of the rows it is paired with, &
                &and these rows state none'
        end if
-       stack % eliminated = rows % tying
-       if (allocated(stack % inner)) call paired_with(stack % inner, rows, facts)
+       M_b % eliminated = rows % tying
+       if (allocated(M_b % inner)) call paired_with(M_b % inner, rows, facts)
     type is (gmres)
-       if (allocated(stack % preconditioner)) call paired_with(stack % preconditioner, rows, facts)
+       if (allocated(M_b % preconditioner)) call paired_with(M_b % preconditioner, rows, facts)
     type is (gauss_seidel)
-       stack % block_width = rows % degrees
-       if (facts % whole_line) stack % block_width = rows % degrees * facts % cells
+       M_b % block_width = rows % degrees
+       if (facts % whole_line) M_b % block_width = rows % degrees * facts % cells
     end select
 
   end subroutine paired_with
 
   !===================================================================!
-  ! THE DEFAULT STACK of a block's rows. Without space, newton over a
-  ! direct solve, the tying rows eliminated first where the rows state
-  ! them: Newton converges quadratically to round-off, and the
-  ! sensitivities read the converged state, so the tolerance is tight.
-  ! With space, newton over restarted GMRES(60) to a relative residual
-  ! of 1e-3, the constant forcing term of Dembo, Eisenstat and
-  ! Steihaug, preconditioned by four block Gauss-Seidel sweeps: with
-  ! two, GMRES(60) stagnates on the 32 x 32 box and never ends, where
-  ! four sweeps end it in 26 s and a restart of 120 with two sweeps in
-  ! 27 s at twice the basis storage. A block is a point's components,
-  ! or the whole line at one moment where the conditions of one end of
-  ! an open line occupy rows at the other, or a law projected on the
-  ! cells of a line couples every node of a moment. A march continued
-  ! from the instant before is solved to the rounding of its residual,
-  ! its first residual not the law's own scale. Rows with unknowns of
-  ! time alone eliminate their tying rows and solve the rest directly,
-  ! the rows of positions, rotations and reactions equilibrated.
+  ! THE DEFAULT MINIMIZER of the rows of a block.
+  !
+  ! Without space: Newton over a direct solve.
+  ! Where the rows have tying rows, the elimination removes them first.
+  ! Newton converges quadratically to round-off.
+  ! The sensitivities read the converged state, so the tolerance is
+  ! 1e-13.
+  !
+  ! With space: Newton over GMRES, restarted every 60 iterations.
+  ! GMRES stops at a relative residual of 1e-3, the constant forcing
+  ! term of Dembo, Eisenstat and Steihaug.
+  ! GMRES is preconditioned by four block Gauss-Seidel sweeps.
+  ! With two sweeps, GMRES(60) stagnates on the 32 x 32 box.
+  ! Four sweeps solve that box in 26 s.
+  ! A restart of 120 with two sweeps takes 27 s, at twice the storage.
+  ! A block of the sweeps is the components of one point.
+  ! It is the whole line at one moment where the rows couple the points
+  ! of a moment through the line: the conditions at one end of an open
+  ! line, or a law projected on the cells of a line.
+  ! A march continued from the instant before begins near the solution,
+  ! so its first residual is not the scale of the law.
+  ! Its tolerance is 1e-13, the rounding of the residual.
+  !
+  ! With space and tying rows: the elimination, then a direct solve.
+  ! These rows mix positions, rotations and reactions, of different
+  ! units.
+  ! The direct solve scales the rows, then the columns, to a largest
+  ! entry of one before the LU factorisation (equilibrated).
+  !
+  ! Without rows, the default of the facts alone, not paired.
   !===================================================================!
 
-  subroutine default_minimizer(rows, facts, stack)
+  subroutine default_minimizer(facts, M_b, rows)
 
-    type(residual_operator)      , intent(in)  :: rows
     type(block_facts)            , intent(in)  :: facts
-    class(minimizer), allocatable, intent(out) :: stack
+    class(minimizer), allocatable, intent(out) :: M_b
+    type(residual_operator)      , intent(in), optional :: rows
 
     type(block_facts) :: own
 
-    own       = facts
-    own % tying = allocated(rows % tying)
-    own % width = rows % degrees
-    call default_stack(own, stack)
-    call paired_with(stack, rows, own)
+    own = facts
+    if (present(rows)) then
+       own % tying = allocated(rows % tying)
+       own % width = rows % degrees
+    end if
+    if (own % with_space) then
+       call require_images()
+       if (own % tying) then
+          M_b = newton(elimination(dense_direct(equilibrated=.true.)), tolerance=1.0e-13_dp)
+       else if (own % continued) then
+          M_b = newton(gmres(gauss_seidel(4), restart=60, tolerance=1.0e-3_dp), tolerance=1.0e-13_dp)
+       else
+          M_b = newton(gmres(gauss_seidel(4), restart=60, tolerance=1.0e-3_dp))
+       end if
+    else if (own % tying) then
+       M_b = newton(elimination(dense_direct()), tolerance=1.0e-13_dp)
+    else
+       M_b = newton(dense_direct(), tolerance=1.0e-13_dp)
+    end if
+    if (present(rows)) call paired_with(M_b, rows, own)
 
   end subroutine default_minimizer
 
-  ! the default stack of rows of the facts given, before its pairing
-  subroutine default_stack(facts, stack)
-
-    type(block_facts)            , intent(in)  :: facts
-    class(minimizer), allocatable, intent(out) :: stack
-
-    if (facts % with_space) then
-       call require_images()
-       if (facts % tying) then
-          stack = newton(elimination(dense_direct(equilibrated=.true.)), tolerance=1.0e-13_dp)
-       else if (facts % continued) then
-          stack = newton(gmres(gauss_seidel(4), restart=60, tolerance=1.0e-3_dp), tolerance=1.0e-13_dp)
-       else
-          stack = newton(gmres(gauss_seidel(4), restart=60, tolerance=1.0e-3_dp))
-       end if
-    else if (facts % tying) then
-       stack = newton(elimination(dense_direct()), tolerance=1.0e-13_dp)
-    else
-       stack = newton(dense_direct(), tolerance=1.0e-13_dp)
-    end if
-
-  end subroutine default_stack
-
   !===================================================================!
-  ! A SYSTEM SOLVED BY ITS STACK, from q: the stack stated on the
-  ! rows, its design the stored input, and solved. With owners, over
+  ! A SYSTEM SOLVED BY ITS MINIMIZER M_b, from q.
+  ! M_b is stated on the rows, with their design as the stored input. With owners, over
   ! several images each image solves its part of the rows, the
   ! partitioner's cut of the rows' coupling, and the parts' owned
   ! entries are assembled whole. inputs present, the rows' inputs at
   ! the solution, from which their jacobian there is formed.
   !===================================================================!
 
-  subroutine system_solution(stack, rows, design, q, converged, owners, inputs)
+  subroutine system_solution(M_b, rows, design, q, converged, owners, inputs)
 
-    class(minimizer)       , intent(in)    :: stack
+    class(minimizer)       , intent(in)    :: M_b
     type(residual_operator), intent(in)    :: rows
     type(stored_field)     , intent(in)    :: design
     real(dp)               , intent(inout) :: q(:)
@@ -646,7 +653,7 @@ contains
     real(dp), allocatable :: local(:), y(:)
     real(dp) :: achieved
 
-    allocate(solver, source=stack)
+    allocate(solver, source=M_b)
     if (present(owners)) then
        whole = exchange(owners, width=rows % degrees)
        part  = whole % part(rows % coupling())
@@ -682,7 +689,7 @@ contains
     call solver % evaluate(q, y, inputs)
   end subroutine rows_evaluated
 
-  ! a stack stated on rows: their unknowns, their design the stored
+  ! a minimizer stated on rows: their unknowns, their design the stored
   ! input, their coupling the sweeps' colouring - after an elimination
   ! a direct solve has no sweep
   subroutine stated(solver, rows, design)
@@ -700,9 +707,9 @@ contains
 
   ! the rows' inputs at the block's unknowns, where the block has none
   subroutine inputs_ensured(this, data, blk)
-    class(minimization), intent(in)    :: this
-    class(minimand)    , intent(in)    :: data
-    type(chain_block)  , intent(inout) :: blk
+    class(discrete_minimizer), intent(in)    :: this
+    class(minimand)          , intent(in)    :: data
+    type(chain_block)        , intent(inout) :: blk
     real(dp), allocatable :: y(:)
     associate (u1 => this, u2 => data); end associate
     if (allocated(blk % inputs)) return
@@ -711,22 +718,24 @@ contains
 
   !===================================================================!
   ! THE FACTORS OF A BLOCK: the jacobian of its rows at the solution -
-  ! transposed for the adjoint - stated on the linear part of the
-  ! block's stack, newton's inner, numbered so that a direct minimizer
-  ! keeps its factorisation for every right side substituted after,
-  ! and the tolerance of the stack its solves are refined to.
+  ! transposed for the adjoint - stated on the inner minimizer of the
+  ! block's newton.
+  ! The jacobian is numbered, so that a direct minimizer keeps its
+  ! factorisation for every right side substituted after.
+  ! tolerance is the one of the block's newton; the solves are refined
+  ! to it.
   !===================================================================!
 
   subroutine factorised(this, data, blk, transposed, system, tolerance)
 
-    class(minimization)          , intent(in)    :: this
+    class(discrete_minimizer)    , intent(in)    :: this
     class(minimand)              , intent(in)    :: data
     type(chain_block)            , intent(inout) :: blk
     logical                      , intent(in)    :: transposed
     class(minimizer), allocatable, intent(out)   :: system
     real(dp)                     , intent(out)   :: tolerance
 
-    class(minimizer), allocatable :: stack
+    class(minimizer), allocatable :: M_b
     type(stencil) :: jacobian
     integer , allocatable :: rows(:), columns(:)
     real(dp), allocatable :: weights(:)
@@ -742,13 +751,13 @@ contains
     if (transposed) call jacobian % reverse()
     systems_stated = systems_stated + 1
     call jacobian % versioned(systems_stated)
-    call stack_of(this, blk % rows, data % facts(), stack)
-    tolerance = stack % tolerance
-    select type (stack)
+    call minimizer_of(blk % rows, data % facts(), M_b, this)
+    tolerance = M_b % tolerance
+    select type (M_b)
     type is (newton)
-       call move_alloc(stack % inner, system)
+       call move_alloc(M_b % inner, system)
     class default
-       call move_alloc(stack, system)
+       call move_alloc(M_b, system)
     end select
     ! the coupling newton gives its inner minimizer: the rows' own,
     ! the jacobian's pattern after an elimination
@@ -805,89 +814,97 @@ contains
   end subroutine substituted
 
   ! the solution x of J x = rhs - transposed for the adjoint - by the
-  ! block's stack on its rows linearized at the solution, part by part
-  ! over the images
+  ! minimizer of the block on its rows linearized at the solution, part
+  ! by part over the images
   subroutine linearized_solution(this, data, blk, transposed, rhs, x)
-    class(minimization)  , intent(in)    :: this
-    class(minimand)      , intent(in)    :: data
-    type(chain_block)    , intent(inout) :: blk
-    logical              , intent(in)    :: transposed
-    real(dp)             , intent(in)    :: rhs(:)
-    real(dp), allocatable, intent(out)   :: x(:)
+    class(discrete_minimizer), intent(in)    :: this
+    class(minimand)          , intent(in)    :: data
+    type(chain_block)        , intent(inout) :: blk
+    logical                  , intent(in)    :: transposed
+    real(dp)                 , intent(in)    :: rhs(:)
+    real(dp), allocatable    , intent(out)   :: x(:)
     type(residual_operator) :: lin
-    class(minimizer), allocatable :: stack
+    class(minimizer), allocatable :: M_b
     logical :: met
     call inputs_ensured(this, data, blk)
     lin = blk % rows % linearize(blk % rows % unknown_graph(), blk % rows % bind(blk % inputs), rhs, &
          & transposed=transposed, version_number=blk % rows % version())
-    call stack_of(this, lin, data % facts(), stack)
+    call minimizer_of(lin, data % facts(), M_b, this)
     allocate(x(size(rhs)), source=0.0_dp)
-    call system_solution(stack, lin, blk % design, x, met, &
+    call system_solution(M_b, lin, blk % design, x, met, &
          & owners=data % unknown_owners(size(blk % q), blk % rows % degrees, size(blk % rows % at)))
     if (.not. met) error stop 'operation_minimization: a block''s linear system was not solved over its parts'
   end subroutine linearized_solution
 
   !===================================================================!
-  ! THE PRINTED FORM of a minimization: its levels, each operation with
-  ! the data it reads, each inner operation under the one it serves.
+  ! THE TREE OF M_h: the march, then the minimizer of the rows of a
+  ! block. Each inner minimizer is printed under the one it serves.
+  ! The data each minimizer solves are printed in brackets above it.
   !===================================================================!
 
-  subroutine minimization_view(this, data)
+  function minimizer_tree(this) result(text)
 
-    class(minimization), intent(in) :: this
-    class(minimand)    , intent(in) :: data
+    class(discrete_minimizer), intent(in) :: this
+    character(len=:), allocatable :: text
 
-    class(minimizer), allocatable :: stack
+    class(minimizer), allocatable :: M_b
     character(len=24) :: count
 
     write(count, '(i0)') this % blocks
-    print '(a)', '(march) over ' // trim(count) // ' blocks, forward for the state, in reverse for the multipliers'
+    text = '(march) over ' // trim(count) // ' blocks, forward for the state, in reverse for the multipliers'
     if (allocated(this % block)) then
-       call stack_lines(this % block, 1, 'the rows of block b')
+       text = text // minimizer_lines(this % block, 1, 'the rows of block b')
     else
-       call default_stack(data % facts(), stack)
-       call stack_lines(stack, 1, 'the rows of block b, the default stack')
+       call default_minimizer(this % facts, M_b)
+       text = text // minimizer_lines(M_b, 1, 'the rows of block b, the default minimizer')
     end if
 
-  end subroutine minimization_view
+  end function minimizer_tree
 
-  recursive subroutine stack_lines(stack, depth, data)
+  ! the lines of M_b and of its inner minimizers, each line begun on a
+  ! new line
+  recursive function minimizer_lines(M_b, depth, data) result(text)
 
-    class(minimizer), intent(in) :: stack
+    class(minimizer), intent(in) :: M_b
     integer         , intent(in) :: depth
     character(len=*), intent(in) :: data
+    character(len=:), allocatable :: text
 
-    character(len=:), allocatable :: indent
+    character(len=:), allocatable :: indent, line
     character(len=24) :: number
 
-    indent = repeat('   ', depth)
-    print '(a)', indent // '[' // data // ']'
-    write(number, '(es9.2)') stack % tolerance
-    select type (stack)
+    indent = new_line('a') // repeat('   ', depth)
+    text   = indent // '[' // data // ']'
+    write(number, '(es9.2)') M_b % tolerance
+    select type (M_b)
     type is (newton)
-       if (stack % chord) then
-          print '(a)', indent // '(newton) tolerance ' // trim(adjustl(number)) // ', the chord method'
-       else
-          print '(a)', indent // '(newton) tolerance ' // trim(adjustl(number))
-       end if
-       if (allocated(stack % inner)) call stack_lines(stack % inner, depth + 1, 'the jacobian of the rows')
+       line = '(newton) tolerance ' // trim(adjustl(number))
+       if (M_b % chord) line = line // ', the chord method'
+       text = text // indent // line
+       if (allocated(M_b % inner)) text = text // minimizer_lines(M_b % inner, depth + 1, 'the jacobian of the rows')
     type is (elimination)
-       print '(a)', indent // '(elimination) of the tying rows'
-       if (allocated(stack % inner)) call stack_lines(stack % inner, depth + 1, 'the complement')
+       text = text // indent // '(elimination) of the tying rows'
+       if (allocated(M_b % inner)) text = text // minimizer_lines(M_b % inner, depth + 1, 'the rows that remain')
     type is (gmres)
-       write(number, '(i0)') stack % restart
-       print '(a)', indent // '(gmres) restarted every ' // trim(number)
-       if (allocated(stack % preconditioner)) call stack_lines(stack % preconditioner, depth + 1, 'the system')
+       write(number, '(i0)') M_b % restart
+       text = text // indent // '(gmres) restarted every ' // trim(number)
+       if (allocated(M_b % preconditioner)) then
+          text = text // minimizer_lines(M_b % preconditioner, depth + 1, 'the linear system')
+       end if
     type is (gauss_seidel)
-       write(number, '(i0)') stack % max_iterations
-       print '(a)', indent // '(gauss-seidel) ' // trim(number) // ' sweeps'
+       write(number, '(i0)') M_b % max_iterations
+       text = text // indent // '(gauss-seidel) ' // trim(number) // ' sweeps'
     type is (dense_direct)
-       print '(a)', indent // '(dense direct)'
+       if (M_b % equilibrated) then
+          text = text // indent // '(dense direct) rows, then columns, scaled to a largest entry of one'
+       else
+          text = text // indent // '(dense direct)'
+       end if
     class default
-       print '(a)', indent // '(' // stack % name() // ')'
+       text = text // indent // '(' // M_b % name() // ')'
     end select
 
-  end subroutine stack_lines
+  end function minimizer_lines
 
   !===================================================================!
   ! A build of one image under a launcher of several would run the

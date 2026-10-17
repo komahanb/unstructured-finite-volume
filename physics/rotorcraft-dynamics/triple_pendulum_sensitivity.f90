@@ -18,14 +18,17 @@
 ! The design values and the order of the expansion are read from the
 ! command line (default 1, 1, 1).
 !
-! THE MINIMIZER STACK, paired with the rows of every block as a
-! multiplier is with its condition (operation_minimization), the
-! minimization printed before the march: newton to 1e-13 by the chord
-! method, every step of a block against the factors of its first,
-! over the elimination of the rows the family's relations, the data and
-! the joints' unknowns tie and a dense direct solve of the rest; the
-! expansion and the adjoint of each block against the factors of its
-! jacobian at its solution.
+! THE MINIMIZER M_h, paired with L_h (operation_minimization).
+! Each block of instants is solved by Newton's method to 1e-13.
+! The chord method reuses the LU factors of the first jacobian of a
+! block for every Newton step of that block.
+! A Newton step first eliminates the tying rows.
+! A tying row fixes one unknown from unknowns before it: by the
+! history, by the relations of the time scheme, or as a copy.
+! A dense LU solve gives the remaining unknowns.
+! tree(M_h) prints this structure before the march.
+! The expansion and the adjoint of a block are solved against the LU
+! factors of the jacobian at the solution of the block.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -44,7 +47,8 @@ program triple_pendulum_sensitivity
   use operation_newton      , only : newton
   use operation_elimination , only : elimination
   use operation_dense_direct, only : dense_direct
-  use operation_minimization, only : minimization
+  use operation_minimization, only : discrete_minimizer
+  use view_residual         , only : tree
 
   implicit none
 
@@ -59,8 +63,7 @@ program triple_pendulum_sensitivity
   type(discrete_field)        :: estimate, solution, kappa_h, functional
   type(continuous_lagrangian) :: r, g, d, L
   type(discrete_lagrangian)   :: L_h
-  type(newton)                :: stack
-  type(minimization)          :: graph
+  type(discrete_minimizer)    :: M_h
   type(mechanism)             :: pendulum
   type(rigid_body)            :: a, b, c
   real(dp), allocatable     :: values(:)
@@ -120,10 +123,9 @@ program triple_pendulum_sensitivity
   motion   = pendulum % estimate(omega)
   estimate = motion % discretize(omega_h)
   if (this_image() == 1) call set_verbosity(1)
-  stack = newton(elimination(dense_direct()), tolerance=1.0e-13_dp, chord=.true.)
-  graph = minimization(L_h, stack)
-  if (this_image() == 1) call graph % view(L_h)
-  call L_h % minimize(estimate, solution, continued=.true., by=stack)
+  M_h = discrete_minimizer(L_h, newton(elimination(dense_direct()), tolerance=1.0e-13_dp, chord=.true.))
+  if (this_image() == 1) print '(a)', tree(M_h)
+  call L_h % minimize(estimate, solution, continued=.true., by=M_h)
 
   kappa_h = solution % fields(['kappa'])
   functional = objective % at(solution)

@@ -17,22 +17,31 @@
 ! equation summed without a multiplier is written alone; an
 ! inequality as its pairing, the sign of its multiplier not written.
 !
+! tree(M_h) prints the discrete minimizer M_h paired with a discrete
+! Lagrangian: the march over the blocks, and the minimizer of a block
+! with its inner minimizers (operation_minimization).
+!
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 
 module view_residual
 
-  use util_precision      , only : dp
-  use token_identity      , only : token
-  use operation_field     , only : continuous_field
-  use operation_field     , only : WHOLE, TIME_FACE, TIME_FACTOR, SPACE_FACTOR, DESIGN_FACTOR
-  use operation_lagrangian, only : continuous_lagrangian
-  use view_expression     , only : expression_view, operator(+), operator(*)
+  use util_precision        , only : dp
+  use token_identity        , only : token
+  use operation_field       , only : continuous_field
+  use operation_field       , only : WHOLE, TIME_FACE, TIME_FACTOR, SPACE_FACTOR, DESIGN_FACTOR
+  use operation_lagrangian  , only : continuous_lagrangian
+  use operation_minimization, only : discrete_minimizer
+  use view_expression       , only : expression_view, operator(+), operator(*)
 
   implicit none
 
   private
   public :: formula, tree, diagram, brackets, digraph
+
+  interface tree
+     module procedure lagrangian_tree, minimizer_tree
+  end interface tree
 
   ! the length of a written name: a manifold's name of 32 characters
   ! and the number of its component
@@ -59,7 +68,7 @@ contains
 
   end function formula
 
-  function tree(L) result(text)
+  function lagrangian_tree(L) result(text)
 
     type(continuous_lagrangian), intent(in) :: L
     character(len=:), allocatable :: text
@@ -69,7 +78,16 @@ contains
     view = lagrangian_view(L)
     text = view % tree()
 
-  end function tree
+  end function lagrangian_tree
+
+  function minimizer_tree(M_h) result(text)
+
+    type(discrete_minimizer), intent(in) :: M_h
+    character(len=:), allocatable :: text
+
+    text = M_h % tree()
+
+  end function minimizer_tree
 
   function diagram(L) result(text)
 

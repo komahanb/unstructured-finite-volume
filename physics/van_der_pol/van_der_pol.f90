@@ -234,14 +234,16 @@
 ! every law with the multiplier it is paired with, each equation as a
 ! formula, then the whole as a tree.
 !
-! THE MINIMIZER STACK, paired with the rows of every block as a
-! multiplier is with its condition (operation_minimization): newton to
-! 1e-13 over the elimination of the rows the family's relations and the
-! data determine and a dense direct solve of the rest, the rows of a
-! block of time alone. Every problem is solved by it, the rounds of the
-! placements and the enrichment of each disagreement too, and the
-! minimization of (b) and (c) is printed after the Lagrangian: the
-! march over the blocks, each level with the data it reads.
+! THE MINIMIZER M_bar, paired with L_bar (operation_minimization).
+! Each block of instants is solved by Newton's method to 1e-13.
+! A Newton step first eliminates the tying rows.
+! A tying row fixes one unknown from unknowns before it: by the
+! history, by the relations of the time scheme, or by the data.
+! A dense LU solve gives the remaining unknowns.
+! M_bar solves every problem below, the rounds of the placements, and
+! the enrichment of each disagreement.
+! tree(M_bar) prints it after the Lagrangian of (b) and (c): the march
+! over the blocks, and the minimizer of a block.
 !
 ! The instant count, the data u_0, u_t_0 and the order of the
 ! expansion are read from the command line (default 11, 2, 0 and 1).
@@ -251,20 +253,20 @@
 
 program van_der_pol
 
-  use util_precision     , only : dp
-  use util_verbosity     , only : set_verbosity
-  use operation_manifold , only : continuous_manifold, discrete_manifold, interval, points, parameter
-  use operation_expansion, only : expansion
-  use operation_field    , only : continuous_field, discrete_field, integral, &
-       &                          operator(+), operator(-), operator(*), operator(/), operator(**)
-  use operation_lagrangian , only : continuous_lagrangian, discrete_lagrangian, operator(+), operator(*), &
-       &                          equidistribution
-  use operation_family   , only : family, dirk, bdf, adams, chain
-  use view_residual      , only : formula, tree
+  use util_precision        , only : dp
+  use util_verbosity        , only : set_verbosity
+  use operation_manifold    , only : continuous_manifold, discrete_manifold, interval, points, parameter
+  use operation_expansion   , only : expansion
+  use operation_field       , only : continuous_field, discrete_field, integral, &
+       &                             operator(+), operator(-), operator(*), operator(/), operator(**)
+  use operation_lagrangian  , only : continuous_lagrangian, discrete_lagrangian, operator(+), operator(*), &
+       &                             equidistribution
+  use operation_family      , only : family, dirk, bdf, adams, chain
+  use view_residual         , only : formula, tree
   use operation_newton      , only : newton
   use operation_elimination , only : elimination
   use operation_dense_direct, only : dense_direct
-  use operation_minimization, only : minimization
+  use operation_minimization, only : discrete_minimizer
 
   implicit none
 
@@ -277,13 +279,12 @@ program van_der_pol
   type(continuous_field)      :: t, t_map, nu, u, J, lambda_omega, lambda_ic, lambda_s, lambda_t, rest
   type(continuous_lagrangian) :: r_omega, r_ic, r_s, r_t, L
   type(discrete_lagrangian)   :: L_bar
-  type(family), allocatable :: pool(:)
+  type(family), allocatable   :: pool(:)
   type(discrete_field)        :: estimate, solution, u_bar, lambda_omega_bar, lambda_ic_bar, lambda_s_bar, lambda_t_bar, &
-       &                       J_bar, nu_bar
-  real(dp), allocatable     :: eta(:)
-  type(newton)              :: stack
-  type(minimization)        :: graph
-  integer                   :: k
+       &                         J_bar, nu_bar
+  real(dp), allocatable       :: eta(:)
+  type(discrete_minimizer)    :: M_bar
+  integer                     :: k
 
   num_instants = nint(argument(1, 11.0_dp))
   u_0          = argument(2, 2.0_dp)
@@ -333,9 +334,6 @@ program van_der_pol
   ! the convergence of every solve printed by image 1
   if (this_image() == 1) call set_verbosity(1)
 
-  ! THE MINIMIZER STACK of every block's rows
-  stack = newton(elimination(dense_direct()), tolerance=1.0e-13_dp)
-
   !===================================================================!
   ! (a) PHYSICS. L without J: the stationarity in the multipliers
   ! solved for u_bar; the multipliers zero
@@ -343,7 +341,10 @@ program van_der_pol
 
   L     = lambda_omega*r_omega + lambda_ic*r_ic + lambda_s*r_s + lambda_t*r_t
   L_bar = discrete_image(L)
-  call L_bar % minimize(estimate, solution, by=stack)
+
+  ! THE MINIMIZER of every block of L_bar
+  M_bar = discrete_minimizer(L_bar, newton(elimination(dense_direct()), tolerance=1.0e-13_dp))
+  call L_bar % minimize(estimate, solution, by=M_bar)
 
   u_bar            = solution % fields(['u'])
   lambda_omega_bar = solution % fields(['lambda_omega'])
@@ -371,13 +372,12 @@ program van_der_pol
   print '(a)', formula(L)
   print '(a)', tree(L)
 
-  ! THE MINIMIZATION: the march over the blocks, the stack of each
-  ! block's rows, each level with the data it reads
-  print '(a)', 'the minimization of (b) and (c):'
-  graph = minimization(L_bar, stack)
-  call graph % view(L_bar)
+  ! THE MINIMIZER: the march over the blocks, and the minimizer of a
+  ! block
+  print '(a)', 'the minimizer of (b) and (c):'
+  print '(a)', tree(M_bar)
 
-  call L_bar % minimize(estimate, solution, by=stack)
+  call L_bar % minimize(estimate, solution, by=M_bar)
 
   ! (b) u_bar and lambda_omega_bar at every tenth of the interval, and
   ! the multipliers of the initial pin
@@ -398,7 +398,7 @@ program van_der_pol
   print '(a, es24.16)', 'lambda_ic = -dJ / du_t_0 = ', lambda_ic_bar % value(1, 2)
 
   ! (b) THE ESTIMATE of J - J_bar, one contribution per instant
-  eta = L_bar % disagreement(solution, by=stack)
+  eta = L_bar % disagreement(solution, by=M_bar)
   print '(a, es24.16)', 'estimate of J - J_bar    = ', sum(eta)
 
   ! (c) the multiplier of the design pin, and THE AUDIT: d^k J / dnu^k
@@ -439,7 +439,7 @@ program van_der_pol
 
   L     = J + lambda_omega*r_omega + lambda_ic*r_ic + lambda_t*r_t
   L_bar = discrete_image(L)
-  call L_bar % minimize(estimate, solution, by=stack)
+  call L_bar % minimize(estimate, solution, by=M_bar)
 
   nu_bar = solution % fields(['nu'])
   J_bar  = J % at(solution)
@@ -447,7 +447,7 @@ program van_der_pol
   print '(a, es24.16)', 'nu found                = ', nu_bar % value(1, 1)
   print '(a, es24.16)', 'J                       = ', J_bar % value(1, 1)
   if (order >= 1) print '(a, es24.16)', 'dJ / dnu                = ', J_bar % value(1, 2)
-  eta = L_bar % disagreement(solution, by=stack)
+  eta = L_bar % disagreement(solution, by=M_bar)
   print '(a, es24.16)', 'estimate of J - J_bar   = ', sum(eta)
 
   !===================================================================!
@@ -458,14 +458,14 @@ program van_der_pol
 
   L     = J + lambda_omega*r_omega + lambda_ic*r_ic
   L_bar = discrete_image(L, placement=equidistribution())
-  call L_bar % minimize(estimate, solution, by=stack)
+  call L_bar % minimize(estimate, solution, by=M_bar)
 
   ! the design found, and the instants placed with the contribution of
   ! each to the estimate of J - J_bar, every tenth
   u_bar  = solution % fields(['u'])
   nu_bar = solution % fields(['nu'])
   J_bar  = J % at(solution)
-  eta    = L_bar % disagreement(solution, by=stack)
+  eta    = L_bar % disagreement(solution, by=M_bar)
   print '(a)', '(e) design on the equidistribution: L = J + lambda_omega . r_omega + lambda_ic . r_ic'
   do k = 1, num_instants
      if (mod(k - 1, max(1, (num_instants - 1) / 10)) == 0) then
@@ -483,7 +483,7 @@ program van_der_pol
   !===================================================================!
 
   L_bar = discrete_image(L, placement=equidistribution(tolerance=1.0e-3_dp))
-  call L_bar % minimize(estimate, solution, by=stack)
+  call L_bar % minimize(estimate, solution, by=M_bar)
 
   nu_bar = solution % fields(['nu'])
   J_bar  = J % at(solution)
@@ -502,7 +502,7 @@ program van_der_pol
   L     = J + lambda_omega*r_omega + lambda_ic*r_ic + lambda_s*r_s
   pool  = [dirk(2), dirk(3), dirk(4), adams(2), adams(3), adams(4), bdf(2), bdf(3)]
   L_bar = discrete_image(L, placement=equidistribution(tolerance=1.0e-6_dp, pool=pool))
-  call L_bar % minimize(estimate, solution, by=stack)
+  call L_bar % minimize(estimate, solution, by=M_bar)
 
   J_bar = J % at(solution)
   print '(a)', '(g) J to a tolerance, each step''s family from a pool: &
@@ -517,7 +517,7 @@ program van_der_pol
   !===================================================================!
 
   L_bar = discrete_image(L, placement=equidistribution(work=55, pool=pool))
-  call L_bar % minimize(estimate, solution, by=stack)
+  call L_bar % minimize(estimate, solution, by=M_bar)
 
   J_bar = J % at(solution)
   print '(a)', '(h) J at a work of 55 solves, each step''s family from the pool of (g): L of (g)'

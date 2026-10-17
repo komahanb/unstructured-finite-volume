@@ -41,11 +41,13 @@
 ! The discrete solution is the zero of L_h; the printed number is
 ! || (u, v, p)_h - (u*, v*, p*)|Omega_h ||.
 !
-! THE MINIMIZER STACK, paired with the rows of every block as a
-! multiplier is with its condition (operation_minimization), the
-! minimization printed before the solve: newton over GMRES(60) to a
-! relative residual of 1e-3, preconditioned by four Gauss-Seidel
-! sweeps over the blocks of the rows' cells.
+! THE MINIMIZER M_h, paired with L_h (operation_minimization), printed
+! before the solve by tree(M_h).
+! Newton's method solves the rows.
+! A Newton step solves its linear system by GMRES, restarted every 60
+! iterations, to a relative residual of 1e-3.
+! GMRES is preconditioned by four Gauss-Seidel sweeps.
+! A block of the sweeps is a cell.
 !=====================================================================!
 
 program taylor_green_vortex
@@ -63,7 +65,7 @@ program taylor_green_vortex
   use operation_newton           , only : newton
   use operation_gmres            , only : gmres
   use operation_gauss_seidel     , only : gauss_seidel
-  use operation_minimization     , only : minimization
+  use operation_minimization     , only : discrete_minimizer
 
   implicit none
 
@@ -78,8 +80,7 @@ program taylor_green_vortex
 
   type(continuous_lagrangian) :: r, g, gauge, L
   type(discrete_lagrangian)   :: L_h
-  type(newton)                :: stack
-  type(minimization)          :: graph
+  type(discrete_minimizer)    :: M_h
   integer                     :: k
 
   ! Omega = [0, T] x B, B the region of box.geo; dOmega = {0} x B;
@@ -176,12 +177,11 @@ program taylor_green_vortex
      call set_verbosity(1)
   end if
 
-  ! the minimizer stack of every block's rows, and the minimization
-  stack = newton(gmres(gauss_seidel(4), restart=60, tolerance=1.0e-3_dp))
-  graph = minimization(L_h, stack)
-  if (this_image() == 1) call graph % view(L_h)
+  ! THE MINIMIZER of every block's rows
+  M_h = discrete_minimizer(L_h, newton(gmres(gauss_seidel(4), restart=60, tolerance=1.0e-3_dp)))
+  if (this_image() == 1) print '(a)', tree(M_h)
 
-  call L_h % minimize(estimate, solution, by=stack)
+  call L_h % minimize(estimate, solution, by=M_h)
 
   ! || (u, v, p)_h - (u*, v*, p*)|Omega_h ||
   error = solution % fields(['u', 'v', 'p']) - estimate

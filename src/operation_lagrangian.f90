@@ -48,7 +48,7 @@ module operation_lagrangian
   use util_verbosity           , only : verbosity, set_verbosity
   use transform_partitioner    , only : partitioner, PARTITION_BREADTH_FIRST
   use operation_minimizer, only : minimizer
-  use operation_minimization, only : minimand, march_state, block_facts, minimization, stack_for
+  use operation_minimization, only : minimand, march_state, block_facts, discrete_minimizer, minimizer_of
   use operation_minimization, only : system_solution, rows_evaluated
   use operation_residual_operator, only : residual_operator, projection, stationarities, chain_block, lower_bounds
   use operation_residual_operator, only : origin, HISTORY_MOMENTS, OWN_MOMENTS, EVERY_MOMENT
@@ -958,7 +958,7 @@ contains
     type(discrete_field)      , intent(out) :: solution
     integer                   , intent(in), optional :: checkpoint, snapshots
     logical                   , intent(in), optional :: continued
-    class(minimizer)          , intent(in), optional :: by
+    type(discrete_minimizer)  , intent(in), optional :: by
 
     type(discrete_lagrangian) :: iterate(1)
     type(discrete_field)      :: estimates(1), solutions(1)
@@ -1040,7 +1040,7 @@ contains
   !===================================================================!
 
   recursive subroutine placement_iteration(this, estimate, solution, checkpoint, snapshots, by)
-    class(minimizer)        , intent(in), optional :: by
+    type(discrete_minimizer), intent(in), optional :: by
 
     class(discrete_lagrangian), intent(in)  :: this
     type(discrete_field)      , intent(in)  :: estimate
@@ -1300,7 +1300,7 @@ contains
   !===================================================================!
 
   subroutine pool_iteration(this, placement, estimate, solution, by)
-    class(minimizer)        , intent(in), optional :: by
+    type(discrete_minimizer), intent(in), optional :: by
 
     class(discrete_lagrangian), intent(in)  :: this
     type(equidistribution)    , intent(in)  :: placement
@@ -2139,7 +2139,7 @@ contains
   !===================================================================!
 
   subroutine design_disagreement(this, solution, slope, slope_plus, contribution, uncertainty, shift, by)
-    class(minimizer)        , intent(in), optional :: by
+    type(discrete_minimizer), intent(in), optional :: by
 
     class(discrete_lagrangian), intent(in)  :: this
     type(discrete_field)      , intent(in)  :: solution
@@ -2293,7 +2293,7 @@ contains
   !===================================================================!
 
   subroutine minimize_together(residuals, estimates, solutions, checkpoint, snapshots, continued, by)
-    class(minimizer)        , intent(in), optional :: by
+    type(discrete_minimizer), intent(in), optional :: by
 
     type(discrete_lagrangian), intent(in)  :: residuals(:)
     type(discrete_field)     , intent(in)  :: estimates(:)
@@ -2359,7 +2359,7 @@ contains
   !===================================================================!
 
   subroutine design_iteration(iterates, estimates, solutions, checkpoint, snapshots, by)
-    class(minimizer)        , intent(in), optional :: by
+    type(discrete_minimizer), intent(in), optional :: by
 
     type(discrete_lagrangian), intent(inout) :: iterates(:)
     type(discrete_field)     , intent(in)    :: estimates(:)
@@ -2909,10 +2909,10 @@ contains
   ! minimization of the residual (operation_minimization), one block
   ! of the chain after another, each a residual_operator over the
   ! block's moments (its instants, and the stages of a one-step
-  ! family) and the cells, solved by the stack stated for the blocks'
-  ! rows (by) or by the default their rows choose, and the adjoint in
-  ! reverse. The solution is a discrete field of the manifold's
-  ! unknowns at the instants.
+  ! family) and the cells. The rows of every block are solved by the
+  ! minimizer of by, or by the default their rows choose, and the
+  ! adjoint in reverse. The solution is a discrete field of the
+  ! manifold's unknowns at the instants.
   !
   ! SCHEDULES: with checkpoint = k or snapshots = s the state is not
   ! stored over the chain. Both sweeps run over a window of instants,
@@ -2950,9 +2950,9 @@ contains
     integer                   , intent(in), optional :: checkpoint, snapshots
     real(dp), allocatable   , intent(out), optional :: kappa(:,:), functional_kappa(:,:)
     logical                   , intent(out), optional :: converged
-    class(minimizer)          , intent(in), optional :: by
+    type(discrete_minimizer)  , intent(in), optional :: by
 
-    type(minimization) :: graph
+    type(discrete_minimizer) :: M_h
     class(march_state), allocatable :: state
     type(discrete_lagrangian) :: halves
     integer :: ninst, segment, shots, nc, k
@@ -3008,17 +3008,20 @@ contains
        return
     end if
 
-    ! THE MINIMIZATION: the march over the blocks, each block's rows
-    ! solved by the stack stated for them, or by the default their rows
-    ! choose, and the adjoint in reverse; across the images, the
-    ! wavefront over the blocks and the orders
+    ! THE DISCRETE MINIMIZER M_h of this Lagrangian: the minimizer of by
+    ! paired with the blocks of this one, which may differ from the
+    ! blocks by was paired with. Without by, the default of each block.
+    ! Across the images, the wavefront over the blocks and the orders.
     call system_clock(tick, rate)
-    graph = minimization(this, by)
-    if (verbosity >= 2) call graph % view(this)
+    M_h = discrete_minimizer(this)
+    if (present(by)) then
+       if (allocated(by % block)) M_h = discrete_minimizer(this, by % block)
+    end if
+    if (verbosity >= 2) print '(a)', M_h % tree()
     if (wavefront) then
        call this % wavefront_march(estimate, solution, state, by=by)
     else
-       call graph % minimize(this, estimate, solution, converged, state)
+       call M_h % minimize(this, estimate, solution, converged, state)
        if (present(converged)) then
           if (.not. converged) return
        end if
@@ -3058,7 +3061,7 @@ contains
             if (.not. of_state(m)) cycle
             alone % functional_weight    = [(0.0_dp, k = 1, size(of_state))]
             alone % functional_weight(m) = 1.0_dp
-            call graph % reversed(alone, solution, state)
+            call M_h % reversed(alone, solution, state)
             select type (state)
             type is (chain_state)
                functional_kappa(:, m) = state % design_multiplier(:, 0)
@@ -3076,7 +3079,7 @@ contains
   !===================================================================!
 
   subroutine scheduled_march(this, estimate, segment, shots, solution, kappa, by)
-    class(minimizer)        , intent(in), optional :: by
+    type(discrete_minimizer), intent(in), optional :: by
 
     class(discrete_lagrangian), intent(in)  :: this
     type(discrete_field)      , intent(in)  :: estimate
@@ -3140,7 +3143,7 @@ contains
   !===================================================================!
 
   subroutine wavefront_march(this, estimate, solution, state, by)
-    class(minimizer)        , intent(in), optional :: by
+    type(discrete_minimizer), intent(in), optional :: by
 
     class(discrete_lagrangian)       , intent(in)  :: this
     type(discrete_field)             , intent(in)  :: estimate
@@ -3175,7 +3178,8 @@ contains
   ! THE MINIMAND: what the minimization of the discrete Lagrangian
   ! reads of it (operation_minimization). The blocks of the chain, or
   ! the one system of the point manifold; the blocks whose instants a
-  ! block's history reads; the facts its default stack is chosen from.
+  ! block's history reads; the facts its default minimizer is chosen
+  ! from.
   !===================================================================!
 
   integer function march_blocks(this)
@@ -4106,7 +4110,7 @@ contains
 
   subroutine scheduled_sweeps(this, estimate, rows_along, segment, shots, field_value, objective_value, &
        & adjoint, reaction, gauge, design_multiplier, by)
-    class(minimizer)        , intent(in), optional :: by
+    type(discrete_minimizer), intent(in), optional :: by
 
     class(discrete_lagrangian), intent(in)  :: this
     type(discrete_field)      , intent(in)  :: estimate
@@ -5402,7 +5406,7 @@ contains
   !===================================================================!
 
   subroutine solve_block(this, scheme, first, last, depth, rows_along, lb, tuple, stages, expand, converged, by)
-    class(minimizer)        , intent(in), optional :: by
+    type(discrete_minimizer), intent(in), optional :: by
 
     class(discrete_lagrangian), intent(in)    :: this
     type(family)              , intent(in)    :: scheme
@@ -5453,7 +5457,7 @@ contains
   !===================================================================!
 
   subroutine solve_rows(this, blk, lb, tuple, stages, expand, converged, by)
-    class(minimizer)        , intent(in), optional :: by
+    type(discrete_minimizer), intent(in), optional :: by
 
     class(discrete_lagrangian), intent(in)    :: this
     type(chain_block)         , intent(inout) :: blk
@@ -5502,7 +5506,7 @@ contains
   !===================================================================!
 
   subroutine expansion_order(this, blk, lb, d, m, tuple, stages, by)
-    class(minimizer)        , intent(in), optional :: by
+    type(discrete_minimizer), intent(in), optional :: by
 
     class(discrete_lagrangian), intent(in)    :: this
     type(chain_block)         , intent(in)    :: blk
@@ -5606,7 +5610,7 @@ contains
   !===================================================================!
 
   subroutine wavefront_expansion(this, rows_along, tuple, stages, by)
-    class(minimizer)        , intent(in), optional :: by
+    type(discrete_minimizer), intent(in), optional :: by
 
     class(discrete_lagrangian), intent(in)    :: this
     type(stencil)             , intent(in)    :: rows_along(:,:)
@@ -5695,7 +5699,7 @@ contains
 
   subroutine wavefront_adjoint(this, rows_along, tuple, stages, gradient, stage_node, &
        & adjoint, incoming, reaction, gauge, in_design, by)
-    class(minimizer)        , intent(in), optional :: by
+    type(discrete_minimizer), intent(in), optional :: by
 
     class(discrete_lagrangian), intent(in)    :: this
     type(stencil)             , intent(in)    :: rows_along(:,:)
@@ -5938,7 +5942,7 @@ contains
 
   subroutine adjoint_block(this, scheme, first, last, depth, rows_along, lb, tuple, stages, gradient, &
        & stage_node, adjoint, incoming, reaction, gauge, in_design, by)
-    class(minimizer)        , intent(in), optional :: by
+    type(discrete_minimizer), intent(in), optional :: by
 
     class(discrete_lagrangian), intent(in)    :: this
     type(family)              , intent(in)    :: scheme
@@ -5973,7 +5977,7 @@ contains
 
   subroutine adjoint_rows(this, blk, lb, tuple, stages, gradient, stage_node, adjoint, incoming, reaction, gauge, &
        & in_design, by)
-    class(minimizer)        , intent(in), optional :: by
+    type(discrete_minimizer), intent(in), optional :: by
 
     class(discrete_lagrangian), intent(in)    :: this
     type(chain_block)         , intent(inout) :: blk
@@ -6131,7 +6135,7 @@ contains
   end subroutine adjoint_right_side_of
 
   subroutine adjoint_order(this, lb, blk, o, d, jets, mu, gradient, stage_node, incoming, x, by)
-    class(minimizer)        , intent(in), optional :: by
+    type(discrete_minimizer), intent(in), optional :: by
 
     class(discrete_lagrangian), intent(in)    :: this
     type(lower_bounds)        , intent(in)    :: lb
@@ -6931,7 +6935,7 @@ contains
   !===================================================================!
 
   subroutine solved(this, rows, unknowns, stride, npts, q, converged, by)
-    class(minimizer)        , intent(in), optional :: by
+    type(discrete_minimizer), intent(in), optional :: by
 
     class(discrete_lagrangian), intent(in)    :: this
     type(residual_operator)   , intent(in)    :: rows
@@ -6939,21 +6943,21 @@ contains
     real(dp)                  , intent(inout) :: q(:)
     logical                   , intent(out), optional :: converged
 
-    class(minimizer), allocatable :: stack
+    class(minimizer), allocatable :: M_b
     logical :: met
 
-    ! the rows by the stack stated for them, or by the default they
+    ! the rows solved by the minimizer of by, or by the default they
     ! choose (operation_minimization);
     ! over several images each image solves its part of the rows, from
     ! the partitioner's cut of the residual's coupling; the line of an
     ! open line, and of a law projected on the cells of a line, is one
     ! block of the sweeps, which a cut would divide
-    call stack_for(rows, this % facts(), stack, by)
+    call minimizer_of(rows, this % facts(), M_b, by)
     if (num_images() > 1 .and. this % manifold % with_space .and. .not. this % whole_line()) then
-       call system_solution(stack, rows, this % rows_design(rows), q, met, &
+       call system_solution(M_b, rows, this % rows_design(rows), q, met, &
             & owners=this % owners_of_unknowns(unknowns, stride, npts))
     else
-       call system_solution(stack, rows, this % rows_design(rows), q, met)
+       call system_solution(M_b, rows, this % rows_design(rows), q, met)
     end if
     if (present(converged)) then
        converged = met
@@ -8532,7 +8536,8 @@ contains
   ! time with the enrichment of the residual's chain, or with the chain
   ! of families given, below, and with derivatives its derivative in
   ! each column of the expansion above zero, of order one along each;
-  ! with by, the enrichment's blocks solved by the stack stated.
+  ! with by, the blocks of the enrichment are solved by the minimizer
+  ! of by.
   !===================================================================!
 
   function disagreement(this, solution, other, schemes, derivatives, by) result(contribution)
@@ -8542,7 +8547,7 @@ contains
     class(derivative_approximation), intent(in), optional :: other
     type(chain)                    , intent(in), optional :: schemes
     real(dp), allocatable          , intent(out), optional :: derivatives(:,:)
-    class(minimizer)               , intent(in), optional :: by
+    type(discrete_minimizer)       , intent(in), optional :: by
     real(dp), allocatable :: contribution(:)
 
     type(stencil) :: rows, lower_rows
@@ -8677,7 +8682,7 @@ contains
   !===================================================================!
 
   function time_disagreement(this, solution, schemes, derivative, by) result(contribution)
-    class(minimizer)        , intent(in), optional :: by
+    type(discrete_minimizer), intent(in), optional :: by
 
     class(discrete_lagrangian), intent(in) :: this
     type(discrete_field)      , intent(in) :: solution

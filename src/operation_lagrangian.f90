@@ -239,6 +239,14 @@ module operation_lagrangian
      integer  :: work      = 0
   end type equidistribution
 
+  ! the mass and stiffness of an element of a law projected on the
+  ! cells at an instant, on the element's coordinates, numbered among
+  ! the instant's coordinates (element_pencils)
+  type :: element_pencil
+     integer , allocatable :: coordinate(:)
+     real(dp), allocatable :: mass(:,:), stiffness(:,:)
+  end type element_pencil
+
   type, extends(minimand) :: discrete_lagrangian
 
      type(discrete_manifold)   :: points
@@ -9106,6 +9114,10 @@ contains
     real(dp) :: lowest, lift, squared
     integer :: stride, ncells, ninst, n, r, k, c, i, o
 
+    if (allocated(this % flux)) then
+       norm = projected_energy_norms(this, solution, error, highest)
+       return
+    end if
     call coordinates_read(this, solution, points, coordinate, condition, at)
     stride = this % rule % num_components()
     ncells = points % num_cells()
@@ -9154,6 +9166,12 @@ contains
   ! conditions in the values of the coordinates (free_motions).
   ! The conditions are the laws of the unknowns of degree zero: the
   ! reactions and the multipliers of the bodies' norms.
+  ! The velocities and accelerations are projected on the free motions
+  ! along the rows of G, so that a coordinate the conditions fix, as
+  ! a hub's under its driver, has no free velocity.
+  ! A projection in the norm of the mass would not do: the inertia
+  ! couples the hub's spin to the blade's lag, and on the blade on its
+  ! hub it puts the spin's energy into the lag.
   ! On the free motions, the modes of the stiffness against the mass at
   ! or above w_lo^2 are the vibration.
   ! Those below are slower than the interval resolves.
@@ -9186,10 +9204,14 @@ contains
     type(discrete_manifold) :: points
     integer , allocatable :: coordinate(:), condition(:), at(:,:)
     real(dp), allocatable :: mass(:,:), stiffness(:,:), constraint(:,:), w(:,:), lambda(:), u(:,:), y(:), ya(:)
-    real(dp), allocatable :: velocity(:), acceleration(:)
+    real(dp), allocatable :: velocity(:), acceleration(:), free(:,:)
     real(dp) :: lowest, accelerations, velocities, measure
     integer :: k, c, j, p
 
+    if (allocated(this % flux)) then
+       frequency = projected_vibration_frequency(this, solution)
+       return
+    end if
     call coordinates_read(this, solution, points, coordinate, condition, at)
     lowest        = lowest_frequency(points)
     accelerations = 0.0_dp
@@ -9199,11 +9221,12 @@ contains
           p = points % point_of(k, c)
           call coordinate_derivatives(this, points, solution, k, c, coordinate, condition, at, mass, stiffness, &
                & constraint)
-          w = mass_orthonormal(mass, free_motions(constraint))
+          free = free_motions(constraint)
+          w    = mass_orthonormal(mass, free)
           if (size(w, 2) == 0) cycle
           call symmetric_eigensystem(matmul(transpose(w), matmul(stiffness, w)), lambda, u)
-          velocity     = solution % jet(at(1, :) + 1, p, 1)
-          acceleration = solution % jet(at(2, :) + 1, p, 1)
+          velocity     = matmul(free, matmul(transpose(free), solution % jet(at(1, :) + 1, p, 1)))
+          acceleration = matmul(free, matmul(transpose(free), solution % jet(at(2, :) + 1, p, 1)))
           y  = matmul(transpose(u), matmul(transpose(w), matmul(mass, velocity)))
           ya = matmul(transpose(u), matmul(transpose(w), matmul(mass, acceleration)))
           measure = points % measure(p)
@@ -9244,27 +9267,7 @@ contains
 
     integer :: nf, i, o
 
-    if (allocated(this % flux)) then
-       error stop 'operation_lagrangian: the energy norm of a law projected on the cells is formed from the mass and &
-            &stiffness of its elements, which are not formed'
-    end if
-    if (allocated(solution % objective_value)) then
-       error stop 'operation_lagrangian: the energy norm reads the solution at every instant, which a solution stored &
-            &over checkpoints does not retain'
-    end if
-    select type (on => solution % on)
-    type is (discrete_manifold)
-       if (.not. on % identity % matches(this % points % identity)) then
-          error stop 'operation_lagrangian: the solution is a field on another manifold than the residual''s'
-       end if
-       points = on
-    class default
-       error stop 'operation_lagrangian: the energy norm is of a solution at the points of a manifold'
-    end select
-    if (size(solution % jet, 1) < this % rule % num_components()) then
-       error stop 'operation_lagrangian: the energy norm reads the rates and accelerations of the solution, which a &
-            &solution of values alone does not hold'
-    end if
+    call solution_read(this, solution, points)
     nf = this % manifold % num_unknowns - this % projection_unknowns
     coordinate = pack([(i, i = 1, nf)], [(this % rule % degree_of_field(i) == 2, i = 1, nf)])
     condition  = pack([(i, i = 1, nf)], [(this % rule % degree_of_field(i) == 0, i = 1, nf)])
@@ -9377,6 +9380,522 @@ contains
        w(:, i) = w(:, i) / sqrt(d(ranged(i)))
     end do
   end function mass_orthonormal
+
+  ! the solution's manifold, its checks those of energy_norms
+  subroutine solution_read(this, solution, points)
+    class(discrete_lagrangian), intent(in)  :: this
+    type(discrete_field)      , intent(in)  :: solution
+    type(discrete_manifold)   , intent(out) :: points
+    if (allocated(solution % objective_value)) then
+       error stop 'operation_lagrangian: the energy norm reads the solution at every instant, which a solution stored &
+            &over checkpoints does not retain'
+    end if
+    select type (on => solution % on)
+    type is (discrete_manifold)
+       if (.not. on % identity % matches(this % points % identity)) then
+          error stop 'operation_lagrangian: the solution is a field on another manifold than the residual''s'
+       end if
+       points = on
+    class default
+       error stop 'operation_lagrangian: the energy norm is of a solution at the points of a manifold'
+    end select
+    if (size(solution % jet, 1) < this % rule % num_components()) then
+       error stop 'operation_lagrangian: the energy norm reads the rates and accelerations of the solution, which a &
+            &solution of values alone does not hold'
+    end if
+  end subroutine solution_read
+
+  !===================================================================!
+  ! THE ENERGY NORM OF THE ERRORS of a law projected on the cells, one
+  ! for each element at each instant: the norm of energy_norms with the
+  ! mass and stiffness of the element (element_pencils), on its
+  ! coordinates.
+  ! The coordinates of an unknown of time alone are in every element,
+  ! with the element's share of their mass; the element whose sites
+  ! state the terms of time alone has the rest.
+  ! The error of a coordinate of time alone is read at the first cell.
+  ! Invalid input: as energy_norms, and a chain of other than one block
+  ! per instant.
+  !===================================================================!
+
+  function projected_energy_norms(this, solution, error, highest) result(norm)
+
+    class(discrete_lagrangian), intent(in) :: this
+    type(discrete_field)      , intent(in) :: solution
+    real(dp)                  , intent(in) :: error(:,:,:)
+    real(dp)                  , intent(in), optional :: highest
+    real(dp), allocatable :: norm(:,:)
+
+    type(discrete_manifold) :: points
+    type(element_pencil), allocatable :: pencil(:)
+    integer , allocatable :: dof(:,:)
+    real(dp), allocatable :: coarse(:,:,:), stages(:,:,:,:), constraint(:,:,:), every(:,:), w(:,:), b(:,:)
+    real(dp), allocatable :: lambda(:), u(:,:), z(:,:)
+    logical , allocatable :: prescribed(:)
+    type(stencil), allocatable :: rows_along(:,:)
+    real(dp) :: lowest, lift, squared
+    integer :: stride, ncells, ninst, k, e, i, o, n, r
+
+    call solution_read(this, solution, points)
+    stride = this % rule % num_components()
+    ncells = points % num_cells()
+    ninst  = points % num_instants()
+    if (any(shape(error) /= [stride, ncells, ninst])) then
+       error stop 'operation_lagrangian: the errors are not of the shape of the solution''s tuple, cells and instants'
+    end if
+    call pencil_states(this, solution, points, coarse, stages, rows_along)
+    lowest = lowest_frequency(points)
+    allocate(norm(this % elements % num_cells(), ninst), source=0.0_dp)
+    do k = 1, ninst
+       call element_pencils(this, points, coarse, stages, rows_along, k, pencil, dof, constraint, prescribed)
+       do e = 1, size(pencil)
+          n = size(pencil(e) % coordinate)
+          if (allocated(every)) deallocate(every)
+          allocate(every(n, n), source=0.0_dp)
+          do i = 1, n
+             every(i, i) = 1.0_dp
+          end do
+          w = mass_orthonormal(pencil(e) % mass, every)
+          r = size(w, 2)
+          if (r == 0) cycle
+          b = matmul(transpose(w), matmul(pencil(e) % stiffness, w))
+          call symmetric_eigensystem(b, lambda, u)
+          lift = max(0.0_dp, lowest**2 - lambda(1))
+          allocate(z(r, 0:2))
+          do o = 0, 2
+             z(:, o) = matmul(transpose(w), matmul(pencil(e) % mass, &
+                  & coordinate_values(this, dof(:, pencil(e) % coordinate), o, error(:, :, k))))
+          end do
+          squared = (dot_product(z(:, 1), z(:, 1)) + dot_product(z(:, 0), matmul(b, z(:, 0))) &
+               & + lift * dot_product(z(:, 0), z(:, 0))) / 2.0_dp
+          if (present(highest)) squared = squared + dot_product(z(:, 2), z(:, 2)) / (2.0_dp * highest**2)
+          norm(e, k) = sqrt(max(0.0_dp, squared))
+          deallocate(z)
+       end do
+    end do
+
+  end function projected_energy_norms
+
+  !===================================================================!
+  ! THE FREQUENCY OF THE VIBRATION of a law projected on the cells: as
+  ! vibration_frequency, with the mass and stiffness of the elements
+  ! summed over the region at each instant.
+  ! The free motions are those the conditions and the coordinates fixed
+  ! by a condition on a face leave.
+  ! Invalid input: as projected_energy_norms.
+  !===================================================================!
+
+  function projected_vibration_frequency(this, solution) result(frequency)
+
+    class(discrete_lagrangian), intent(in) :: this
+    type(discrete_field)      , intent(in) :: solution
+    real(dp) :: frequency
+
+    type(discrete_manifold) :: points
+    type(element_pencil), allocatable :: pencil(:)
+    integer , allocatable :: dof(:,:)
+    real(dp), allocatable :: coarse(:,:,:), stages(:,:,:,:), constraint(:,:,:), mass(:,:), stiffness(:,:)
+    real(dp), allocatable :: g(:,:), w(:,:), lambda(:), u(:,:), y(:), ya(:), sample(:,:), free(:,:)
+    logical , allocatable :: prescribed(:)
+    type(stencil), allocatable :: rows_along(:,:)
+    real(dp) :: lowest, accelerations, velocities, share, bound
+    integer :: ninst, k, e, n, i, j, a
+
+    call solution_read(this, solution, points)
+    call pencil_states(this, solution, points, coarse, stages, rows_along)
+    ninst         = points % num_instants()
+    lowest        = lowest_frequency(points)
+    accelerations = 0.0_dp
+    velocities    = 0.0_dp
+    do k = 1, ninst
+       call element_pencils(this, points, coarse, stages, rows_along, k, pencil, dof, constraint, prescribed)
+       n = size(dof, 2)
+       allocate(mass(n, n), stiffness(n, n), source=0.0_dp)
+       do e = 1, size(pencil)
+          mass(pencil(e) % coordinate, pencil(e) % coordinate) = &
+               & mass(pencil(e) % coordinate, pencil(e) % coordinate) + pencil(e) % mass
+          stiffness(pencil(e) % coordinate, pencil(e) % coordinate) = &
+               & stiffness(pencil(e) % coordinate, pencil(e) % coordinate) + pencil(e) % stiffness
+       end do
+       ! each condition by its derivatives of the highest order it
+       ! reads, and a row for each coordinate a face condition prescribes
+       allocate(g(0, n))
+       do i = 1, size(constraint, 1)
+          bound = epsilon(1.0_dp) * maxval(abs(constraint(i, :, :)))
+          do a = 2, 0, -1
+             if (any(abs(constraint(i, :, a)) > bound)) exit
+          end do
+          if (a < 0) cycle
+          g = reshape([transpose(g), constraint(i, :, a)], [size(g, 1) + 1, n], order=[2, 1])
+       end do
+       do j = 1, n
+          if (.not. prescribed(j)) cycle
+          g = reshape([transpose(g), merge(1.0_dp, 0.0_dp, [(i == j, i = 1, n)])], [size(g, 1) + 1, n], order=[2, 1])
+       end do
+       free = free_motions(g)
+       w    = mass_orthonormal(mass, free)
+       if (size(w, 2) > 0) then
+          call symmetric_eigensystem(matmul(transpose(w), matmul(stiffness, w)), lambda, u)
+          sample = coordinate_values_at(this, points, solution, dof, k)
+          sample = matmul(free, matmul(transpose(free), sample))
+          y  = matmul(transpose(u), matmul(transpose(w), matmul(mass, sample(:, 1))))
+          ya = matmul(transpose(u), matmul(transpose(w), matmul(mass, sample(:, 2))))
+          share = instant_share(points, k)
+          do j = 1, size(lambda)
+             if (lambda(j) < lowest**2) cycle
+             accelerations = accelerations + share * ya(j)**2
+             velocities    = velocities + share * y(j)**2
+          end do
+       end if
+       deallocate(mass, stiffness, g)
+    end do
+    frequency = lowest
+    if (velocities > 0.0_dp) frequency = max(lowest, sqrt(accelerations / velocities))
+
+  end function projected_vibration_frequency
+
+  ! the share of the interval at instant k, the trapezoidal weight
+  pure real(dp) function instant_share(points, k)
+    type(discrete_manifold), intent(in) :: points
+    integer                , intent(in) :: k
+    integer :: n
+    n = points % num_instants()
+    instant_share = (points % instant(min(k + 1, n)) - points % instant(max(k - 1, 1))) / 2.0_dp
+  end function instant_share
+
+  ! the solution's tuples at every instant and cell, zero stages, and
+  ! the rows along space, from which element_pencils forms the blocks
+  subroutine pencil_states(this, solution, points, coarse, stages, rows_along)
+    class(discrete_lagrangian), intent(in)  :: this
+    type(discrete_field)      , intent(in)  :: solution
+    type(discrete_manifold)   , intent(in)  :: points
+    real(dp), allocatable     , intent(out) :: coarse(:,:,:), stages(:,:,:,:)
+    type(stencil), allocatable, intent(out) :: rows_along(:,:)
+    integer :: stride, ncells, ninst, k, c, b, most
+    if (.not. this % with_chain .or. this % schemes % num_blocks() /= points % num_instants()) then
+       error stop 'operation_lagrangian: the energy norm of a law projected on the cells is formed block by block, &
+            &for a chain of one block per instant'
+    end if
+    stride = this % rule % num_components()
+    ncells = points % num_cells()
+    ninst  = points % num_instants()
+    allocate(coarse(stride, ncells, ninst))
+    do k = 1, ninst
+       do c = 1, ncells
+          coarse(:, c, k) = solution % jet(1:stride, points % point_of(k, c), 1)
+       end do
+    end do
+    most = 1
+    do b = 1, this % schemes % num_blocks()
+       most = max(most, this % schemes % scheme(b) % num_stages())
+    end do
+    allocate(stages(stride, ncells, most, ninst), source=0.0_dp)
+    rows_along = this % space_rows()
+  end subroutine pencil_states
+
+  ! the components of order o of the coordinates dof(:, j) in the
+  ! tuples x(:, cell) of an instant; a coordinate of time alone at the
+  ! first cell
+  function coordinate_values(this, dof, o, x) result(v)
+    class(discrete_lagrangian), intent(in) :: this
+    integer                   , intent(in) :: dof(:,:), o
+    real(dp)                  , intent(in) :: x(:,:)
+    real(dp), allocatable :: v(:)
+    integer :: j
+    allocate(v(size(dof, 2)))
+    do j = 1, size(dof, 2)
+       v(j) = x(this % coefficient_component(dof(2, j), dof(3, j), o) + 1, max(dof(1, j), 1))
+    end do
+  end function coordinate_values
+
+  ! the rates and accelerations of the coordinates at instant k of the
+  ! solution, in the columns 1 and 2
+  function coordinate_values_at(this, points, solution, dof, k) result(v)
+    class(discrete_lagrangian), intent(in) :: this
+    type(discrete_manifold)   , intent(in) :: points
+    type(discrete_field)      , intent(in) :: solution
+    integer                   , intent(in) :: dof(:,:), k
+    real(dp), allocatable :: v(:,:)
+    real(dp), allocatable :: x(:,:)
+    integer :: c, o
+    allocate(x(this % rule % num_components(), points % num_cells()))
+    do c = 1, points % num_cells()
+       x(:, c) = solution % jet(1:size(x, 1), points % point_of(k, c), 1)
+    end do
+    allocate(v(size(dof, 2), 2))
+    do o = 1, 2
+       v(:, o) = coordinate_values(this, dof, o, x)
+    end do
+  end function coordinate_values_at
+
+  !===================================================================!
+  ! THE PENCILS OF THE ELEMENTS of a law projected on the cells, at
+  ! instant k.
+  ! The block whose own instant is k is formed at the solution's
+  ! tuples, and each element at that instant's moment gives the
+  ! matrices of its instance (projected_instance) in the coordinates'
+  ! components of time order two, the mass, and zero, the stiffness.
+  ! A coordinate is a coefficient of a node of an unknown of degree two
+  ! in time, dof(:, j) = (cell, field, coefficient).
+  ! An unknown of time alone is one coordinate, its cell zero, whatever
+  ! node stores a copy.
+  ! The row of a node's coefficient is its law tested against the
+  ! coefficient's basis function divided by its moment mu about the
+  ! node.
+  ! Times mu, recovered as weight * basis / test at a site, the rows
+  ! are the Galerkin equations, whose mass is symmetric.
+  ! Where the laws are written with the opposite sign, the mass and
+  ! stiffness are negated.
+  ! constraint(i, j, a) is the derivative of condition i, the law of an
+  ! unknown of degree zero, in the component of order a of coordinate
+  ! j.
+  ! prescribed(j) is whether a condition on a face prescribes the row
+  ! of coordinate j, as a clamp does.
+  ! Invalid input: a mass that is indefinite or zero.
+  !===================================================================!
+
+  subroutine element_pencils(this, points, coarse, stages, rows_along, k, pencil, dof, constraint, prescribed)
+
+    class(discrete_lagrangian)       , intent(in)  :: this
+    type(discrete_manifold)          , intent(in)  :: points
+    real(dp)                         , intent(in)  :: coarse(:,:,:), stages(:,:,:,:)
+    type(stencil)                    , intent(in)  :: rows_along(:,:)
+    integer                          , intent(in)  :: k
+    type(element_pencil), allocatable, intent(out) :: pencil(:)
+    integer , allocatable            , intent(out) :: dof(:,:)
+    real(dp), allocatable            , intent(out) :: constraint(:,:,:)
+    logical , allocatable            , intent(out) :: prescribed(:)
+
+    type(chain_block) :: blk
+    integer , allocatable :: node_field(:), node_coefficient(:), node_order(:), site_field(:), site_order(:)
+    integer , allocatable :: row(:), column(:), condition(:,:), row_dof(:), row_condition(:), column_dof(:)
+    integer , allocatable :: local(:), entry_owner(:), entry_row(:), entry_column(:), entry_order(:), place(:)
+    real(dp), allocatable :: matrix(:,:), nu(:), scale(:), entry_value(:), mass(:,:), d(:), v(:,:)
+    logical , allocatable :: reading(:), coordinate(:), conditional(:)
+    integer :: stride, ncells, cells, nphys, nk, width, first, last, depth, m, e, n, f, kk, a, c, cc, o, comp
+    integer :: p, i, j, l, q, nodes
+    real(dp) :: bound
+
+    stride = this % rule % num_components()
+    ncells = points % num_cells()
+    cells  = this % elements % num_cells()
+    nk     = this % elements % num_coefficients()
+    nphys  = this % manifold % num_unknowns - this % projection_unknowns
+    allocate(coordinate(this % manifold % num_unknowns), conditional(this % manifold % num_unknowns), &
+         & source=.false.)
+    do f = 1, nphys
+       coordinate(f)  = this % rule % degree_of_field(f) == 2
+       conditional(f) = this % rule % degree_of_field(f) == 0
+    end do
+    if (.not. any(coordinate)) then
+       error stop 'operation_lagrangian: the energy norm is of a law with coordinates, unknowns of degree two in time'
+    end if
+
+    ! the field, coefficient and order along time of each component of
+    ! a node's tuple, and the field and order along time of each
+    ! component of a site's tuple, as formed_components forms them
+    allocate(node_field(0:stride - 1), node_coefficient(0:stride - 1), node_order(0:stride - 1), source=-1)
+    do f = 1, nphys
+       if (.not. (coordinate(f) .or. conditional(f))) cycle
+       do kk = 0, nk - 1
+          if (this % manifold % of_time_alone(f) .and. kk > 0) cycle
+          do a = 0, this % rule % degree_of_field(f)
+             comp = this % coefficient_component(f, kk, a)
+             node_field(comp)       = f
+             node_coefficient(comp) = kk
+             node_order(comp)       = a
+          end do
+       end do
+    end do
+    width = this % flux % num_components()
+    allocate(site_field(width), site_order(width), source=0)
+    do f = 1, this % manifold % num_unknowns
+       do a = 0, this % flux % degree_of_field(f)
+          c = this % flux % offset_of_field(f) + a + 1
+          site_field(c) = f
+          site_order(c) = a
+       end do
+       do cc = FIRST_COORDINATE + 1, this % flux % num_coordinates()
+          do a = 0, this % flux % mixed_degree(f)
+             do o = 1, this % flux % degree_along(cc)
+                c = this % flux % component_at(cc, o, f, a) + 1
+                site_field(c) = f
+                site_order(c) = a
+             end do
+          end do
+       end do
+    end do
+
+    ! the block whose own instant is k, at the solution
+    call this % block_extent(k, first, last, depth)
+    call this % block_rows(this % schemes % scheme(k), first, last, depth, rows_along, origin, coarse, stages, &
+         & .true., blk)
+    m  = blk % instant_moment(size(blk % instant_moment))
+    nu = design_at_points(points % expansion % values(), blk % rows % designs, size(blk % rows % at))
+
+    allocate(dof(3, 0), condition(3, 0), pencil(cells))
+    allocate(entry_owner(0), entry_row(0), entry_column(0), entry_order(0), entry_value(0))
+    associate (pr => blk % rows % projected, el => blk % rows % projected % elements)
+      nodes = size(pr % element_point, 1)
+      do e = 1, cells
+         n = (m - 1) * cells + e
+         if (allocated(local)) deallocate(local)
+         allocate(local(0))
+         do a = 0, 2
+            reading = [(site_field(c) > 0, c = 1, width)]
+            do c = 1, width
+               if (reading(c)) reading(c) = site_order(c) == a .and. coordinate(site_field(c))
+            end do
+            call blk % rows % projected_instance(blk % q, nu, n, reading, matrix, row, column)
+            ! the rows: each node's coefficient, its scale mu, and its
+            ! coordinate or condition
+            if (a == 0) then
+               allocate(row_dof(size(row)), row_condition(size(row)), source=0)
+               allocate(scale(size(row)), source=1.0_dp)
+               do i = 1, size(row)
+                  p    = count(blk % rows % at < row(i))
+                  comp = row(i) - blk % rows % at(p) - 1
+                  f    = node_field(comp)
+                  if (f <= 0) cycle
+                  kk = node_coefficient(comp)
+                  c  = merge(0, p - (m - 1) * ncells, this % manifold % of_time_alone(f))
+                  if (c > 0) then
+                     do l = 1, nodes
+                        if (pr % element_point(l, n) == p) exit
+                     end do
+                     q = maxloc(abs(el % test(0, kk, l, :, pr % element_cell(n))), dim=1)
+                     scale(i) = el % weight(q, pr % element_cell(n)) * el % basis(0, kk, l, q, pr % element_cell(n)) &
+                          & / el % test(0, kk, l, q, pr % element_cell(n))
+                  end if
+                  if (coordinate(f)) then
+                     row_dof(i) = numbered(dof, [c, f, kk])
+                     local = [local, row_dof(i)]
+                  else
+                     row_condition(i) = numbered(condition, [c, f, kk])
+                  end if
+               end do
+            end if
+            allocate(column_dof(size(column)), source=0)
+            do j = 1, size(column)
+               p    = count(blk % rows % at < column(j))
+               comp = column(j) - blk % rows % at(p) - 1
+               f    = node_field(comp)
+               if (f <= 0) cycle
+               if (.not. coordinate(f) .or. node_order(comp) /= a) cycle
+               c = merge(0, p - (m - 1) * ncells, this % manifold % of_time_alone(f))
+               column_dof(j) = numbered(dof, [c, f, node_coefficient(comp)])
+               local = [local, column_dof(j)]
+            end do
+            ! the entries, each row times its scale: of the element's
+            ! mass and stiffness, owner -e, or of a condition, owner its
+            ! number
+            do i = 1, size(row)
+               do j = 1, size(column)
+                  if (column_dof(j) == 0 .or. matrix(i, j) == 0.0_dp) cycle
+                  if (row_dof(i) > 0 .and. a /= 1) then
+                     entry_owner = [entry_owner, -e]
+                     entry_row   = [entry_row, row_dof(i)]
+                  else if (row_condition(i) > 0) then
+                     entry_owner = [entry_owner, row_condition(i)]
+                     entry_row   = [entry_row, 0]
+                  else
+                     cycle
+                  end if
+                  entry_column = [entry_column, column_dof(j)]
+                  entry_order  = [entry_order, a]
+                  entry_value  = [entry_value, scale(i) * matrix(i, j)]
+               end do
+            end do
+            deallocate(column_dof)
+         end do
+         deallocate(row_dof, row_condition, scale)
+         pencil(e) % coordinate = unique_numbers(local)
+      end do
+
+      ! the coordinates a condition on a face prescribes
+      allocate(prescribed(size(dof, 2)), source=.false.)
+      if (allocated(blk % rows % prescribed_row)) then
+         do j = 1, size(dof, 2)
+            if (dof(1, j) == 0) cycle
+            p = (m - 1) * ncells + dof(1, j)
+            prescribed(j) = blk % rows % prescribed_row(blk % rows % at(p) + pr % coefficient_row(dof(3, j), dof(2, j)) + 1)
+         end do
+      end if
+    end associate
+
+    ! the matrices of each element on its coordinates, and the
+    ! conditions' derivatives
+    allocate(place(size(dof, 2)))
+    do e = 1, cells
+       place = 0
+       place(pencil(e) % coordinate) = [(i, i = 1, size(pencil(e) % coordinate))]
+       allocate(pencil(e) % mass(size(pencil(e) % coordinate), size(pencil(e) % coordinate)), &
+            &   pencil(e) % stiffness(size(pencil(e) % coordinate), size(pencil(e) % coordinate)), source=0.0_dp)
+       do l = 1, size(entry_owner)
+          if (entry_owner(l) /= -e) cycle
+          i = place(entry_row(l))
+          j = place(entry_column(l))
+          if (entry_order(l) == 2) pencil(e) % mass(i, j) = pencil(e) % mass(i, j) + entry_value(l)
+          if (entry_order(l) == 0) pencil(e) % stiffness(i, j) = pencil(e) % stiffness(i, j) + entry_value(l)
+       end do
+       pencil(e) % mass      = (pencil(e) % mass + transpose(pencil(e) % mass)) / 2.0_dp
+       pencil(e) % stiffness = (pencil(e) % stiffness + transpose(pencil(e) % stiffness)) / 2.0_dp
+    end do
+    allocate(constraint(size(condition, 2), size(dof, 2), 0:2), source=0.0_dp)
+    do l = 1, size(entry_owner)
+       if (entry_owner(l) <= 0) cycle
+       constraint(entry_owner(l), entry_column(l), entry_order(l)) = &
+            & constraint(entry_owner(l), entry_column(l), entry_order(l)) + entry_value(l)
+    end do
+
+    ! the sign of the mass summed over the elements
+    allocate(mass(size(dof, 2), size(dof, 2)), source=0.0_dp)
+    do e = 1, cells
+       mass(pencil(e) % coordinate, pencil(e) % coordinate) = mass(pencil(e) % coordinate, pencil(e) % coordinate) &
+            & + pencil(e) % mass
+    end do
+    call symmetric_eigensystem(mass, d, v)
+    bound = size(d) * epsilon(1.0_dp) * maxval(abs(d))
+    if (any(d > bound) .and. any(d < -bound)) then
+       error stop 'operation_lagrangian: the mass of the laws of the coordinates is indefinite, which no kinetic &
+            &energy is'
+    end if
+    if (.not. any(abs(d) > bound)) then
+       error stop 'operation_lagrangian: the mass of the laws of the coordinates is zero, which no kinetic energy is'
+    end if
+    if (.not. any(d > bound)) then
+       do e = 1, cells
+          pencil(e) % mass      = -pencil(e) % mass
+          pencil(e) % stiffness = -pencil(e) % stiffness
+       end do
+    end if
+
+  contains
+
+    ! the number of key among the columns of list, appended where absent
+    integer function numbered(list, key) result(j)
+      integer, allocatable, intent(inout) :: list(:,:)
+      integer             , intent(in)    :: key(3)
+      do j = 1, size(list, 2)
+         if (all(list(:, j) == key)) return
+      end do
+      list = reshape([list, key], [3, size(list, 2) + 1])
+      j    = size(list, 2)
+    end function numbered
+
+  end subroutine element_pencils
+
+  ! the distinct values of a list, in the order first met
+  pure function unique_numbers(list) result(distinct)
+    integer, intent(in) :: list(:)
+    integer, allocatable :: distinct(:)
+    integer :: i
+    allocate(distinct(0))
+    do i = 1, size(list)
+       if (any(distinct == list(i))) cycle
+       distinct = [distinct, list(i)]
+    end do
+  end function unique_numbers
 
   !===================================================================!
   ! THE CHAIN OF THE ENRICHMENT: each family of the residual's chain

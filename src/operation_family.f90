@@ -131,6 +131,9 @@ module operation_family
      procedure :: block_connectivity => family_block_connectivity
      procedure :: stage_connectivity => family_stage_connectivity
      procedure :: edge_coefficient => family_edge_coefficient
+     procedure :: with_enrichment  => family_with_enrichment
+     procedure :: half_steps       => family_half_steps
+     procedure :: with_half_steps  => family_with_half_steps
 
   end type family
 
@@ -1029,6 +1032,22 @@ contains
   ! a tableau of order four, above the tabulated ones.
   !===================================================================!
 
+  ! whether the family has an enrichment: adams of every order, bdf
+  ! below six, a tableau of order below four
+  pure logical function family_with_enrichment(this)
+    class(family), intent(in) :: this
+    select case (this % geometry)
+    case (FAMILY_ADAMS)
+       family_with_enrichment = .true.
+    case (FAMILY_BDF)
+       family_with_enrichment = this % order < 6
+    case (FAMILY_DIRK)
+       family_with_enrichment = tableau_order(this) < 4
+    case default
+       family_with_enrichment = .false.
+    end select
+  end function family_with_enrichment
+
   function family_enrichment(this) result(enriched)
 
     class(family), intent(in) :: this
@@ -1049,6 +1068,68 @@ contains
     end select
 
   end function family_enrichment
+
+  !===================================================================!
+  ! TWO HALF STEPS of a family of one step, as one step of a DIRK
+  ! family of twice the stages. The tableau (a, b) at h/2, twice:
+  !
+  !      | a/2      0  |
+  !      | 1 b^T/2  a/2|,     (b/2, b/2),
+  !
+  ! of the same order p, its error at leading order 2^-p times the
+  ! family's. It is the reference a step's error is estimated against
+  ! where the family has no enrichment (Richardson). bdf(1) and
+  ! adams(1) are the tableau a = b = [1]. Invalid input: a family of
+  ! several steps, adams(2) and Newmark.
+  !===================================================================!
+
+  ! whether two half steps of the family are stated: a tableau, or
+  ! bdf(1) and adams(1)
+  pure logical function family_with_half_steps(this)
+    class(family), intent(in) :: this
+    select case (this % geometry)
+    case (FAMILY_DIRK)
+       family_with_half_steps = .true.
+    case (FAMILY_BDF, FAMILY_ADAMS)
+       family_with_half_steps = this % order == 1
+    case default
+       family_with_half_steps = .false.
+    end select
+  end function family_with_half_steps
+
+  function family_half_steps(this) result(halves)
+
+    class(family), intent(in) :: this
+    type(family) :: halves
+
+    real(dp), allocatable :: a(:,:), b(:), a2(:,:)
+    integer :: s, i
+
+    select case (this % geometry)
+    case (FAMILY_DIRK)
+       a = this % a
+       b = this % b
+    case (FAMILY_BDF, FAMILY_ADAMS)
+       if (this % order /= 1) then
+          error stop 'operation_family: two half steps are stated for a family of one step with a tableau; a &
+               &multistep family, and adams(2), have none'
+       end if
+       a = reshape([1.0_dp], [1, 1])
+       b = [1.0_dp]
+    case default
+       error stop 'operation_family: two half steps are stated for a family of one step with a tableau; Newmark &
+            &has none'
+    end select
+    s = size(b)
+    allocate(a2(2 * s, 2 * s), source=0.0_dp)
+    a2(1:s, 1:s) = a / 2.0_dp
+    do i = 1, s
+       a2(s + i, 1:s) = b / 2.0_dp
+    end do
+    a2(s + 1:2 * s, s + 1:2 * s) = a / 2.0_dp
+    halves = dirk_family(a2, [b / 2.0_dp, b / 2.0_dp])
+
+  end function family_half_steps
 
   ! the chain of the enrichments, block by block, on the same instants
   function chain_enrichment(this) result(enriched)

@@ -37,7 +37,7 @@ module operation_lagrangian
   use view_expression      , only : expression_view
   use operation_manifold   , only : continuous_manifold, discrete_manifold
   use operation_expansion  , only : expansion
-  use operation_family     , only : family, chain, enrichment
+  use operation_family     , only : family, chain, enrichment, dirk
   use operation_weight     , only : scheme_weight
   use operation_coupling   , only : weights_of, weights_terms
   use view_directed_connectivity, only : connectivity_graph
@@ -313,6 +313,8 @@ module operation_lagrangian
 
      procedure :: minimize
      procedure :: disagreement
+     procedure :: local_errors
+     procedure :: transported_errors
      procedure, private :: time_disagreement
      procedure, private :: chain_of_enrichment
      procedure, private :: placement_iteration
@@ -3813,8 +3815,8 @@ contains
     moving = allocated(this % points % expansion % instants) .and. order > 0
     pinned = allocated(this % instant_multiplier)
     if ((moving .or. pinned) .and. allocated(this % elements)) then
-       error stop 'operation_lagrangian: the instants are moved or pinned in a residual whose solution is not &
-            &projected on the cells'
+       error stop 'operation_lagrangian: the instants are moved or pinned in a residual whose solution is &
+            &projected on the cells; the weights of its nodes are not differentiated in the instants'
     end if
     if (allocated(this % elements)) then
        call this % projected_nodes(tuple, stages, solution, stage_node, density, step_term)
@@ -8626,6 +8628,421 @@ contains
     end if
 
   end function disagreement
+
+  !===================================================================!
+  ! THE LOCAL ERRORS of the steps of a solution.
+  ! l_k is the error of step k at the instant ending it,
+  ! l_k ~ q(t_k) - Q_k, where the motion q starts from the solution's
+  ! instants behind the step.
+  ! It is given for every component of the tuple at every cell.
+  !
+  ! A family of one step is measured against a reference of one step.
+  ! The reference is solved again from Q_(k-1), and
+  ! l_k = s (Q+_k - Q_k).
+  ! The reference is the family's enrichment where that is of one step,
+  ! with s = 1.
+  ! Otherwise it is two half steps of the family (half_steps), with
+  ! s = 2^p / (2^p - 1).
+  ! Otherwise it is dirk(p + 1), with s = 1.
+  ! A reference of several steps would read the instant before Q_(k-1).
+  ! That instant lies off the motion through Q_(k-1) by the local error
+  ! of step k - 1.
+  ! Measured so, bdf(1) against bdf(2) is a third off.
+  !
+  ! A family of several steps is measured by its truncation error in
+  ! residual form,
+  !
+  !    l_k = -J_k^-1 R+_k(Q).
+  !
+  ! R+_k(Q) are the rows of its enrichment at the solution, which read
+  ! the same history.
+  ! J_k is the jacobian of the step's own rows there.
+  ! Solving the enrichment's step instead maps the truncation error by
+  ! the enrichment's jacobian.
+  ! On an oscillator that is a fifth too small for bdf(2) against
+  ! bdf(3).
+  ! Where the enrichment would read history before the first instant,
+  ! dirk(p + 1) is solved from Q_(k-1), with s = 1.
+  ! That estimate contains the error of the history before Q_(k-1).
+  !
+  ! The scale 2^p / (2^p - 1) is right where the error of the two half
+  ! steps is 2^-p times the step's.
+  ! At the first step of a law with a joint's condition it does not.
+  ! On the triple pendulum the first step, bdf(1), gives half the true
+  ! reaction at every h.
+  ! Its two half steps give the true reaction to 0.04% at 320 steps.
+  ! The estimate there is twice the step's error.
+  !
+  ! The first instant ends no step, so its errors are zero.
+  ! The reference solves start from the solution and print nothing.
+  ! Invalid input: a residual without a chain; a chain of other than
+  ! one block per instant; a solution on another manifold, or stored
+  ! over checkpoints; a reference or a step's linear system that is not
+  ! solved; a family of several steps of order four or more at a step
+  ! whose enrichment reads history before the first instant.
+  !===================================================================!
+
+  function local_errors(this, solution, by) result(error)
+
+    class(discrete_lagrangian), intent(in) :: this
+    type(discrete_field)      , intent(in) :: solution
+    type(discrete_minimizer)  , intent(in), optional :: by
+    real(dp), allocatable :: error(:,:,:)
+
+    type(discrete_lagrangian) :: base, plus
+    type(chain_block) :: blk, reference_blk
+    type(residual_operator) :: lin
+    type(stored_field), allocatable :: inputs(:)
+    class(minimizer), allocatable :: M_b
+    type(stencil), allocatable :: rows_along(:,:)
+    real(dp), allocatable :: coarse(:,:,:,:), tuple(:,:,:,:), stages(:,:,:,:,:), scale(:), y(:), rhs(:), x(:)
+    logical , allocatable :: residual_form(:)
+    integer :: stride, ncells, ninst, ncol, nb, b, first, last, depth, k, c, most, level, m, mr
+    logical :: met
+
+    if (.not. this % with_chain) then
+       error stop 'operation_lagrangian: the local errors of the steps are those of a chain of families; the &
+            &residual has none'
+    end if
+    if (allocated(solution % objective_value)) then
+       error stop 'operation_lagrangian: the local errors are formed from the solution at every instant, which a &
+            &solution stored over checkpoints does not retain'
+    end if
+    stride = this % rule % num_components()
+    select type (this)
+    type is (discrete_lagrangian)
+       base = this
+    end select
+    select type (on => solution % on)
+    type is (discrete_manifold)
+       if (.not. on % identity % matches(this % points % identity)) then
+          error stop 'operation_lagrangian: the solution is a field on another manifold than the residual''s'
+       end if
+       base % points = on
+    class default
+       error stop 'operation_lagrangian: the local errors are formed from a solution at the points of a manifold'
+    end select
+    ncells = base % points % num_cells()
+    ninst  = base % points % num_instants()
+    ncol   = base % points % expansion % num_columns()
+    nb     = base % schemes % num_blocks()
+    if (nb /= ninst) then
+       error stop 'operation_lagrangian: the local errors are formed step by step, for a chain of one block per &
+            &instant'
+    end if
+
+    call step_references(base, plus, scale, residual_form)
+
+    ! the solution's tuple at every instant and cell
+    allocate(coarse(stride, ncells, ninst, 0:ncol - 1))
+    do k = 1, ninst
+       do c = 1, ncells
+          coarse(:, c, k, :) = solution % jet(1:stride, base % points % point_of(k, c), 1:ncol)
+       end do
+    end do
+    rows_along = plus % space_rows()
+    most = 1
+    do b = 1, nb
+       most = max(most, plus % schemes % scheme(b) % num_stages(), base % schemes % scheme(b) % num_stages())
+    end do
+    allocate(stages(stride, ncells, most, ninst, 0:ncol - 1), source=0.0_dp)
+    allocate(error(stride, ncells, ninst), source=0.0_dp)
+    tuple = coarse
+
+    level = verbosity
+    call set_verbosity(0)
+    do b = 1, nb
+       call base % block_extent(b, first, last, depth)
+       if (depth == 0) cycle
+       if (residual_form(b)) then
+          ! the enrichment's rows at the solution, at the step's own
+          ! instant, solved with the jacobian of the step's own rows
+          call base % block_rows(base % schemes % scheme(b), first, last, depth, rows_along, origin, &
+               & coarse(:, :, :, 0), stages(:, :, :, :, 0), .true., blk)
+          call base % block_inputs(blk)
+          call plus % block_extent(b, first, last, depth)
+          call plus % block_rows(plus % schemes % scheme(b), first, last, depth, rows_along, origin, &
+               & coarse(:, :, :, 0), stages(:, :, :, :, 0), .true., reference_blk)
+          call rows_evaluated(reference_blk % rows, plus % rows_design(reference_blk % rows), reference_blk % q, y, &
+               & inputs)
+          allocate(rhs(size(blk % q)), source=0.0_dp)
+          m  = blk % instant_moment(size(blk % instant_moment))
+          mr = reference_blk % instant_moment(size(reference_blk % instant_moment))
+          do c = 1, ncells
+             rhs(blk % tuple_at(m, c) + 1:blk % tuple_at(m, c) + stride) = &
+                  & -y(reference_blk % tuple_at(mr, c) + 1:reference_blk % tuple_at(mr, c) + stride)
+          end do
+          lin = blk % rows % linearize(blk % rows % unknown_graph(), blk % rows % bind(blk % inputs), rhs, .false., &
+               & blk % rows % version())
+          call minimizer_of(lin, base % facts(), M_b, by)
+          allocate(x(size(rhs)), source=0.0_dp)
+          call system_solution(M_b, lin, base % rows_design(blk % rows), x, met)
+          if (.not. met) then
+             call set_verbosity(level)
+             error stop 'operation_lagrangian: the linear system of a step''s truncation error is not solved'
+          end if
+          do c = 1, ncells
+             error(:, c, last) = x(blk % tuple_at(m, c) + 1:blk % tuple_at(m, c) + stride)
+          end do
+          deallocate(rhs, x)
+          cycle
+       end if
+       ! the reference solved from the solution's history, its instant
+       ! returned to the solution's before the next step
+       call plus % block_extent(b, first, last, depth)
+       call plus % solve_block(plus % schemes % scheme(b), first, last, depth, rows_along, origin, tuple, stages, &
+            & expand=.false., converged=met, by=by)
+       if (.not. met) then
+          call set_verbosity(level)
+          error stop 'operation_lagrangian: the reference a step''s error is estimated against does not converge &
+               &from the solution'
+       end if
+       error(:, :, last) = scale(b) * (tuple(:, :, last, 0) - coarse(:, :, last, 0))
+       tuple(:, :, first + depth:last, :) = coarse(:, :, first + depth:last, :)
+    end do
+    call set_verbosity(level)
+
+  end function local_errors
+
+  !===================================================================!
+  ! THE REFERENCE OF EACH STEP of a chain of one block per instant, as
+  ! local_errors states it.
+  ! plus is the residual with each step's reference in its block.
+  ! scale is the factor of each step's difference.
+  ! residual_form is whether the step is measured in residual form: a
+  ! family of several steps against its enrichment.
+  !===================================================================!
+
+  subroutine step_references(base, plus, scale, residual_form)
+
+    type(discrete_lagrangian), intent(in)  :: base
+    type(discrete_lagrangian), intent(out) :: plus
+    real(dp), allocatable    , intent(out) :: scale(:)
+    logical , allocatable    , intent(out) :: residual_form(:)
+
+    type(family) :: own
+    integer :: nb, b, p, first, last, depth, degree
+
+    nb     = base % schemes % num_blocks()
+    degree = top_degree(base % rule, base % manifold % num_unknowns)
+    plus   = base
+    allocate(scale(nb), source=1.0_dp)
+    allocate(residual_form(nb), source=.false.)
+    do b = 1, nb
+       own = base % schemes % scheme(b)
+       p   = own % accuracy()
+       if (own % with_enrichment()) then
+          plus % schemes % scheme(b) = enrichment(own)
+          call plus % block_extent(b, first, last, depth)
+          if (first >= 1 .and. own % history_depth(degree) > 1) then
+             residual_form(b) = .true.
+             cycle
+          end if
+          if (first >= 1 .and. plus % schemes % scheme(b) % history_depth(degree) == 1) cycle
+       end if
+       if (own % history_depth(degree) == 1 .and. own % with_half_steps()) then
+          plus % schemes % scheme(b) = own % half_steps()
+          scale(b) = 2.0_dp**p / (2.0_dp**p - 1.0_dp)
+       else
+          if (p + 1 > 4) then
+             error stop 'operation_lagrangian: a step of a family of several steps whose enrichment reads history &
+                  &before the first instant is estimated against dirk(p + 1), tabulated to order four'
+          end if
+          plus % schemes % scheme(b) = dirk(p + 1)
+       end if
+    end do
+
+  end subroutine step_references
+
+  !===================================================================!
+  ! THE TRANSPORT OF THE LOCAL ERRORS: the error of the solution at
+  ! every instant, to first order,
+  !
+  !    e_k = Phi_k e_hist + l_k,    e_1 = 0.
+  !
+  ! Phi_k is the tangent of the reference that measured l_k
+  ! (local_errors).
+  ! Its rows are linearized at the solution, through the reference's
+  ! stages solved again from the solution.
+  ! They are solved with the error of the instant behind in that
+  ! instant's fixed rows, and zero elsewhere.
+  ! The tangent is the reference's, not the step's.
+  ! The exact motion meets the reference's map from q(t_(k-1)) to one
+  ! order higher.
+  ! So, to first order and whatever history computed Q_k,
+  !
+  !    q(t_k) - Q_k = (Ref(Q_(k-1)) - Q_k) + Ref'(Q_(k-1)) e_(k-1).
+  !
+  ! e grows where the motion makes perturbations grow, and decays where
+  ! it damps them.
+  !
+  ! A step of a family of several steps is transported by its
+  ! enrichment's rows.
+  ! The exact motion meets them to one order higher, so to first order
+  !
+  !    J+ e_k + H+ e_hist = -R+_k(Q).
+  !
+  ! These are the enrichment's rows linearized at the solution.
+  ! The history's errors are in their fixed rows, and -R+_k(Q) in the
+  ! rows of the step's instant.
+  ! No local error is added, since R+_k(Q) is the source.
+  ! On an oscillator this form follows the error after the start of a
+  ! chain, where the history's error is not smooth.
+  ! The step's own jacobian with the truncation error in residual form
+  ! left that error a third too large.
+  ! Where the local errors are not valid, their transport is not either
+  ! (local_errors).
+  !
+  ! Invalid input: as local_errors, and local errors of another shape.
+  !===================================================================!
+
+  function transported_errors(this, solution, local, by) result(global)
+
+    class(discrete_lagrangian), intent(in) :: this
+    type(discrete_field)      , intent(in) :: solution
+    real(dp)                  , intent(in) :: local(:,:,:)
+    type(discrete_minimizer)  , intent(in), optional :: by
+    real(dp), allocatable :: global(:,:,:)
+
+    type(discrete_lagrangian) :: base, plus
+    type(family) :: own
+    type(chain_block) :: blk
+    type(residual_operator) :: lin
+    type(stored_field), allocatable :: inputs(:)
+    class(minimizer), allocatable :: M_b
+    type(stencil), allocatable :: rows_along(:,:)
+    real(dp), allocatable :: coarse(:,:,:,:), tuple(:,:,:,:), stages(:,:,:,:,:), rhs(:), x(:), y(:), scale(:)
+    logical , allocatable :: residual_form(:)
+    integer :: stride, nf, ncells, ninst, ncol, nb, b, first, last, depth, k, c, i, m, most, level, nd
+    logical :: met
+
+    stride = this % rule % num_components()
+    nf     = this % manifold % num_unknowns
+    select type (this)
+    type is (discrete_lagrangian)
+       base = this
+    end select
+    select type (on => solution % on)
+    type is (discrete_manifold)
+       if (.not. on % identity % matches(this % points % identity)) then
+          error stop 'operation_lagrangian: the solution is a field on another manifold than the residual''s'
+       end if
+       base % points = on
+    class default
+       error stop 'operation_lagrangian: the errors are transported along a solution at the points of a manifold'
+    end select
+    ncells = base % points % num_cells()
+    ninst  = base % points % num_instants()
+    ncol   = base % points % expansion % num_columns()
+    nb     = base % schemes % num_blocks()
+    if (nb /= ninst) then
+       error stop 'operation_lagrangian: the errors are transported step by step, along a chain of one block per &
+            &instant'
+    end if
+    if (size(local, 1) /= stride .or. size(local, 2) /= ncells .or. size(local, 3) /= ninst) then
+       error stop 'operation_lagrangian: the local errors are one tuple per cell and instant of the solution'
+    end if
+    nd = top_degree(base % rule, nf) + 1
+    call step_references(base, plus, scale, residual_form)
+
+    allocate(coarse(stride, ncells, ninst, 0:ncol - 1))
+    do k = 1, ninst
+       do c = 1, ncells
+          coarse(:, c, k, :) = solution % jet(1:stride, base % points % point_of(k, c), 1:ncol)
+       end do
+    end do
+    rows_along = base % space_rows()
+    most = 1
+    do b = 1, nb
+       most = max(most, base % schemes % scheme(b) % num_stages(), plus % schemes % scheme(b) % num_stages())
+    end do
+    allocate(stages(stride, ncells, most, ninst, 0:ncol - 1), source=0.0_dp)
+    allocate(global(stride, ncells, ninst), source=0.0_dp)
+    tuple = coarse
+
+    level = verbosity
+    call set_verbosity(0)
+    do b = 1, nb
+       call base % block_extent(b, first, last, depth)
+       if (depth == 0) cycle
+       own = base % schemes % scheme(b)
+       if (residual_form(b)) then
+          ! the enrichment's rows at the solution, linearized there: the
+          ! history's errors in their fixed rows, -R+(Q) at the instant
+          call plus % block_extent(b, first, last, depth)
+          call plus % block_rows(plus % schemes % scheme(b), first, last, depth, rows_along, origin, &
+               & coarse(:, :, :, 0), stages(:, :, :, :, 0), .true., blk)
+          call plus % block_inputs(blk)
+          call rows_evaluated(blk % rows, plus % rows_design(blk % rows), blk % q, y, inputs)
+          allocate(rhs(size(blk % q)), source=0.0_dp)
+          do i = 1, depth
+             m = blk % instant_moment(i)
+             do c = 1, ncells
+                rhs(blk % tuple_at(m, c) + 1:blk % tuple_at(m, c) + stride) = global(:, c, first + i - 1)
+             end do
+          end do
+          m = blk % instant_moment(size(blk % instant_moment))
+          do c = 1, ncells
+             rhs(blk % tuple_at(m, c) + 1:blk % tuple_at(m, c) + stride) = &
+                  & -y(blk % tuple_at(m, c) + 1:blk % tuple_at(m, c) + stride)
+          end do
+          lin = blk % rows % linearize(blk % rows % unknown_graph(), blk % rows % bind(blk % inputs), rhs, .false., &
+               & blk % rows % version())
+          call minimizer_of(lin, plus % facts(), M_b, by)
+          allocate(x(size(rhs)), source=0.0_dp)
+          call system_solution(M_b, lin, plus % rows_design(blk % rows), x, met)
+          if (.not. met) then
+             call set_verbosity(level)
+             error stop 'operation_lagrangian: the tangent of a step''s enrichment is not solved'
+          end if
+          do c = 1, ncells
+             global(:, c, last) = x(blk % tuple_at(m, c) + 1:blk % tuple_at(m, c) + stride)
+          end do
+          deallocate(rhs, x)
+          cycle
+       end if
+       ! the reference's stages at the solution, and its rows there
+       own = plus % schemes % scheme(b)
+       call plus % block_extent(b, first, last, depth)
+       if (marches_by_stages(own, nd)) then
+          call plus % solve_block(own, first, last, depth, rows_along, origin, tuple, stages, expand=.false., &
+               & converged=met, by=by)
+          if (.not. met) then
+             call set_verbosity(level)
+             error stop 'operation_lagrangian: a step''s reference solved again from the solution''s history does not &
+                  &converge'
+          end if
+          tuple(:, :, first + depth:last, :) = coarse(:, :, first + depth:last, :)
+       end if
+       call plus % block_rows(own, first, last, depth, rows_along, origin, coarse(:, :, :, 0), stages(:, :, :, :, 0), &
+            & .true., blk)
+       call plus % block_inputs(blk)
+       ! the errors of the history in its fixed rows
+       allocate(rhs(size(blk % q)), source=0.0_dp)
+       do i = 1, depth
+          m = blk % instant_moment(i)
+          do c = 1, ncells
+             rhs(blk % tuple_at(m, c) + 1:blk % tuple_at(m, c) + stride) = global(:, c, first + i - 1)
+          end do
+       end do
+       lin = blk % rows % linearize(blk % rows % unknown_graph(), blk % rows % bind(blk % inputs), rhs, .false., &
+            & blk % rows % version())
+       call minimizer_of(lin, plus % facts(), M_b, by)
+       allocate(x(size(rhs)), source=0.0_dp)
+       call system_solution(M_b, lin, plus % rows_design(blk % rows), x, met)
+       if (.not. met) then
+          call set_verbosity(level)
+          error stop 'operation_lagrangian: the tangent of a step''s reference is not solved'
+       end if
+       m = blk % instant_moment(size(blk % instant_moment))
+       do c = 1, ncells
+          global(:, c, last) = x(blk % tuple_at(m, c) + 1:blk % tuple_at(m, c) + stride) + local(:, c, last)
+       end do
+       deallocate(rhs, x)
+    end do
+    call set_verbosity(level)
+
+  end function transported_errors
 
   !===================================================================!
   ! THE CHAIN OF THE ENRICHMENT: each family of the residual's chain

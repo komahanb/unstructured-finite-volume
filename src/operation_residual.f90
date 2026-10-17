@@ -392,7 +392,7 @@ module operation_residual
      procedure :: expansion_columns    => march_columns
      procedure :: expansion_right_side => march_expansion_side
      procedure :: march_solution       => march_solved
-     procedure :: paired_equations     => equations_paired
+     procedure :: equation_pairing     => pairing_of_equations
      procedure :: adjoint_begun        => march_adjoint_begun
      procedure :: adjoint_right_side   => march_adjoint_side
      procedure :: adjoint_received     => march_adjoint_received
@@ -973,6 +973,14 @@ contains
           call iterate(1) % minimize(estimate, solution, checkpoint, snapshots, by=by)
           return
        end if
+    end if
+    ! a stack stated for the blocks' rows is read by the march of a
+    ! fixed design alone; the rounds of a placement and the design's
+    ! iteration solve by the default the rows choose, and are refused
+    ! one rather than given another
+    if (present(by) .and. (allocated(this % placement) .or. free_design(this))) then
+       error stop 'operation_residual: a stack stated for the blocks'' rows (by) is read by the march of a fixed &
+            &design alone; the rounds of a placement and the iteration of a free design solve by the default stack'
     end if
     if (allocated(this % placement)) then
        call this % placement_iteration(estimate, solution, checkpoint, snapshots)
@@ -2998,6 +3006,13 @@ contains
        call halves % zero_at_design(estimate, solution, checkpoint, snapshots, kappa)
        return
     end if
+    ! the sweeps by a schedule and the wavefront solve each block's
+    ! rows by the default stack, and a stack stated is refused there
+    ! rather than replaced
+    if (present(by) .and. (scheduled .or. wavefront)) then
+       error stop 'operation_residual: a stack stated for the blocks'' rows (by) is read by the march without a &
+            &checkpoint or snapshot schedule and without the wavefront across the images'
+    end if
     if (scheduled) then
        call this % scheduled_march(estimate, segment, shots, solution, kappa)
        return
@@ -3009,7 +3024,7 @@ contains
     ! wavefront over the blocks and the orders
     call system_clock(tick, rate)
     graph = minimization(this, by)
-    if (verbosity >= 2) call graph % view()
+    if (verbosity >= 2) call graph % view(this)
     if (wavefront) then
        call this % wavefront_march(estimate, solution, state)
     else
@@ -3217,7 +3232,12 @@ contains
     facts % with_space = this % manifold % with_space
     facts % whole_line = this % whole_line()
     facts % continued  = this % continued
+    ! the rows of a block without space, and those of unknowns of time
+    ! alone, state tying rows (block_rows)
+    facts % tying      = .not. this % manifold % with_space .or. &
+         & any(this % manifold % of_time_alone(1:this % manifold % num_unknowns))
     facts % cells      = this % points % num_cells()
+    facts % width      = this % rule % num_components()
   end function blocks_facts
 
   ! every block's history within the manifold
@@ -3457,10 +3477,11 @@ contains
 
   end subroutine march_solved
 
-  logical function equations_paired(this)
+  ! whether the equations are paired with their multiplier
+  logical function pairing_of_equations(this)
     class(discrete_residual), intent(in) :: this
-    equations_paired = this % with_adjoint
-  end function equations_paired
+    pairing_of_equations = this % with_adjoint
+  end function pairing_of_equations
 
   ! the adjoint's data from the solution: the Lagrangian's differential
   ! at the nodes, and the multipliers of every equality, zero

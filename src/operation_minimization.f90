@@ -78,16 +78,18 @@ module operation_minimization
 
   !===================================================================!
   ! WHAT A BLOCK'S DEFAULT STACK IS CHOSEN FROM: whether the manifold
-  ! has space, whether a block is the whole line at one moment, the
-  ! cells, whether a march continues from the instant before each
-  ! block.
+  ! has space, whether a block is the whole line at one moment, whether
+  ! a march continues from the instant before each block, whether the
+  ! rows state tying rows, the cells, and the components of a point.
   !===================================================================!
 
   type :: block_facts
      logical :: with_space = .false.
      logical :: whole_line = .false.
      logical :: continued  = .false.
+     logical :: tying      = .false.
      integer :: cells      = 1
+     integer :: width      = 1
   end type block_facts
 
   !===================================================================!
@@ -124,7 +126,7 @@ module operation_minimization
      ! adjoint: its data from the solution, the right side of order o
      ! along d at a block, the multiplier of that order received, the
      ! multipliers of the block placed, the solution with them
-     procedure(pairing_stated)    , deferred :: paired_equations
+     procedure(pairing_stated)    , deferred :: equation_pairing
      procedure(adjoint_of_solution), deferred :: adjoint_begun
      procedure(adjoint_side)      , deferred :: adjoint_right_side
      procedure(multiplier_received), deferred :: adjoint_received
@@ -356,7 +358,7 @@ contains
     if (present(converged)) converged = .true.
     call data % begun(estimate, march)
     columns = data % expansion_columns()
-    parts   = distributed(data)
+    parts   = rows_in_parts(data)
 
     order = this % march % visits()
     do i = 1, size(order)
@@ -390,7 +392,7 @@ contains
     end do
     call data % march_solution(march, solution)
 
-    if (data % paired_equations()) then
+    if (data % equation_pairing()) then
        call this % reversed(data, solution, march)
        call data % adjoint_solution(march, solution)
     end if
@@ -422,7 +424,7 @@ contains
     real(dp) :: tolerance
     integer :: i, b, j
 
-    parts   = distributed(data)
+    parts   = rows_in_parts(data)
     columns = data % expansion_columns()
     allocate(orders(3, 1 + size(columns, 2)))
     orders(:, 1)  = [1, 0, 0]
@@ -470,7 +472,7 @@ contains
     class(minimizer), allocatable :: stack
 
     call stack_of(this, blk % rows, data % facts(), stack)
-    if (distributed(data)) then
+    if (rows_in_parts(data)) then
        call system_solution(stack, blk % rows, blk % design, blk % q, converged, &
             & owners=data % unknown_owners(size(blk % q), blk % rows % degrees, size(blk % rows % at)))
     else
@@ -483,12 +485,12 @@ contains
   ! whether the rows of a block are cut into parts over the images:
   ! several images sharing the cells of a region a block does not read
   ! as one line
-  logical function distributed(data)
+  logical function rows_in_parts(data)
     class(minimand), intent(in) :: data
     type(block_facts) :: facts
     facts = data % facts()
-    distributed = num_images() > 1 .and. facts % with_space .and. .not. facts % whole_line
-  end function distributed
+    rows_in_parts = num_images() > 1 .and. facts % with_space .and. .not. facts % whole_line
+  end function rows_in_parts
 
   !===================================================================!
   ! THE STACK OF A BLOCK'S ROWS: the one stated, paired with the rows,
@@ -563,6 +565,22 @@ contains
     type(block_facts)            , intent(in)  :: facts
     class(minimizer), allocatable, intent(out) :: stack
 
+    type(block_facts) :: own
+
+    own       = facts
+    own % tying = allocated(rows % tying)
+    own % width = rows % degrees
+    call default_stack(own, stack)
+    call paired_with(stack, rows)
+
+  end subroutine default_minimizer
+
+  ! the default stack of rows of the facts given, before its pairing
+  subroutine default_stack(facts, stack)
+
+    type(block_facts)            , intent(in)  :: facts
+    class(minimizer), allocatable, intent(out) :: stack
+
     type(newton)       :: solver
     type(dense_direct) :: direct
     type(gmres)        :: krylov
@@ -570,8 +588,8 @@ contains
     type(elimination)  :: reduced
 
     if (facts % with_space) then
-       sweeps % block_width = rows % degrees
-       if (facts % whole_line) sweeps % block_width = rows % degrees * facts % cells
+       sweeps % block_width = facts % width
+       if (facts % whole_line) sweeps % block_width = facts % width * facts % cells
        sweeps % max_iterations = 4
        krylov % restart        = 60
        krylov % tolerance      = 1.0e-3_dp
@@ -579,8 +597,7 @@ contains
        allocate(solver % inner, source=krylov)
        call require_images()
        if (facts % continued) solver % tolerance = 1.0e-13_dp
-       if (allocated(rows % tying)) then
-          reduced % eliminated = rows % tying
+       if (facts % tying) then
           direct % equilibrated = .true.
           allocate(reduced % inner, source=direct)
           deallocate(solver % inner)
@@ -588,8 +605,7 @@ contains
           solver % tolerance = 1.0e-13_dp
        end if
     else
-       if (allocated(rows % tying)) then
-          reduced % eliminated = rows % tying
+       if (facts % tying) then
           allocate(reduced % inner, source=direct)
           allocate(solver % inner, source=reduced)
        else
@@ -599,7 +615,7 @@ contains
     end if
     allocate(stack, source=solver)
 
-  end subroutine default_minimizer
+  end subroutine default_stack
 
   !===================================================================!
   ! A SYSTEM SOLVED BY ITS STACK, from q: the stack stated on the
@@ -813,10 +829,12 @@ contains
   ! the data it reads, each inner operation under the one it serves.
   !===================================================================!
 
-  subroutine minimization_view(this)
+  subroutine minimization_view(this, data)
 
     class(minimization), intent(in) :: this
+    class(minimand)    , intent(in) :: data
 
+    class(minimizer), allocatable :: stack
     character(len=24) :: count
 
     write(count, '(i0)') this % blocks
@@ -824,8 +842,8 @@ contains
     if (allocated(this % block)) then
        call stack_lines(this % block, 1, 'the rows of block b')
     else
-       print '(a)', '   [the rows of block b]'
-       print '(a)', '   (default) the stack each block''s rows choose (default_minimizer)'
+       call default_stack(data % facts(), stack)
+       call stack_lines(stack, 1, 'the rows of block b, the default stack')
     end if
 
   end subroutine minimization_view

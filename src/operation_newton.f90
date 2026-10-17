@@ -163,6 +163,11 @@ module operation_newton
 
   end type newton
 
+  ! a newton stated by its inner minimizer and its options
+  interface newton
+     module procedure newton_of
+  end interface newton
+
 contains
 
   pure function newton_name(this) result(name)
@@ -524,5 +529,23 @@ contains
     if (allocated(this % inner)) call this % inner % bind_account(account)
 
   end subroutine newton_bind_account
+
+  !===================================================================!
+  ! A NEWTON STATED: over its inner minimizer, to the tolerance, by the
+  ! chord method where chord.
+  !===================================================================!
+
+  function newton_of(inner, tolerance, chord) result(this)
+
+    class(minimizer), intent(in)           :: inner
+    real(dp)        , intent(in), optional :: tolerance
+    logical         , intent(in), optional :: chord
+    type(newton) :: this
+
+    allocate(this % inner, source=inner)
+    if (present(tolerance)) this % tolerance = tolerance
+    if (present(chord))     this % chord     = chord
+
+  end function newton_of
 
 end module operation_newton

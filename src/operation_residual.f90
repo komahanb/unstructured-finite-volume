@@ -48,7 +48,7 @@ module operation_residual
   use util_verbosity           , only : verbosity, set_verbosity
   use transform_partitioner    , only : partitioner, PARTITION_BREADTH_FIRST
   use operation_minimizer, only : minimizer
-  use operation_minimization, only : minimand, march_state, block_facts, minimization, default_minimizer
+  use operation_minimization, only : minimand, march_state, block_facts, minimization, stack_for
   use operation_minimization, only : system_solution, rows_evaluated
   use operation_residual_operator, only : residual_operator, projection, stationarities, chain_block, lower_bounds
   use operation_residual_operator, only : origin, HISTORY_MOMENTS, OWN_MOMENTS, EVERY_MOMENT
@@ -974,16 +974,8 @@ contains
           return
        end if
     end if
-    ! a stack stated for the blocks' rows is read by the march of a
-    ! fixed design alone; the rounds of a placement and the design's
-    ! iteration solve by the default the rows choose, and are refused
-    ! one rather than given another
-    if (present(by) .and. (allocated(this % placement) .or. free_design(this))) then
-       error stop 'operation_residual: a stack stated for the blocks'' rows (by) is read by the march of a fixed &
-            &design alone; the rounds of a placement and the iteration of a free design solve by the default stack'
-    end if
     if (allocated(this % placement)) then
-       call this % placement_iteration(estimate, solution, checkpoint, snapshots)
+       call this % placement_iteration(estimate, solution, checkpoint, snapshots, by=by)
        return
     end if
     if (.not. free_design(this)) then
@@ -1005,7 +997,7 @@ contains
     ! the estimate in an array of its own: a constructor passed straight
     ! as an argument is a temporary the compiler in use mishandles
     estimates(1) = estimate
-    call design_iteration(iterate, estimates, solutions, checkpoint, snapshots)
+    call design_iteration(iterate, estimates, solutions, checkpoint, snapshots, by=by)
     solution = solutions(1)
 
   end subroutine minimize
@@ -1047,7 +1039,8 @@ contains
   ! under which the stages of the steps are not retained.
   !===================================================================!
 
-  recursive subroutine placement_iteration(this, estimate, solution, checkpoint, snapshots)
+  recursive subroutine placement_iteration(this, estimate, solution, checkpoint, snapshots, by)
+    class(minimizer)        , intent(in), optional :: by
 
     class(discrete_residual), intent(in)  :: this
     type(discrete_field)    , intent(in)  :: estimate
@@ -1076,7 +1069,7 @@ contains
     placement = iterate % placement
     deallocate(iterate % placement)
     if (allocated(placement % pool)) then
-       call iterate % pool_iteration(placement, estimate, solution)
+       call iterate % pool_iteration(placement, estimate, solution, by=by)
        return
     end if
     if (placement % work > 0) then
@@ -1101,8 +1094,8 @@ contains
        round  = round + 1
        rounds = rounds + 1
        count  = iterate % points % num_instants()
-       call iterate % minimize(start, trial)
-       eta    = iterate % time_disagreement(trial)
+       call iterate % minimize(start, trial, by=by)
+       eta    = iterate % time_disagreement(trial, by=by)
        signed = sum(eta)
        ! the enrichment solved on the same instants, at the design found
        plus = iterate
@@ -1113,7 +1106,7 @@ contains
        plus % schemes      = iterate % chain_of_enrichment()
        plus % with_adjoint = .false.
        at_points = discrete_field(plus % points, trial % value(:, 1:nf), names)
-       call plus % zero_at_design(at_points, enriched)
+       call plus % zero_at_design(at_points, enriched, by=by)
        objective_field = iterate % objective % at(trial)
        total           = objective_field % value(1, :)
        objective_field = plus % objective % at(enriched)
@@ -1122,7 +1115,7 @@ contains
           nd = size(plus % points % expansion % at)
           slope      = [(total(1 + plus % points % expansion % column(i, 1)), i = 1, nd)]
           slope_plus = [(total_plus(1 + plus % points % expansion % column(i, 1)), i = 1, nd)]
-          call iterate % design_disagreement(trial, slope, slope_plus, goal, uncertainty, shift)
+          call iterate % design_disagreement(trial, slope, slope_plus, goal, uncertainty, shift, by=by)
           if (verbosity >= 1) print '(a, i0, a, *(es12.4))', 'placement round ', rounds, &
                & ': nu* - nu_h estimated ', shift
           scale = norm2(plus % points % expansion % at)
@@ -1306,7 +1299,8 @@ contains
   ! instant, fewer than four instants.
   !===================================================================!
 
-  subroutine pool_iteration(this, placement, estimate, solution)
+  subroutine pool_iteration(this, placement, estimate, solution, by)
+    class(minimizer)        , intent(in), optional :: by
 
     class(discrete_residual), intent(in)  :: this
     type(equidistribution)  , intent(in)  :: placement
@@ -1412,10 +1406,10 @@ contains
           allocate(e(n, size(pool)))
           do g = 1, size(pool)
              eta = base_residual % time_disagreement(base_solution, &
-                  & chain([(base, k = 1, min(depth(g), n)), (pool(g), k = depth(g) + 1, n)], from=[(k, k = 1, n)]))
+                  & chain([(base, k = 1, min(depth(g), n)), (pool(g), k = depth(g) + 1, n)], from=[(k, k = 1, n)]), by=by)
              e(:, g) = e_base - eta
           end do
-          eta = base_residual % time_disagreement(base_solution, iterate % schemes)
+          eta = base_residual % time_disagreement(base_solution, iterate % schemes, by=by)
           error_current = sum(abs(e_base(2:n) - eta(2:n)))
 
           ! the tolerance, relative to sum |w f| over the base family's
@@ -1565,7 +1559,7 @@ contains
     end if
     iterate % points % expansion = original
     call set_verbosity(level)
-    call iterate % zero_at_design(start, solution)
+    call iterate % zero_at_design(start, solution, by=by)
     objective_field = iterate % objective % at(solution)
     j_final = objective_field % value(1, 1)
     if (level >= 1) then
@@ -1613,7 +1607,7 @@ contains
       ! the instants pinned, the curvature their multipliers' derivatives
       base_residual % instant_multiplier = 'pin of the instants'
       base_residual % points % expansion = curvature_expansion(original, n)
-      call base_residual % zero_at_design(start, base_solution, converged=converged)
+      call base_residual % zero_at_design(start, base_solution, converged=converged, by=by)
       if (.not. converged) return
       e_base = base_residual % curvature_errors(base_solution, base % accuracy(), uncertainty)
       objective_field = base_residual % objective % at(base_solution)
@@ -2144,7 +2138,8 @@ contains
   ! coordinate. A singular H stops the program.
   !===================================================================!
 
-  subroutine design_disagreement(this, solution, slope, slope_plus, contribution, uncertainty, shift)
+  subroutine design_disagreement(this, solution, slope, slope_plus, contribution, uncertainty, shift, by)
+    class(minimizer)        , intent(in), optional :: by
 
     class(discrete_residual), intent(in)  :: this
     type(discrete_field)    , intent(in)  :: solution
@@ -2179,8 +2174,8 @@ contains
     allocate(names(nf))
     names = pinned % manifold % unknown_name(1:nf)
     start = discrete_field(pinned % points, solution % value(:, 1:nf), names)
-    call pinned % zero_at_design(start, side, kappa=kappa)
-    eta = pinned % time_disagreement(side, derivative=eta_derivative)
+    call pinned % zero_at_design(start, side, kappa=kappa, by=by)
+    eta = pinned % time_disagreement(side, derivative=eta_derivative, by=by)
     allocate(derivative(npts, nd), hessian(nd, nd))
     do i = 1, nd
        derivative(:, i) = eta_derivative(:, pinned % points % expansion % column(i, 1))
@@ -2297,7 +2292,8 @@ contains
   ! the design, or none with an objective.
   !===================================================================!
 
-  subroutine minimize_together(residuals, estimates, solutions, checkpoint, snapshots, continued)
+  subroutine minimize_together(residuals, estimates, solutions, checkpoint, snapshots, continued, by)
+    class(minimizer)        , intent(in), optional :: by
 
     type(discrete_residual), intent(in)  :: residuals(:)
     type(discrete_field)   , intent(in)  :: estimates(:)
@@ -2331,7 +2327,7 @@ contains
     if (.not. any([(allocated(iterates(k) % objective), k = 1, size(iterates))])) then
        error stop 'operation_residual: residuals minimized together have an objective, one at least'
     end if
-    call design_iteration(iterates, estimates, solutions, checkpoint, snapshots)
+    call design_iteration(iterates, estimates, solutions, checkpoint, snapshots, by=by)
 
   end subroutine minimize_together
 
@@ -2362,7 +2358,8 @@ contains
   ! penalty.
   !===================================================================!
 
-  subroutine design_iteration(iterates, estimates, solutions, checkpoint, snapshots)
+  subroutine design_iteration(iterates, estimates, solutions, checkpoint, snapshots, by)
+    class(minimizer)        , intent(in), optional :: by
 
     type(discrete_residual), intent(inout) :: iterates(:)
     type(discrete_field)   , intent(in)    :: estimates(:)
@@ -2417,12 +2414,12 @@ contains
        do k = 1, size(iterates)
           if (quasi) then
              call iterates(k) % zero_at_design(estimates(k), solutions(k), checkpoint, snapshots, kappa, &
-                  & functional_kappa)
+                  & functional_kappa, by=by)
              call iterates(k) % inequalities_at(solutions(k), ck, ak, -functional_kappa)
           else
              if (any(of_state(first(k):first(k + 1) - 1))) &
                   & iterates(k) % functional_weight = weight(first(k):first(k + 1) - 1)
-             call iterates(k) % zero_at_design(estimates(k), solutions(k), checkpoint, snapshots, kappa)
+             call iterates(k) % zero_at_design(estimates(k), solutions(k), checkpoint, snapshots, kappa, by=by)
              call iterates(k) % inequalities_at(solutions(k), ck, ak)
           end if
           c = [c, ck]
@@ -3003,18 +3000,11 @@ contains
           halves = this
        end select
        halves % overlapped = .true.
-       call halves % zero_at_design(estimate, solution, checkpoint, snapshots, kappa)
+       call halves % zero_at_design(estimate, solution, checkpoint, snapshots, kappa, by=by)
        return
     end if
-    ! the sweeps by a schedule and the wavefront solve each block's
-    ! rows by the default stack, and a stack stated is refused there
-    ! rather than replaced
-    if (present(by) .and. (scheduled .or. wavefront)) then
-       error stop 'operation_residual: a stack stated for the blocks'' rows (by) is read by the march without a &
-            &checkpoint or snapshot schedule and without the wavefront across the images'
-    end if
     if (scheduled) then
-       call this % scheduled_march(estimate, segment, shots, solution, kappa)
+       call this % scheduled_march(estimate, segment, shots, solution, kappa, by=by)
        return
     end if
 
@@ -3026,7 +3016,7 @@ contains
     graph = minimization(this, by)
     if (verbosity >= 2) call graph % view(this)
     if (wavefront) then
-       call this % wavefront_march(estimate, solution, state)
+       call this % wavefront_march(estimate, solution, state, by=by)
     else
        call graph % minimize(this, estimate, solution, converged, state)
        if (present(converged)) then
@@ -3085,7 +3075,8 @@ contains
   ! the objective's value stored and the nodes not.
   !===================================================================!
 
-  subroutine scheduled_march(this, estimate, segment, shots, solution, kappa)
+  subroutine scheduled_march(this, estimate, segment, shots, solution, kappa, by)
+    class(minimizer)        , intent(in), optional :: by
 
     class(discrete_residual), intent(in)  :: this
     type(discrete_field)    , intent(in)  :: estimate
@@ -3107,7 +3098,7 @@ contains
     call this % blocks_checked()
     rows_along = this % space_rows()
     call this % scheduled_sweeps(estimate, rows_along, segment, shots, field_value, objective_value, &
-         & adjoint, reaction, gauge, design_multiplier)
+         & adjoint, reaction, gauge, design_multiplier, by=by)
 
     call this % solution_columns(nf, value, names, jet, slot, nm)
     do k = 1, ninst
@@ -3148,7 +3139,8 @@ contains
   ! over the images at the end.
   !===================================================================!
 
-  subroutine wavefront_march(this, estimate, solution, state)
+  subroutine wavefront_march(this, estimate, solution, state, by)
+    class(minimizer)        , intent(in), optional :: by
 
     class(discrete_residual)       , intent(in)  :: this
     type(discrete_field)           , intent(in)  :: estimate
@@ -3158,7 +3150,7 @@ contains
     call this % begun(estimate, state)
     select type (state)
     type is (chain_state)
-       call this % wavefront_expansion(state % rows_along, state % tuple, state % stages)
+       call this % wavefront_expansion(state % rows_along, state % tuple, state % stages, by=by)
     end select
     call this % march_solution(state, solution)
     if (.not. this % with_adjoint) return
@@ -3169,7 +3161,7 @@ contains
        state % design_multiplier(:, this_image() - 1) = -state % partial(:, this_image() - 1)
        call this % wavefront_adjoint(state % rows_along, state % tuple, state % stages, state % gradient, &
             & state % stage_node, state % adjoint, state % incoming, state % reaction, state % gauge, &
-            & state % design_multiplier)
+            & state % design_multiplier, by=by)
        call co_sum(state % adjoint)
        call co_sum(state % reaction)
        call co_sum(state % gauge)
@@ -4113,7 +4105,8 @@ contains
   !===================================================================!
 
   subroutine scheduled_sweeps(this, estimate, rows_along, segment, shots, field_value, objective_value, &
-       & adjoint, reaction, gauge, design_multiplier)
+       & adjoint, reaction, gauge, design_multiplier, by)
+    class(minimizer)        , intent(in), optional :: by
 
     class(discrete_residual), intent(in)  :: this
     type(discrete_field)    , intent(in)  :: estimate
@@ -4327,7 +4320,7 @@ contains
       allocate(stages(stride, ncells, top, lo:whi, 0:ncol - 1), source=0.0_dp)
       do b = b1, b2
          call this % block_extent(b, first, last, depth)
-         call this % solve_block(this % schemes % scheme(b), first, last, depth, rows_along, lb, state, stages)
+         call this % solve_block(this % schemes % scheme(b), first, last, depth, rows_along, lb, state, stages, by=by)
       end do
       if (order > 0 .and. num_images() > 1 .and. .not. this % manifold % with_space .and. .not. this % overlapped) then
          from = this % schemes % from(b1)
@@ -4391,7 +4384,7 @@ contains
       do b = b2, b1, -1
          call this % block_extent(b, first, last, depth)
          call this % adjoint_block(this % schemes % scheme(b), first, last, depth, rows_along, lb, state, stages, &
-              & gradient, stage_node, adjoint, incoming, reaction, gauge, design_multiplier)
+              & gradient, stage_node, adjoint, incoming, reaction, gauge, design_multiplier, by=by)
       end do
     end subroutine reversed
 
@@ -5408,7 +5401,8 @@ contains
   ! and solved as one system of rows.
   !===================================================================!
 
-  subroutine solve_block(this, scheme, first, last, depth, rows_along, lb, tuple, stages, expand, converged)
+  subroutine solve_block(this, scheme, first, last, depth, rows_along, lb, tuple, stages, expand, converged, by)
+    class(minimizer)        , intent(in), optional :: by
 
     class(discrete_residual), intent(in)    :: this
     type(family)            , intent(in)    :: scheme
@@ -5444,7 +5438,7 @@ contains
          end do
        end associate
     end if
-    call this % solve_rows(blk, lb, tuple, stages, expand, converged)
+    call this % solve_rows(blk, lb, tuple, stages, expand, converged, by=by)
 
   end subroutine solve_block
 
@@ -5458,7 +5452,8 @@ contains
   ! returns it false and forms no column.
   !===================================================================!
 
-  subroutine solve_rows(this, blk, lb, tuple, stages, expand, converged)
+  subroutine solve_rows(this, blk, lb, tuple, stages, expand, converged, by)
+    class(minimizer)        , intent(in), optional :: by
 
     class(discrete_residual), intent(in)    :: this
     type(chain_block)       , intent(inout) :: blk
@@ -5469,7 +5464,7 @@ contains
 
     integer :: d, m
 
-    call this % solved(blk % rows, size(blk % q), blk % rows % degrees, size(blk % rows % at), blk % q, converged)
+    call this % solved(blk % rows, size(blk % q), blk % rows % degrees, size(blk % rows % at), blk % q, converged, by=by)
     if (present(converged)) then
        if (.not. converged) return
     end if
@@ -5484,7 +5479,7 @@ contains
        if (.not. this % expansion_owned(d)) cycle
        do m = 1, this % points % expansion % order
           if (verbosity >= 1) print '(a,i0,a,i0)', 'expansion ', d, ' along the design, order ', m
-          call this % expansion_order(blk, lb, d, m, tuple, stages)
+          call this % expansion_order(blk, lb, d, m, tuple, stages, by=by)
        end do
     end do
 
@@ -5506,7 +5501,8 @@ contains
   ! instants and at the stages of its steps.
   !===================================================================!
 
-  subroutine expansion_order(this, blk, lb, d, m, tuple, stages)
+  subroutine expansion_order(this, blk, lb, d, m, tuple, stages, by)
+    class(minimizer)        , intent(in), optional :: by
 
     class(discrete_residual), intent(in)    :: this
     type(chain_block)       , intent(in)    :: blk
@@ -5524,7 +5520,7 @@ contains
     lin = blk % rows % linearize(blk % rows % unknown_graph(), blk % rows % bind(blk % inputs), rhs, &
          & transposed=.false., version_number=blk % rows % version())
     allocate(x(unknowns), source=0.0_dp)
-    call this % solved(lin, unknowns, blk % rows % degrees, size(blk % rows % at), x)
+    call this % solved(lin, unknowns, blk % rows % degrees, size(blk % rows % at), x, by=by)
     call blk % to_points(OWN_MOMENTS, lb, x, tuple(:, :, :, column), stages(:, :, :, :, column))
 
   end subroutine expansion_order
@@ -5609,7 +5605,8 @@ contains
   ! set to zero, for the sum over the images that minimize takes.
   !===================================================================!
 
-  subroutine wavefront_expansion(this, rows_along, tuple, stages)
+  subroutine wavefront_expansion(this, rows_along, tuple, stages, by)
+    class(minimizer)        , intent(in), optional :: by
 
     class(discrete_residual), intent(in)    :: this
     type(stencil)           , intent(in)    :: rows_along(:,:)
@@ -5637,7 +5634,7 @@ contains
          end if
          if (m == 0) then
             ! the state, published to the image of order one
-            call this % solve_block(scheme, first, last, depth, rows_along, origin, tuple, stages, expand=.false.)
+            call this % solve_block(scheme, first, last, depth, rows_along, origin, tuple, stages, expand=.false., by=by)
          else
             sync images(me - 1)
             do o = 0, m - 1
@@ -5648,7 +5645,7 @@ contains
             call this % block_rows(scheme, first, last, depth, rows_along, origin, tuple(:, :, :, 0), &
                  & stages(:, :, :, :, 0), .true., blk)
             call this % block_inputs(blk)
-            call this % expansion_order(blk, origin, 1, m, tuple, stages)
+            call this % expansion_order(blk, origin, 1, m, tuple, stages, by=by)
          end if
          tuple_co(:, :, first + depth:last, m) = tuple(:, :, first + depth:last, m)
          if (s > 0) stages_co(:, :, 1:s, first + 1:last, m) = stages(:, :, 1:s, first + 1:last, m)
@@ -5697,7 +5694,8 @@ contains
   !===================================================================!
 
   subroutine wavefront_adjoint(this, rows_along, tuple, stages, gradient, stage_node, &
-       & adjoint, incoming, reaction, gauge, in_design)
+       & adjoint, incoming, reaction, gauge, in_design, by)
+    class(minimizer)        , intent(in), optional :: by
 
     class(discrete_residual), intent(in)    :: this
     type(stencil)           , intent(in)    :: rows_along(:,:)
@@ -5751,7 +5749,7 @@ contains
           call blk % from_points(OWN_MOMENTS, origin, below, mu(:, j - 1), stages_below)
           reaction(:, :, j - 1) = reaction_co(:, :, j - 1)[j]
        end do
-       call this % adjoint_order(origin, blk, o, 1, jets, mu(:, 0:max(o - 1, 0)), gradient, stage_node, incoming, x)
+       call this % adjoint_order(origin, blk, o, 1, jets, mu(:, 0:max(o - 1, 0)), gradient, stage_node, incoming, x, by=by)
        mu(:, o) = x
        call blk % to_points(OWN_MOMENTS, origin, x, below, stages_below)
        mu_co(:, :, first + depth:last) = below(:, :, first + depth:last)
@@ -5939,7 +5937,8 @@ contains
   !===================================================================!
 
   subroutine adjoint_block(this, scheme, first, last, depth, rows_along, lb, tuple, stages, gradient, &
-       & stage_node, adjoint, incoming, reaction, gauge, in_design)
+       & stage_node, adjoint, incoming, reaction, gauge, in_design, by)
+    class(minimizer)        , intent(in), optional :: by
 
     class(discrete_residual), intent(in)    :: this
     type(family)            , intent(in)    :: scheme
@@ -5962,7 +5961,7 @@ contains
     call this % block_rows(scheme, first, last, depth, rows_along, lb, tuple(:, :, :, 0), stages(:, :, :, :, 0), &
          & .true., blk)
     call this % adjoint_rows(blk, lb, tuple, stages, gradient, stage_node, adjoint, incoming, reaction, gauge, &
-         & in_design)
+         & in_design, by=by)
 
   end subroutine adjoint_block
 
@@ -5973,7 +5972,8 @@ contains
   !===================================================================!
 
   subroutine adjoint_rows(this, blk, lb, tuple, stages, gradient, stage_node, adjoint, incoming, reaction, gauge, &
-       & in_design)
+       & in_design, by)
+    class(minimizer)        , intent(in), optional :: by
 
     class(discrete_residual), intent(in)    :: this
     type(chain_block)       , intent(inout) :: blk
@@ -6011,7 +6011,7 @@ contains
        do o = merge(1, 0, d > 1), order
           if (o > 0 .and. .not. this % expansion_owned(d)) cycle
           call this % adjoint_order(lb, blk, o, d, jets(:, 0:o, d), mu(:, 0:max(o - 1, 0), d), gradient, stage_node, &
-               & incoming, x)
+               & incoming, x, by=by)
           if (o == 0) then
              mu(:, 0, :) = spread(x, 2, nd)
           else
@@ -6130,7 +6130,8 @@ contains
 
   end subroutine adjoint_right_side_of
 
-  subroutine adjoint_order(this, lb, blk, o, d, jets, mu, gradient, stage_node, incoming, x)
+  subroutine adjoint_order(this, lb, blk, o, d, jets, mu, gradient, stage_node, incoming, x, by)
+    class(minimizer)        , intent(in), optional :: by
 
     class(discrete_residual), intent(in)    :: this
     type(lower_bounds)      , intent(in)    :: lb
@@ -6153,7 +6154,7 @@ contains
     lin = blk % rows % linearize(blk % rows % unknown_graph(), blk % rows % bind(blk % inputs), rhs, &
          & transposed=.true., version_number=blk % rows % version())
     allocate(x(unknowns), source=0.0_dp)
-    call this % solved(lin, unknowns, stride, size(blk % rows % at), x)
+    call this % solved(lin, unknowns, stride, size(blk % rows % at), x, by=by)
     do k = 1, blk % depth
        do c = 1, blk % num_cells
           base = blk % tuple_at(blk % instant_moment(k), c)
@@ -6929,7 +6930,8 @@ contains
   ! it false.
   !===================================================================!
 
-  subroutine solved(this, rows, unknowns, stride, npts, q, converged)
+  subroutine solved(this, rows, unknowns, stride, npts, q, converged, by)
+    class(minimizer)        , intent(in), optional :: by
 
     class(discrete_residual), intent(in)    :: this
     type(residual_operator) , intent(in)    :: rows
@@ -6940,12 +6942,13 @@ contains
     class(minimizer), allocatable :: stack
     logical :: met
 
-    ! the rows by the default stack they choose (operation_minimization);
+    ! the rows by the stack stated for them, or by the default they
+    ! choose (operation_minimization);
     ! over several images each image solves its part of the rows, from
     ! the partitioner's cut of the residual's coupling; the line of an
     ! open line, and of a law projected on the cells of a line, is one
     ! block of the sweeps, which a cut would divide
-    call default_minimizer(rows, this % facts(), stack)
+    call stack_for(rows, this % facts(), stack, by)
     if (num_images() > 1 .and. this % manifold % with_space .and. .not. this % whole_line()) then
        call system_solution(stack, rows, this % rows_design(rows), q, met, &
             & owners=this % owners_of_unknowns(unknowns, stride, npts))
@@ -8528,16 +8531,18 @@ contains
   ! representation along space. Without other, the disagreement along
   ! time with the enrichment of the residual's chain, or with the chain
   ! of families given, below, and with derivatives its derivative in
-  ! each column of the expansion above zero, of order one along each.
+  ! each column of the expansion above zero, of order one along each;
+  ! with by, the enrichment's blocks solved by the stack stated.
   !===================================================================!
 
-  function disagreement(this, solution, other, schemes, derivatives) result(contribution)
+  function disagreement(this, solution, other, schemes, derivatives, by) result(contribution)
 
     class(discrete_residual)       , intent(in) :: this
     type(discrete_field)           , intent(in) :: solution
     class(derivative_approximation), intent(in), optional :: other
     type(chain)                    , intent(in), optional :: schemes
     real(dp), allocatable          , intent(out), optional :: derivatives(:,:)
+    class(minimizer)               , intent(in), optional :: by
     real(dp), allocatable :: contribution(:)
 
     type(stencil) :: rows, lower_rows
@@ -8548,7 +8553,7 @@ contains
     logical :: stated, open_line
 
     if (.not. present(other)) then
-       contribution = this % time_disagreement(solution, schemes, derivatives)
+       contribution = this % time_disagreement(solution, schemes, derivatives, by=by)
        return
     end if
 
@@ -8671,7 +8676,8 @@ contains
   ! instant.
   !===================================================================!
 
-  function time_disagreement(this, solution, schemes, derivative) result(contribution)
+  function time_disagreement(this, solution, schemes, derivative, by) result(contribution)
+    class(minimizer)        , intent(in), optional :: by
 
     class(discrete_residual), intent(in) :: this
     type(discrete_field)    , intent(in) :: solution
@@ -8789,7 +8795,7 @@ contains
        if (.not. marches_by_stages(plus % schemes % scheme(b), nd)) cycle
        call plus % block_extent(b, first, last, depth)
        call plus % solve_block(plus % schemes % scheme(b), first, last, depth, rows_along, origin, tuple, stages, &
-            & expand=expanding)
+            & expand=expanding, by=by)
        tuple(:, :, first + depth:last, :) = coarse(:, :, first + depth:last, :)
     end do
 
@@ -8886,7 +8892,7 @@ contains
        call plus % block_inputs(blk)
        allocate(jets(size(blk % q), 0:0), mu(size(blk % q), 0:0), source=0.0_dp)
        jets(:, 0) = blk % q
-       call plus % adjoint_order(origin, blk, 0, 1, jets, mu, gradient, stage_node, incoming, x)
+       call plus % adjoint_order(origin, blk, 0, 1, jets, mu, gradient, stage_node, incoming, x, by=by)
        call rows_evaluated(blk % rows, plus % rows_design(blk % rows), blk % q, y, blk % inputs)
        do r = 1, size(y)
           m = (r - 1) / width + 1
@@ -8909,7 +8915,7 @@ contains
              column = plus % points % expansion % column(d, 1)
              call blk % from_points(EVERY_MOMENT, origin, coarse(:, :, :, column), jets(:, 1), &
                   & stages(:, :, :, :, column))
-             call plus % adjoint_order(origin, blk, 1, d, jets, mu, gradient, stage_node, incoming, x1)
+             call plus % adjoint_order(origin, blk, 1, d, jets, mu, gradient, stage_node, incoming, x1, by=by)
              call plus % expansion_source(blk, origin, d, 1, coarse, stages, b1)
              y1 = -b1
              do i = 1, size(jacobian_row)

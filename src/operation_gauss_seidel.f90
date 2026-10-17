@@ -58,6 +58,11 @@ module operation_gauss_seidel
 
   end type gauss_seidel
 
+  ! a Gauss-Seidel iteration stated by its sweeps
+  interface gauss_seidel
+     module procedure gauss_seidel_of
+  end interface gauss_seidel
+
 contains
 
   pure function gauss_seidel_name(this) result(name)
@@ -284,5 +289,16 @@ contains
     end select
 
   end subroutine subtracted_columns
+
+  !===================================================================!
+  ! A GAUSS-SEIDEL ITERATION STATED by the sweeps it takes; its blocks
+  ! are those of the system it is paired with (operation_minimization).
+  !===================================================================!
+
+  function gauss_seidel_of(sweeps) result(this)
+    integer, intent(in) :: sweeps
+    type(gauss_seidel) :: this
+    this % max_iterations = sweeps
+  end function gauss_seidel_of
 
 end module operation_gauss_seidel

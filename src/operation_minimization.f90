@@ -64,7 +64,7 @@ module operation_minimization
 
   private
   public :: minimand, march_state, block_facts, minimization
-  public :: default_minimizer, system_solution, rows_evaluated
+  public :: default_minimizer, stack_for, system_solution, rows_evaluated
 
   !===================================================================!
   ! THE STATE OF A MARCH: the data the blocks read and write - the
@@ -493,9 +493,25 @@ contains
   end function rows_in_parts
 
   !===================================================================!
-  ! THE STACK OF A BLOCK'S ROWS: the one stated, paired with the rows,
-  ! or the default the rows choose.
+  ! THE STACK OF ROWS: by, the one stated, paired with the rows, or the
+  ! default the rows choose; of a block's rows, the minimization's.
   !===================================================================!
+
+  subroutine stack_for(rows, facts, stack, by)
+
+    type(residual_operator)      , intent(in)  :: rows
+    type(block_facts)            , intent(in)  :: facts
+    class(minimizer), allocatable, intent(out) :: stack
+    class(minimizer)             , intent(in), optional :: by
+
+    if (present(by)) then
+       allocate(stack, source=by)
+       call paired_with(stack, rows, facts)
+    else
+       call default_minimizer(rows, facts, stack)
+    end if
+
+  end subroutine stack_for
 
   subroutine stack_of(this, rows, facts, stack)
 
@@ -505,10 +521,9 @@ contains
     class(minimizer), allocatable, intent(out) :: stack
 
     if (allocated(this % block)) then
-       allocate(stack, source=this % block)
-       call paired_with(stack, rows)
+       call stack_for(rows, facts, stack, this % block)
     else
-       call default_minimizer(rows, facts, stack)
+       call stack_for(rows, facts, stack)
     end if
 
   end subroutine stack_of
@@ -516,25 +531,32 @@ contains
   !===================================================================!
   ! THE PAIRING OF A STACK WITH ROWS: what each vertex reads of them.
   ! The elimination removes the rows' tying rows: rows without them are
-  ! refused, the reason named.
+  ! refused, the reason named. The blocks of Gauss-Seidel's sweeps are
+  ! the rows' points, or the whole line at one moment where the rows
+  ! couple every point of a moment through the line.
   !===================================================================!
 
-  recursive subroutine paired_with(stack, rows)
+  recursive subroutine paired_with(stack, rows, facts)
 
     class(minimizer)       , intent(inout) :: stack
     type(residual_operator), intent(in)    :: rows
+    type(block_facts)      , intent(in)    :: facts
 
     select type (stack)
     type is (newton)
-       if (allocated(stack % inner)) call paired_with(stack % inner, rows)
+       if (allocated(stack % inner)) call paired_with(stack % inner, rows, facts)
     type is (elimination)
        if (.not. allocated(rows % tying)) then
           error stop 'operation_minimization: an elimination removes the tying rows of the rows it is paired with, &
                &and these rows state none'
        end if
        stack % eliminated = rows % tying
+       if (allocated(stack % inner)) call paired_with(stack % inner, rows, facts)
     type is (gmres)
-       if (allocated(stack % preconditioner)) call paired_with(stack % preconditioner, rows)
+       if (allocated(stack % preconditioner)) call paired_with(stack % preconditioner, rows, facts)
+    type is (gauss_seidel)
+       stack % block_width = rows % degrees
+       if (facts % whole_line) stack % block_width = rows % degrees * facts % cells
     end select
 
   end subroutine paired_with
@@ -571,7 +593,7 @@ contains
     own % tying = allocated(rows % tying)
     own % width = rows % degrees
     call default_stack(own, stack)
-    call paired_with(stack, rows)
+    call paired_with(stack, rows, own)
 
   end subroutine default_minimizer
 
@@ -581,39 +603,20 @@ contains
     type(block_facts)            , intent(in)  :: facts
     class(minimizer), allocatable, intent(out) :: stack
 
-    type(newton)       :: solver
-    type(dense_direct) :: direct
-    type(gmres)        :: krylov
-    type(gauss_seidel) :: sweeps
-    type(elimination)  :: reduced
-
     if (facts % with_space) then
-       sweeps % block_width = facts % width
-       if (facts % whole_line) sweeps % block_width = facts % width * facts % cells
-       sweeps % max_iterations = 4
-       krylov % restart        = 60
-       krylov % tolerance      = 1.0e-3_dp
-       allocate(krylov % preconditioner, source=sweeps)
-       allocate(solver % inner, source=krylov)
        call require_images()
-       if (facts % continued) solver % tolerance = 1.0e-13_dp
        if (facts % tying) then
-          direct % equilibrated = .true.
-          allocate(reduced % inner, source=direct)
-          deallocate(solver % inner)
-          allocate(solver % inner, source=reduced)
-          solver % tolerance = 1.0e-13_dp
-       end if
-    else
-       if (facts % tying) then
-          allocate(reduced % inner, source=direct)
-          allocate(solver % inner, source=reduced)
+          stack = newton(elimination(dense_direct(equilibrated=.true.)), tolerance=1.0e-13_dp)
+       else if (facts % continued) then
+          stack = newton(gmres(gauss_seidel(4), restart=60, tolerance=1.0e-3_dp), tolerance=1.0e-13_dp)
        else
-          allocate(solver % inner, source=direct)
+          stack = newton(gmres(gauss_seidel(4), restart=60, tolerance=1.0e-3_dp))
        end if
-       solver % tolerance = 1.0e-13_dp
+    else if (facts % tying) then
+       stack = newton(elimination(dense_direct()), tolerance=1.0e-13_dp)
+    else
+       stack = newton(dense_direct(), tolerance=1.0e-13_dp)
     end if
-    allocate(stack, source=solver)
 
   end subroutine default_stack
 

@@ -82,6 +82,11 @@ module operation_dense_direct
 
   end type dense_direct
 
+  ! a dense direct solve stated by its options
+  interface dense_direct
+     module procedure dense_direct_of
+  end interface dense_direct
+
 contains
 
   pure function dense_direct_name(this) result(name)
@@ -230,5 +235,16 @@ contains
     if (outcome % reason == SOLVE_CONTINUE) call this % record_result(achieved, 1, SOLVE_EXHAUSTED)
 
   end subroutine dense_direct_solve
+
+  !===================================================================!
+  ! A DENSE DIRECT SOLVE STATED: with equilibrated, its rows and columns
+  ! scaled to unit largest entry before the factorisation.
+  !===================================================================!
+
+  function dense_direct_of(equilibrated) result(this)
+    logical, intent(in), optional :: equilibrated
+    type(dense_direct) :: this
+    if (present(equilibrated)) this % equilibrated = equilibrated
+  end function dense_direct_of
 
 end module operation_dense_direct

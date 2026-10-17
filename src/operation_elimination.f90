@@ -155,6 +155,11 @@ module operation_elimination
 
   end type elimination
 
+  ! an elimination stated by the minimizer of the rows it retains
+  interface elimination
+     module procedure elimination_of
+  end interface elimination
+
 contains
 
   pure function elimination_name(this) result(name)
@@ -1032,5 +1037,17 @@ contains
     if (allocated(this % inner)) call this % inner % bind_account(account)
 
   end subroutine elimination_bind_account
+
+  !===================================================================!
+  ! AN ELIMINATION STATED by the minimizer of its complement; the rows
+  ! it eliminates are those of the system it is paired with
+  ! (operation_minimization).
+  !===================================================================!
+
+  function elimination_of(inner) result(this)
+    class(minimizer), intent(in) :: inner
+    type(elimination) :: this
+    allocate(this % inner, source=inner)
+  end function elimination_of
 
 end module operation_elimination

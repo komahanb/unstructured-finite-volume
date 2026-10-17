@@ -65,6 +65,11 @@ module operation_gmres
 
   end type gmres
 
+  ! a GMRES stated by its preconditioner and its options
+  interface gmres
+     module procedure gmres_of
+  end interface gmres
+
 contains
 
   pure function gmres_name(this) result(name)
@@ -362,5 +367,20 @@ contains
     if (allocated(this % preconditioner)) call this % preconditioner % bind_account(account)
 
   end subroutine gmres_bind_account
+
+  !===================================================================!
+  ! A GMRES STATED: preconditioned by a minimizer, restarted every
+  ! restart directions, to the tolerance relative to its first residual.
+  !===================================================================!
+
+  function gmres_of(preconditioner, restart, tolerance) result(this)
+    class(minimizer), intent(in), optional :: preconditioner
+    integer         , intent(in), optional :: restart
+    real(dp)        , intent(in), optional :: tolerance
+    type(gmres) :: this
+    if (present(preconditioner)) allocate(this % preconditioner, source=preconditioner)
+    if (present(restart))   this % restart   = restart
+    if (present(tolerance)) this % tolerance = tolerance
+  end function gmres_of
 
 end module operation_gmres

@@ -963,9 +963,15 @@ contains
   ! from the estimate, which then gives the first block alone, its
   ! derivatives along time those of the estimate: the march of a
   ! motion the estimate does not follow.
+  !
+  ! CONVERGED, where given, is false when the rows of a block do not
+  ! converge on the march at a fixed design, which then ends at that
+  ! block. A dense solve with singular_reported set reports a singular
+  ! block the same way, rather than stopping the program. The other
+  ! paths return it true.
   !===================================================================!
 
-  recursive subroutine minimize(this, estimate, solution, checkpoint, snapshots, continued, by)
+  recursive subroutine minimize(this, estimate, solution, checkpoint, snapshots, continued, by, converged)
 
     class(discrete_lagrangian), intent(in)  :: this
     type(discrete_field)      , intent(in)  :: estimate
@@ -973,6 +979,7 @@ contains
     integer                   , intent(in), optional :: checkpoint, snapshots
     logical                   , intent(in), optional :: continued
     type(discrete_minimizer)  , intent(in), optional :: by
+    logical                   , intent(out), optional :: converged
 
     type(discrete_lagrangian) :: iterate(1)
     type(discrete_field)      :: estimates(1), solutions(1)
@@ -984,10 +991,11 @@ contains
              iterate(1) = this
           end select
           iterate(1) % continued = continued
-          call iterate(1) % minimize(estimate, solution, checkpoint, snapshots, by=by)
+          call iterate(1) % minimize(estimate, solution, checkpoint, snapshots, by=by, converged=converged)
           return
        end if
     end if
+    if (present(converged)) converged = .true.
     if (allocated(this % placement)) then
        call this % placement_iteration(estimate, solution, checkpoint, snapshots, by=by)
        return
@@ -997,7 +1005,7 @@ contains
           error stop 'operation_lagrangian: an inequality bounds a free design; an equality on the design &
                &factor fixes it and leaves the inequality nothing to bound'
        end if
-       call this % zero_at_design(estimate, solution, checkpoint, snapshots, by=by)
+       call this % zero_at_design(estimate, solution, checkpoint, snapshots, converged=converged, by=by)
        return
     end if
     if (.not. (allocated(this % objective) .and. this % with_adjoint)) then

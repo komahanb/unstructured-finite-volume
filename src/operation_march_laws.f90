@@ -34,7 +34,12 @@
 ! A law reads the step or instant where it binds.
 ! The first that fails, in the order phase, amplitude, stability,
 ! ratio, accuracy, is named: a frequency the instants cannot hold
-! fails the phase law before any estimate of the error is read.
+! fails the phase law before any estimate of the error is read, and
+! the accuracy is then not evaluated, its ratio -1.
+! The frequency, the highest frequency and the energy may be given:
+! designs compared with each other are measured by the same ones, the
+! largest measured over them, so that a family that damps the
+! vibration out does not lower the bounds it is measured against.
 !
 ! Invalid input: as energy_norms; a chain of other than one block per
 ! instant; a family whose amplification is not stated.
@@ -76,16 +81,17 @@ module operation_march_laws
 
 contains
 
-  function create(L_h, solution, tolerance) result(this)
+  function create(L_h, solution, tolerance, frequency, highest, energy) result(this)
 
     type(discrete_lagrangian), intent(in) :: L_h
     type(discrete_field)     , intent(in) :: solution
     real(dp)                 , intent(in) :: tolerance
+    real(dp)                 , intent(in), optional :: frequency, highest, energy
     type(march_laws) :: this
 
     type(discrete_manifold) :: points
     type(family) :: f
-    real(dp), allocatable :: local(:,:,:), global(:,:,:), norm(:,:), energy(:), measure(:)
+    real(dp), allocatable :: local(:,:,:), global(:,:,:), norm(:,:), energies(:), measure(:)
     real(dp) :: h, h_before, step_phase, step_amplitude, grown, top_grown, region
     real(dp) :: phase_largest, amplitude_largest, stability_largest
     integer :: n, b, k, c
@@ -103,9 +109,19 @@ contains
     end if
     this % tolerance = tolerance
 
-    ! the free motion, and the families' laws step by step
-    call L_h % measure_free_motion(solution, frequency=this % frequency, highest=this % highest, energy=energy)
-    this % energy = maxval(energy)
+    ! the free motion, measured or given, and the families' laws step
+    ! by step
+    if (present(frequency) .and. present(highest) .and. present(energy)) then
+       this % frequency = frequency
+       this % highest   = highest
+       this % energy    = energy
+    else
+       call L_h % measure_free_motion(solution, frequency=this % frequency, highest=this % highest, energy=energies)
+       this % energy = maxval(energies)
+       if (present(frequency)) this % frequency = frequency
+       if (present(highest))   this % highest   = highest
+       if (present(energy))    this % energy    = energy
+    end if
     phase_largest     = -1.0_dp
     amplitude_largest = -huge(1.0_dp)
     stability_largest = -huge(1.0_dp)
@@ -148,7 +164,13 @@ contains
     this % stability = top_grown / tolerance
 
     ! the accuracy: each cell's norm per unit measure against the
-    ! energy of the free motion per unit measure of the region
+    ! energy of the free motion per unit measure of the region; not
+    ! evaluated where the phase or the amplitude fails, the estimate
+    ! being blind to the frequency those laws cannot represent
+    if (this % phase > 1.0_dp .or. this % amplitude > 1.0_dp) then
+       this % accuracy = -1.0_dp
+       return
+    end if
     local  = L_h % local_errors(solution)
     global = L_h % transported_errors(solution, local)
     norm   = L_h % energy_norms(solution, global, highest=this % frequency)
@@ -226,8 +248,12 @@ contains
     text = text // trim(line) // newline
     write(line, '(a, es10.3, a, i0)') 'ratio      ', this % ratio, '  at the step ending at instant ', this % ratio_step
     text = text // trim(line) // newline
-    write(line, '(a, es10.3, a, i0, a, i0)') 'accuracy   ', this % accuracy, '  at instant ', this % accuracy_instant, &
-         & ', cell ', this % accuracy_cell
+    if (this % accuracy < 0.0_dp) then
+       line = 'accuracy   not evaluated: the phase or the amplitude fails'
+    else
+       write(line, '(a, es10.3, a, i0, a, i0)') 'accuracy   ', this % accuracy, '  at instant ', &
+            & this % accuracy_instant, ', cell ', this % accuracy_cell
+    end if
     text = text // trim(line)
   end function lines
 

@@ -54,7 +54,7 @@ program van_der_pol_study
   use operation_expansion, only : expansion
   use operation_field    , only : continuous_field, discrete_field, integral, &
        &                          operator(+), operator(-), operator(*), operator(/), operator(**)
-  use operation_residual , only : continuous_residual, discrete_residual, operator(+), operator(*)
+  use operation_lagrangian , only : continuous_lagrangian, discrete_lagrangian, operator(+), operator(*)
   use operation_family   , only : family, dirk, bdf, adams, chain
 
   implicit none
@@ -73,8 +73,8 @@ program van_der_pol_study
   type(discrete_manifold)   :: omega_h
   type(continuous_field)    :: t, nu, u, lambda_r, lambda, kappa, oscillator, u0, v0, energy, rest
   type(discrete_field)      :: estimate, solution, kappa_h, sensitivity
-  type(continuous_residual) :: r, g, d, L
-  type(discrete_residual)   :: L_h
+  type(continuous_lagrangian) :: r, g, d, L
+  type(discrete_lagrangian)   :: L_h
   real(dp), allocatable :: values(:), reverse(:)
   character(len=32) :: item
   integer :: k, n
@@ -144,9 +144,9 @@ program van_der_pol_study
   u0 = u - u_initial
   v0 = u % derivative([t]) - v_initial
   energy   = integral(nu*u*u/2.0_dp, over=omega % time())
-  r        = continuous_residual(omega,  [oscillator])
-  g        = continuous_residual(domega, [u0, v0])
-  d        = continuous_residual(omega % design(), [nu - nu_design])
+  r        = continuous_lagrangian(omega,  [oscillator])
+  g        = continuous_lagrangian(domega, [u0, v0])
+  d        = continuous_lagrangian(omega % design(), [nu - nu_design])
   lambda_r = r % multiplier('adjoint', [t, nu])
   lambda   = g % multiplier('lambda', [nu])
   kappa    = d % multiplier('kappa')

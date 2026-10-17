@@ -26,7 +26,7 @@ module view_residual
   use token_identity    , only : token
   use operation_field   , only : continuous_field
   use operation_field   , only : WHOLE, TIME_FACE, TIME_FACTOR, SPACE_FACTOR, DESIGN_FACTOR
-  use operation_residual, only : continuous_residual
+  use operation_lagrangian, only : continuous_lagrangian
   use view_expression   , only : expression_view, operator(+), operator(*)
 
   implicit none
@@ -42,7 +42,7 @@ contains
 
   function formula(L) result(text)
 
-    type(continuous_residual), intent(in) :: L
+    type(continuous_lagrangian), intent(in) :: L
     character(len=:), allocatable :: text
 
     type(expression_view), allocatable :: s(:)
@@ -61,7 +61,7 @@ contains
 
   function tree(L) result(text)
 
-    type(continuous_residual), intent(in) :: L
+    type(continuous_lagrangian), intent(in) :: L
     character(len=:), allocatable :: text
 
     type(expression_view) :: view
@@ -73,7 +73,7 @@ contains
 
   function diagram(L) result(text)
 
-    type(continuous_residual), intent(in) :: L
+    type(continuous_lagrangian), intent(in) :: L
     character(len=:), allocatable :: text
 
     type(expression_view) :: view
@@ -85,7 +85,7 @@ contains
 
   function brackets(L) result(text)
 
-    type(continuous_residual), intent(in) :: L
+    type(continuous_lagrangian), intent(in) :: L
     character(len=:), allocatable :: text
 
     type(expression_view) :: view
@@ -97,7 +97,7 @@ contains
 
   function digraph(L) result(text)
 
-    type(continuous_residual), intent(in) :: L
+    type(continuous_lagrangian), intent(in) :: L
     character(len=:), allocatable :: text
 
     type(expression_view) :: view
@@ -110,7 +110,7 @@ contains
   ! the sum of the summands, in their order
   function lagrangian_view(L) result(view)
 
-    type(continuous_residual), intent(in) :: L
+    type(continuous_lagrangian), intent(in) :: L
     type(expression_view) :: view
 
     type(expression_view), allocatable :: s(:)
@@ -132,7 +132,7 @@ contains
 
   function summands(L) result(s)
 
-    type(continuous_residual), intent(in) :: L
+    type(continuous_lagrangian), intent(in) :: L
     type(expression_view), allocatable :: s(:)
 
     character(len=MAX_LABEL), allocatable :: unknowns(:), designs(:)
@@ -219,7 +219,7 @@ contains
 
   subroutine names_on(L, on, unknowns, designs)
 
-    type(continuous_residual), intent(in) :: L
+    type(continuous_lagrangian), intent(in) :: L
     type(token)              , intent(in) :: on
     character(len=MAX_LABEL), allocatable, intent(out) :: unknowns(:), designs(:)
 

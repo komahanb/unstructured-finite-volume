@@ -4,7 +4,7 @@
 # are stated in physics/.
 #
 #   dirk_coefficients    the two-stage third-order SDIRK tableau as the
-#                        zero of a continuous_residual on a point
+#                        zero of a continuous_lagrangian on a point
 #                        manifold; W11 = h (3 + sqrt 3)/6 = 0.078867...
 #   van_der_pol_continuous_adjoint
 #                        the continuous adjoint of the oscillator,

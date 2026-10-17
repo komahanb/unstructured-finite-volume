@@ -91,6 +91,6 @@ operation_manifold.o \
 operation_residual_operator.o \
 operation_temporal_minimization.o \
 operation_minimization.o \
-operation_residual.o \
+operation_lagrangian.o \
 view_residual.o \
 view_paraview_writer.o

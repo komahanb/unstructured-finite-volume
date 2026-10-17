@@ -2865,7 +2865,7 @@ contains
   end function aggregates
   !===================================================================!
   ! THE EXPLICIT TANGENT, FROZEN INTO A BLOCK RESIDUAL. this %
-  ! residual_operator % linearize (src/operation_residual.f90) is
+  ! residual_operator % linearize (src/operation_lagrangian.f90) is
   ! Element's own operation (Ch. 4.6.3 of the dissertation); a block
   ! residual's own layout and free pass across unchanged, since
   ! freezing the tangent changes no point and drops no unknown.

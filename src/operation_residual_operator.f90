@@ -348,31 +348,31 @@ contains
     character(len=250) :: message
 
     if (size(fixed_rows) /= size(fixed)) then
-       write(message,'(a,i0,a,i0)') 'operation_residual: one value is required per fixed &
+       write(message,'(a,i0,a,i0)') 'operation_lagrangian: one value is required per fixed &
             &component; size(fixed_rows) = ', size(fixed_rows), ', size(fixed) = ', size(fixed)
        error stop trim(message)
     end if
     if (present(fixed_rate)) then
        if (size(fixed_rate) /= size(fixed)) then
-          write(message,'(a,i0,a,i0)') 'operation_residual: one design rate is required per &
+          write(message,'(a,i0,a,i0)') 'operation_lagrangian: one design rate is required per &
                &fixed value; size(fixed_rate) = ', size(fixed_rate), ', size(fixed) = ', size(fixed)
           error stop trim(message)
        end if
     end if
     if (any(fixed_rows < 1) .or. any(fixed_rows > unknowns)) then
-       write(message,'(a,i0,a,i0,a,i0)') 'operation_residual: every fixed row must name an &
+       write(message,'(a,i0,a,i0,a,i0)') 'operation_lagrangian: every fixed row must name an &
             &unknown 1..', unknowns, '; fixed_rows range from ', minval(fixed_rows), ' to ', &
             & maxval(fixed_rows)
        error stop trim(message)
     end if
     if (any(at < 0) .or. any(at + degrees > unknowns)) then
-       write(message,'(a,i0,a,i0,a,i0)') 'operation_residual: an evaluation point''s degree &
+       write(message,'(a,i0,a,i0,a,i0)') 'operation_lagrangian: an evaluation point''s degree &
             &components must lie within the unknowns; unknowns = ', unknowns, ', minval(at) = ', &
             & minval(at), ', maxval(at) + degrees = ', maxval(at) + degrees
        error stop trim(message)
     end if
     if (degrees < 1) then
-       write(message,'(a,i0)') 'operation_residual: the primary degree count must be positive; &
+       write(message,'(a,i0)') 'operation_lagrangian: the primary degree count must be positive; &
             &degrees = ', degrees
        error stop trim(message)
     end if
@@ -387,19 +387,19 @@ contains
        ! components
        if (present(projected)) components = degrees
        if (degrees > components) then
-          write(message,'(a,i0,a,i0)') 'operation_residual: the primary degree count must lie &
+          write(message,'(a,i0,a,i0)') 'operation_lagrangian: the primary degree count must lie &
                &within the law''s component count; degrees = ', degrees, ', num_components = ', &
                & components
           error stop trim(message)
        end if
     end if
     if (size(primary) /= governed) then
-       write(message,'(a,i0,a,i0)') 'operation_residual: one governed row is required per rule; &
+       write(message,'(a,i0,a,i0)') 'operation_lagrangian: one governed row is required per rule; &
             &size(primary) = ', size(primary), ', rules = ', governed
        error stop trim(message)
     end if
     if (any(primary < 0) .or. any(primary >= degrees)) then
-       write(message,'(a,i0,a,i0,a,i0)') 'operation_residual: a governed row must be one of the &
+       write(message,'(a,i0,a,i0,a,i0)') 'operation_lagrangian: a governed row must be one of the &
             &point''s degree components 0..', degrees - 1, '; primary ranges from ', &
             & minval(primary), ' to ', maxval(primary)
        error stop trim(message)
@@ -422,7 +422,7 @@ contains
        allocate(this % rules(this % laws + variants))
        if (present(laws)) then
           if (size(laws) /= this % laws) then
-             write(message,'(a,i0,a,i0)') 'operation_residual: one law is given per stationarity of the rule; &
+             write(message,'(a,i0,a,i0)') 'operation_lagrangian: one law is given per stationarity of the rule; &
                   &laws = ', size(laws), ', stationarities = ', this % laws
              error stop trim(message)
           end if
@@ -441,7 +441,7 @@ contains
           this % variant(j) = j
           if (.not. varying(j)) cycle
           if (present(projected)) then
-             error stop 'operation_residual: under a projection on the cells a law that reads no component &
+             error stop 'operation_lagrangian: under a projection on the cells a law that reads no component &
                   &of top degree is not stated at an explicit moment'
           end if
           k = k + 1
@@ -468,7 +468,7 @@ contains
     ! the positions of the points, one column per point
     if (present(positions)) then
        if (size(positions, 2) /= size(at)) then
-          write(message,'(a,i0,a,i0)') 'operation_residual: one position is required per evaluation &
+          write(message,'(a,i0,a,i0)') 'operation_lagrangian: one position is required per evaluation &
                &point; size(positions, 2) = ', size(positions, 2), ', points = ', size(at)
           error stop trim(message)
        end if
@@ -483,13 +483,13 @@ contains
        allocate(this % prescribed_row(unknowns), source=.false.)
        do e = 1, prescribed % pattern % num_edges()
           if (prescribed % pattern % edge_head(e) < 1 .or. prescribed % pattern % edge_head(e) > unknowns) then
-             error stop 'operation_residual: a prescribed row must name an unknown'
+             error stop 'operation_lagrangian: a prescribed row must name an unknown'
           end if
           this % prescribed_row(prescribed % pattern % edge_head(e)) = .true.
        end do
        do j = 1, size(fixed_rows)
           if (this % prescribed_row(fixed_rows(j))) then
-             error stop 'operation_residual: a row is both fixed and prescribed'
+             error stop 'operation_lagrangian: a row is both fixed and prescribed'
           end if
        end do
     end if
@@ -500,7 +500,7 @@ contains
     ! and the position of their quadrature point
     if (present(projected)) then
        if (.not. present(positions)) then
-          error stop 'operation_residual: a law projected on the cells is evaluated at the positions of its sites'
+          error stop 'operation_lagrangian: a law projected on the cells is evaluated at the positions of its sites'
        end if
        this % projected = projected
        nq        = projected % elements % num_quadrature_points()
@@ -659,7 +659,7 @@ contains
     integer :: w, npts, i
     w = this % stride()
     if (any(this % at /= [((i - 1) * w, i = 1, size(this % at))])) then
-       error stop 'operation_residual: a residual is cut into parts when its points'' tuples follow &
+       error stop 'operation_lagrangian: a residual is cut into parts when its points'' tuples follow &
             &one another in the order of the unknowns'
     end if
     npts   = size(part % owned) / w
@@ -844,7 +844,7 @@ contains
   type(expression) function rule(this) result(law)
     class(residual_operator), intent(in) :: this
     if (.not. allocated(this % physics)) then
-       error stop 'operation_residual: rule was read from a residual without a rule, the frozen linearization'
+       error stop 'operation_lagrangian: rule was read from a residual without a rule, the frozen linearization'
     end if
     law = this % physics
   end function rule
@@ -948,12 +948,12 @@ contains
     type(typed_field_domain) :: states, designs
     character(len=250) :: message
     if (size(x) /= this % unknowns) then
-       write(message,'(a,i0,a,i0)') 'operation_residual: the state must contain one component per &
+       write(message,'(a,i0,a,i0)') 'operation_lagrangian: the state must contain one component per &
             &degree per unknown point; size(x) = ', size(x), ', unknowns = ', this % unknowns
        error stop trim(message)
     end if
     if (size(nu) /= size(this % at) * this % designs) then
-       write(message,'(a,i0,a,i0)') 'operation_residual: the design must contain one value per design &
+       write(message,'(a,i0,a,i0)') 'operation_lagrangian: the design must contain one value per design &
             &per evaluation point; size(nu) = ', size(nu), ', size(at) * designs = ', &
             & size(this % at) * this % designs
        error stop trim(message)
@@ -993,7 +993,7 @@ contains
     given = input_graph % vertex_set()
     own   = this % unknown_domain()
     if (.not. own % same_as(given)) then
-       error stop 'operation_residual: require_host received a graph that is not this residual''s own unknown graph'
+       error stop 'operation_lagrangian: require_host received a graph that is not this residual''s own unknown graph'
     end if
   end subroutine require_host
 
@@ -1008,7 +1008,7 @@ contains
     character(len=*), intent(in) :: message
     character(len=250) :: diagnostic
     if (.not. domain % same_as(given) .or. num_given /= num_values) then
-       write(diagnostic,'(a,a,a,l1,a,i0,a,i0)') 'operation_residual: ', message, &
+       write(diagnostic,'(a,a,a,l1,a,i0,a,i0)') 'operation_lagrangian: ', message, &
             & '; domain matches = ', domain % same_as(given), ', num_given = ', num_given, &
             & ', num_values = ', num_values
        error stop trim(diagnostic)
@@ -1050,7 +1050,7 @@ contains
     type(discrete_domain) :: domain
     real(dp), allocatable :: design_values(:)
     if (.not. bound_on(inputs, this % argument(2), this % design_domain(), size(this % at) * this % designs)) then
-       error stop 'operation_residual: the design must be defined on the point domain with one value per &
+       error stop 'operation_lagrangian: the design must be defined on the point domain with one value per &
             &design per point'
     end if
     call bound_real_vector(inputs, this % argument(2), design_values)
@@ -1215,7 +1215,7 @@ contains
     type(stored_field) :: positions
     character(len=250) :: message
     if (coordinates > size(this % point_positions, 1)) then
-       write(message,'(a,i0,a,i0)') 'operation_residual: a rule reads a coordinate the positions of the &
+       write(message,'(a,i0,a,i0)') 'operation_lagrangian: a rule reads a coordinate the positions of the &
             &points do not store; coordinates read = ', coordinates, ', coordinates stored = ', &
             & size(this % point_positions, 1)
        error stop trim(message)
@@ -1261,7 +1261,7 @@ contains
     type(typed_field_domain) :: states
     character(len=250) :: message
     if (.not. bound_on(inputs, this % argument(1), this % unknown_domain(), this % unknowns)) then
-       write(message,'(a,i0)') 'operation_residual: the bound state must be defined on the unknown &
+       write(message,'(a,i0)') 'operation_lagrangian: the bound state must be defined on the unknown &
             &domain with one component per degree per unknown point; unknowns = ', this % unknowns
        error stop trim(message)
     end if
@@ -1289,7 +1289,7 @@ contains
        call require_field(along, size(v), this % design_domain(), size(this % at) * this % designs, &
             & 'a direction in the design must be defined on the point domain with one value per point')
     else
-       error stop 'operation_residual: require_direction received a variation naming neither the state nor the design'
+       error stop 'operation_lagrangian: require_direction received a variation naming neither the state nor the design'
     end if
   end subroutine require_direction
 
@@ -1313,7 +1313,7 @@ contains
     type(stored_field) :: state
     real(dp), allocatable :: r(:), governing(:,:), x(:)
     if (.not. present(inputs)) then
-       error stop 'operation_residual: residual_apply requires inputs (the state and the design), but the optional inputs argument was not given'
+       error stop 'operation_lagrangian: residual_apply requires inputs (the state and the design), but the optional inputs argument was not given'
     end if
     call this % require_host(input_graph)
     call this % state_of(inputs, x, state)
@@ -1426,7 +1426,7 @@ contains
     call this % state_of(inputs, x, state)
     if (allocated(this % physics)) then
        if (.not. bound_on(inputs, this % argument(2), this % design_domain(), npts * this % designs)) then
-          error stop 'operation_residual: the design must be defined on the point domain with one value per &
+          error stop 'operation_lagrangian: the design must be defined on the point domain with one value per &
                &design per point'
        end if
        call bound_real_vector(inputs, this % argument(2), nu)
@@ -1529,7 +1529,7 @@ contains
     character(len=250) :: message
     call this % require_owned(variations)
     if (size(variations) < 1 .or. size(variations) > this % max_degree()) then
-       write(message,'(a,i0,a,i0)') 'operation_residual: the requested order must lie within &
+       write(message,'(a,i0,a,i0)') 'operation_lagrangian: the requested order must lie within &
             &max_degree; size(variations) = ', size(variations), ', max_degree = ', this % max_degree()
        error stop trim(message)
     end if
@@ -1546,7 +1546,7 @@ contains
        ! is not zero.
        if (this % any_fixed_rate()) then
           if (all([(variations(i) % argument_is(this % argument(2)), i = 1, size(variations))])) then
-             error stop 'operation_residual: a fixed value''s design rate is stated to first order &
+             error stop 'operation_lagrangian: a fixed value''s design rate is stated to first order &
                   &only; a repeated design partial of a fixed row is not stated'
           end if
        end if
@@ -1621,7 +1621,7 @@ contains
     else if (given % argument_is(this % argument(2))) then
        at_points = given % with_argument(this % physics % argument(2))
     else
-       error stop 'operation_residual: physics_variation received a variation naming neither the state nor the design'
+       error stop 'operation_lagrangian: physics_variation received a variation naming neither the state nor the design'
     end if
   end function physics_variation
 
@@ -1675,11 +1675,11 @@ contains
 
     derived = this % primary_law % restricted(free, values)
     if (allocated(this % projected)) then
-       error stop 'operation_residual: a residual projected on the cells is not restricted; its instances &
+       error stop 'operation_lagrangian: a residual projected on the cells is not restricted; its instances &
             &read the nodes outside the selection'
     end if
     if (allocated(this % prescribed)) then
-       error stop 'operation_residual: a residual with prescribed rows is not restricted; the &
+       error stop 'operation_lagrangian: a residual with prescribed rows is not restricted; the &
             &prescribed relation would lose its unknowns outside the selection'
     end if
     if (allocated(this % connected_law)) then
@@ -1721,7 +1721,7 @@ contains
     character(len=250) :: message
 
     if (any(free < 1) .or. any(free > this % unknowns)) then
-       write(message,'(a,i0,a,i0,a,i0)') 'operation_residual: a constraint must select unknowns &
+       write(message,'(a,i0,a,i0,a,i0)') 'operation_lagrangian: a constraint must select unknowns &
             &of the residual 1..', this % unknowns, '; free ranges from ', minval(free), ' to ', &
             & maxval(free)
        error stop trim(message)
@@ -1740,7 +1740,7 @@ contains
        end do
        if (inside == 0) cycle
        if (inside /= this % degrees) then
-          write(message,'(a,i0,a,i0,a,i0)') 'operation_residual: point ', p, ' is split across &
+          write(message,'(a,i0,a,i0,a,i0)') 'operation_lagrangian: point ', p, ' is split across &
                &the constraint boundary; ', inside, ' of its ', this % degrees, ' degree components are free'
           error stop trim(message)
        end if
@@ -1779,14 +1779,14 @@ contains
     character(len=250) :: message
 
     if (size(rhs) /= this % unknowns) then
-       write(message,'(a,i0,a,i0)') 'operation_residual: one right side value is required per &
+       write(message,'(a,i0,a,i0)') 'operation_lagrangian: one right side value is required per &
             &unknown; size(rhs) = ', size(rhs), ', unknowns = ', this % unknowns
        error stop trim(message)
     end if
 
     call this % explicit_jacobian(input_graph, inputs, 1, r, c, w, jacobian_defined)
     if (.not. jacobian_defined) then
-       error stop 'operation_residual: linearize requires the jacobian in the state to be &
+       error stop 'operation_lagrangian: linearize requires the jacobian in the state to be &
             &explicit, but explicit_jacobian() reported none'
     end if
 
@@ -2158,7 +2158,7 @@ contains
          do i = 1, size(pr % element_point, 1)
             p = abs(pr % element_point(i, n))
             if (place_of(p) == 0) then
-               error stop 'operation_residual: a part reads every node of an instance it states'
+               error stop 'operation_lagrangian: a part reads every node of an instance it states'
             end if
             sub % element_point(i, m) = place_of(p)
             if (.not. owned(place_of(p)) .or. pr % element_point(i, n) < 1) sub % element_point(i, m) = -place_of(p)

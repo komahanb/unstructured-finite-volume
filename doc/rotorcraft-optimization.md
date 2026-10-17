@@ -95,7 +95,7 @@ r0 + u + C^T (X - r0). One file of 168326 points per instant,
 `rotor_<instant>.vtu`, and `rotor.pvd`, the time series paraview reads.
 
 **What changed in src/.**
-- `operation_residual.f90`: the laws at the first instant (above);
+- `operation_lagrangian.f90`: the laws at the first instant (above);
   `minimize(..., continued)`; the rule formed in one pass.
 - `operation_expression.f90`: the stationarity of a Lagrangian that is
   a sum of multipliers times laws is the law the multiplier multiplies,
@@ -452,7 +452,7 @@ differences.
    by an active-set Newton on the reduced space. Verified first on the
    beam's identification with a bound on the stiffness.
    Built 2026-10-03 for inequalities on the design factor,
-   `continuous_residual(omega % design(), [c], inequality=.true.)`
+   `continuous_lagrangian(omega % design(), [c], inequality=.true.)`
    paired with its multiplier: each Newton step on the design minimizes
    the quadratic model of J under the inequalities linearized at the
    iterate, its active set settled within the step, and the multipliers

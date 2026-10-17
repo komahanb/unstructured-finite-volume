@@ -54,7 +54,7 @@ program taylor_green_vortex
   use operation_manifold         , only : continuous_manifold, discrete_manifold, interval, region, points, mesh
   use operation_field            , only : continuous_field, discrete_field, integral
   use operation_field            , only : sin, cos, exp, operator(+), operator(-), operator(*), operator(/), operator(**)
-  use operation_residual         , only : continuous_residual, discrete_residual, operator(+), operator(*)
+  use operation_lagrangian         , only : continuous_lagrangian, discrete_lagrangian, operator(+), operator(*)
   use operation_family           , only : dirk, bdf, adams, chain
   use operation_finite_volume    , only : finite_volume
   use view_paraview_writer       , only : paraview
@@ -76,8 +76,8 @@ program taylor_green_vortex
   type(continuous_field)    :: u, v, p, lambda, mu, momentum_x, momentum_y, pressure
   type(discrete_field)      :: estimate, solution, error
 
-  type(continuous_residual) :: r, g, gauge, L
-  type(discrete_residual)   :: L_h
+  type(continuous_lagrangian) :: r, g, gauge, L
+  type(discrete_lagrangian)   :: L_h
   type(newton)              :: stack
   type(minimization)        :: graph
   integer                   :: k
@@ -118,9 +118,9 @@ program taylor_green_vortex
   ! r on Omega; g on dOmega with its multiplier lambda(x, y) : dOmega -> R^2,
   ! one component per condition; the gauge on tau with its multiplier
   ! mu(t) : [0, T] -> R; and the Lagrangian L = r + lambda . g + mu gauge
-  r      = continuous_residual(omega,  [momentum_x, momentum_y, pressure])
-  g      = continuous_residual(domega, [u - u_exact, v - v_exact])
-  gauge  = continuous_residual(tau,    [integral(p, over=omega % space())])
+  r      = continuous_lagrangian(omega,  [momentum_x, momentum_y, pressure])
+  g      = continuous_lagrangian(domega, [u - u_exact, v - v_exact])
+  gauge  = continuous_lagrangian(tau,    [integral(p, over=omega % space())])
   lambda = g % multiplier('lambda', [x, y])
   mu     = gauge % multiplier('mu', [t])
   L      = r + lambda*g + mu*gauge

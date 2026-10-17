@@ -65,7 +65,7 @@ program heat_conduction_study
   use operation_expansion     , only : expansion
   use operation_field         , only : continuous_field, discrete_field, integral
   use operation_field         , only : sin, cos, operator(+), operator(-), operator(*), operator(/), operator(**)
-  use operation_residual      , only : continuous_residual, discrete_residual, operator(+), operator(*)
+  use operation_lagrangian      , only : continuous_lagrangian, discrete_lagrangian, operator(+), operator(*)
   use operation_family        , only : dirk, bdf, adams, chain
   use operation_finite_element, only : finite_element
 
@@ -79,10 +79,10 @@ program heat_conduction_study
   type(discrete_manifold)   :: omega_h
   type(continuous_field)    :: t, x, y, z, u, u_exact, exact, conductivity, flux_law, flux_exact, square
   type(continuous_field)    :: q(3), q_exact(3), coordinate(3), s, conductivity_exact, kappa
-  type(continuous_residual) :: r, ic, Lagrangian, design
-  type(continuous_residual), allocatable :: face(:)
+  type(continuous_lagrangian) :: r, ic, Lagrangian, design
+  type(continuous_lagrangian), allocatable :: face(:)
   type(discrete_field)      :: estimate, solution, error, functional, kappa_h
-  type(discrete_residual)   :: L_h
+  type(discrete_lagrangian)   :: L_h
   real(dp) :: J(2), s0
   logical  :: with_design
 
@@ -140,22 +140,22 @@ program heat_conduction_study
      flux_law   = flux_law   + q(3) % derivative([z])
      flux_exact = flux_exact + q_exact(3) % derivative([z])
   end if
-  r  = continuous_residual(omega, [u % derivative([t]) - flux_law - (u_exact % derivative([t]) - flux_exact)])
-  ic = continuous_residual(initial, [u - u_exact])
+  r  = continuous_lagrangian(omega, [u % derivative([t]) - flux_law - (u_exact % derivative([t]) - flux_exact)])
+  ic = continuous_lagrangian(initial, [u - u_exact])
 
   ! u = 0 on every face of the square or the cube
   allocate(face(2 * d))
-  face(1) = continuous_residual(omega % boundary(x, 0.0_dp), [u])
-  face(2) = continuous_residual(omega % boundary(x, 1.0_dp), [u])
-  face(3) = continuous_residual(omega % boundary(y, 0.0_dp), [u])
-  face(4) = continuous_residual(omega % boundary(y, 1.0_dp), [u])
+  face(1) = continuous_lagrangian(omega % boundary(x, 0.0_dp), [u])
+  face(2) = continuous_lagrangian(omega % boundary(x, 1.0_dp), [u])
+  face(3) = continuous_lagrangian(omega % boundary(y, 0.0_dp), [u])
+  face(4) = continuous_lagrangian(omega % boundary(y, 1.0_dp), [u])
   if (d == 3) then
-     face(5) = continuous_residual(omega % boundary(z, 0.0_dp), [u])
-     face(6) = continuous_residual(omega % boundary(z, 1.0_dp), [u])
+     face(5) = continuous_lagrangian(omega % boundary(z, 0.0_dp), [u])
+     face(6) = continuous_lagrangian(omega % boundary(z, 1.0_dp), [u])
   end if
   square = integral((u - u_exact)**2 / 2.0_dp, over=omega)
   if (with_design) then
-     design     = continuous_residual(omega % design(), [s - s0])
+     design     = continuous_lagrangian(omega % design(), [s - s0])
      kappa      = design % multiplier('kappa')
      Lagrangian = square + r % multiplier('adjoint') * r + ic % multiplier('lambda') * ic + kappa * design
      do k = 1, 2 * d

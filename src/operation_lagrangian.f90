@@ -13,7 +13,7 @@
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 
-module operation_residual
+module operation_lagrangian
 
   use util_precision   , only : dp
   use operation_action , only : operation, contract, variation
@@ -56,7 +56,7 @@ module operation_residual
   implicit none
 
   private
-  public :: continuous_residual, discrete_residual, minimize_together
+  public :: continuous_lagrangian, discrete_lagrangian, minimize_together
   public :: equidistribution
   public :: operator(+), operator(*)
 
@@ -106,7 +106,7 @@ module operation_residual
   ! the iterations of Newton's method on a free design
   integer, parameter :: MAX_DESIGN_ITERATIONS = 50
 
-  type :: continuous_residual
+  type :: continuous_lagrangian
 
      type(residual_term), allocatable :: term(:)
      type(continuous_field), allocatable :: objective
@@ -116,11 +116,11 @@ module operation_residual
      procedure :: discretize => residual_discretize
      procedure :: multiplier => residual_multiplier
 
-  end type continuous_residual
+  end type continuous_lagrangian
 
-  interface continuous_residual
+  interface continuous_lagrangian
      module procedure create_continuous
-  end interface continuous_residual
+  end interface continuous_lagrangian
 
   interface operator(+)
      module procedure residual_sum
@@ -238,7 +238,7 @@ module operation_residual
      integer  :: work      = 0
   end type equidistribution
 
-  type, extends(minimand) :: discrete_residual
+  type, extends(minimand) :: discrete_lagrangian
 
      type(discrete_manifold)   :: points
      type(continuous_manifold) :: manifold
@@ -405,7 +405,7 @@ module operation_residual
      procedure, private :: scheduled_march
      procedure, private :: wavefront_march
      procedure, private :: adjoint_right_side_of
-  end type discrete_residual
+  end type discrete_lagrangian
 
 contains
 
@@ -422,7 +422,7 @@ contains
     type(continuous_manifold), intent(in) :: manifold
     type(continuous_field)   , intent(in) :: equations(:)
     logical                  , intent(in), optional :: inequality
-    type(continuous_residual) :: this
+    type(continuous_lagrangian) :: this
 
     integer :: k
     character(len=250) :: message
@@ -432,17 +432,17 @@ contains
     this % term(1) % equation = equations
     if (present(inequality)) this % term(1) % inequality = inequality
     if (this % term(1) % inequality .and. .not. manifold % is_design_factor()) then
-       error stop 'operation_residual: an inequality is a condition on the design factor'
+       error stop 'operation_lagrangian: an inequality is a condition on the design factor'
     end if
     do k = 1, size(equations)
        ! a smooth maximum of several components is a scalar
        if (equations(k) % num_components() /= 1 .and. .not. equations(k) % weight > 0.0_dp) then
-          write(message,'(a,i0,a,i0)') 'operation_residual: an equation is a scalar field; equation ', &
+          write(message,'(a,i0,a,i0)') 'operation_lagrangian: an equation is a scalar field; equation ', &
                & k, ' has components = ', equations(k) % num_components()
           error stop trim(message)
        end if
        if (.not. (manifold % same_support(equations(k) % on) .or. manifold % parent % matches(equations(k) % on))) then
-          write(message,'(a,i0,a)') 'operation_residual: equation ', k, ' is a field on neither the &
+          write(message,'(a,i0,a)') 'operation_lagrangian: equation ', k, ' is a field on neither the &
                &manifold given nor its parent'
           error stop trim(message)
        end if
@@ -452,12 +452,12 @@ contains
 
   function residual_sum(a, b) result(this)
 
-    type(continuous_residual), intent(in) :: a, b
-    type(continuous_residual) :: this
+    type(continuous_lagrangian), intent(in) :: a, b
+    type(continuous_lagrangian) :: this
 
     this % term = [a % term, b % term]
     if (allocated(a % objective) .and. allocated(b % objective)) then
-       error stop 'operation_residual: one objective enters the Lagrangian'
+       error stop 'operation_lagrangian: one objective enters the Lagrangian'
     end if
     if (allocated(a % objective)) this % objective = a % objective
     if (allocated(b % objective)) this % objective = b % objective
@@ -474,18 +474,18 @@ contains
   function objective_sum(objective, residual) result(this)
 
     type(continuous_field)   , intent(in) :: objective
-    type(continuous_residual), intent(in) :: residual
-    type(continuous_residual) :: this
+    type(continuous_lagrangian), intent(in) :: residual
+    type(continuous_lagrangian) :: this
 
     if (.not. objective % is_integral()) then
-       error stop 'operation_residual: the objective is the integral of a field over the manifold, or its &
+       error stop 'operation_lagrangian: the objective is the integral of a field over the manifold, or its &
             &smooth maximum'
     end if
     if (objective % num_components() /= 1 .and. .not. objective % weight > 0.0_dp) then
-       error stop 'operation_residual: the objective is the integral of a scalar field'
+       error stop 'operation_lagrangian: the objective is the integral of a scalar field'
     end if
     if (allocated(residual % objective)) then
-       error stop 'operation_residual: one objective enters the Lagrangian'
+       error stop 'operation_lagrangian: one objective enters the Lagrangian'
     end if
     this = residual
     this % objective = objective
@@ -503,13 +503,13 @@ contains
 
   function residual_multiplier(this, name, arguments) result(lambda)
 
-    class(continuous_residual), intent(inout) :: this
+    class(continuous_lagrangian), intent(inout) :: this
     character(len=*)          , intent(in)    :: name
     type(continuous_field)    , intent(in), optional :: arguments(:)
     type(continuous_field) :: lambda
 
     if (size(this % term) /= 1) then
-       error stop 'operation_residual: a multiplier is declared by one term; declare it before summing'
+       error stop 'operation_lagrangian: a multiplier is declared by one term; declare it before summing'
     end if
     lambda = this % term(1) % manifold % unknown(name, arguments, components=size(this % term(1) % equation))
 
@@ -526,22 +526,22 @@ contains
   function paired_term(lambda, g) result(this)
 
     type(continuous_field)   , intent(in) :: lambda
-    type(continuous_residual), intent(in) :: g
-    type(continuous_residual) :: this
+    type(continuous_lagrangian), intent(in) :: g
+    type(continuous_lagrangian) :: this
 
     character(len=250) :: message
 
     if (size(g % term) /= 1) then
-       error stop 'operation_residual: a multiplier pairs with one term; pair each term before summing'
+       error stop 'operation_lagrangian: a multiplier pairs with one term; pair each term before summing'
     end if
     if (.not. lambda % is_unknown()) then
-       error stop 'operation_residual: a multiplier is an unknown of the term''s manifold'
+       error stop 'operation_lagrangian: a multiplier is an unknown of the term''s manifold'
     end if
     if (.not. g % term(1) % manifold % same_support(lambda % on)) then
-       error stop 'operation_residual: the multiplier is an unknown of another manifold than the term''s'
+       error stop 'operation_lagrangian: the multiplier is an unknown of another manifold than the term''s'
     end if
     if (lambda % num_components() /= size(g % term(1) % equation)) then
-       write(message,'(a,i0,a,i0)') 'operation_residual: a multiplier has one component per equation; &
+       write(message,'(a,i0,a,i0)') 'operation_lagrangian: a multiplier has one component per equation; &
             &components = ', lambda % num_components(), ', equations = ', size(g % term(1) % equation)
        error stop trim(message)
     end if
@@ -575,7 +575,7 @@ contains
   ! the equations of the representation laws paired with a multiplier
   pure integer function num_represented(this)
 
-    class(discrete_residual), intent(in) :: this
+    class(discrete_lagrangian), intent(in) :: this
 
     integer :: r
 
@@ -589,7 +589,7 @@ contains
 
   subroutine check_representations(this, defined, with_chain, with_differences)
 
-    class(discrete_residual), intent(in) :: this
+    class(discrete_lagrangian), intent(in) :: this
     integer                 , intent(in) :: defined(:,:)
     logical                 , intent(in) :: with_chain, with_differences
 
@@ -601,7 +601,7 @@ contains
        if (.not. any(defined(3, :) == c)) cycle
        along_time = this % manifold % with_time .and. c == 1
        if ((along_time .and. .not. with_chain) .or. (.not. along_time .and. .not. with_differences)) then
-          write(message,'(a,i0)') 'operation_residual: a representation law is stated along a coordinate &
+          write(message,'(a,i0)') 'operation_lagrangian: a representation law is stated along a coordinate &
                &that has no concretion; coordinate = ', c
           error stop trim(message)
        end if
@@ -610,7 +610,7 @@ contains
           do o = 1, top
              times = count(defined(1, :) == f .and. defined(2, :) == o .and. defined(3, :) == c)
              if (times /= 1) then
-                write(message,'(a,i0,a,i0,a,i0,a,i0,a)') 'operation_residual: along coordinate ', c, &
+                write(message,'(a,i0,a,i0,a,i0,a,i0,a)') 'operation_lagrangian: along coordinate ', c, &
                      & ' the component of order ', o, ' of field ', f, ' is defined ', times, &
                      & ' times; a representation law defines each stored component once'
                 error stop trim(message)
@@ -619,7 +619,7 @@ contains
        end do
        if (count(defined(3, :) == c) /= sum([(merge(this % rule % degree_of_field(f), &
             & this % rule % degree_along(c), along_time), f = 1, this % manifold % num_unknowns)])) then
-          write(message,'(a,i0)') 'operation_residual: a representation law defines a component the rule &
+          write(message,'(a,i0)') 'operation_lagrangian: a representation law defines a component the rule &
                &does not store; coordinate = ', c
           error stop trim(message)
        end if
@@ -629,12 +629,12 @@ contains
 
   function residual_discretize(this, points, time, space, placement) result(image)
 
-    class(continuous_residual), intent(in) :: this
+    class(continuous_lagrangian), intent(in) :: this
     type(discrete_manifold)   , intent(in) :: points
     type(chain)               , intent(in), optional :: time
     class(derivative_approximation), intent(in), optional :: space
     type(equidistribution)    , intent(in), optional :: placement
-    type(discrete_residual) :: image
+    type(discrete_lagrangian) :: image
 
     integer :: k, j, i, whole_term, num_conditions, nf, pin
     integer, allocatable :: defined(:,:)
@@ -658,13 +658,13 @@ contains
          ! the pin of the instants, the one term that reads the time map
          if (any([(t % equation(i) % component(1) % reads_time_map(), i = 1, size(t % equation))])) then
             if (.not. t % manifold % is_time_factor() .or. size(t % equation) /= 1 .or. .not. t % paired) then
-               error stop 'operation_residual: the time map is read by the pin of the instants alone, the &
+               error stop 'operation_lagrangian: the time map is read by the pin of the instants alone, the &
                     &one equation t_map - t on the time factor, paired with its multiplier'
             end if
             if (.not. t % equation(1) % component(1) % pins_instants()) then
-               error stop 'operation_residual: the pin of the instants is t_map - t'
+               error stop 'operation_lagrangian: the pin of the instants is t_map - t'
             end if
-            if (pin /= 0) error stop 'operation_residual: one term pins the instants'
+            if (pin /= 0) error stop 'operation_lagrangian: one term pins the instants'
             pin = k
             cycle
          end if
@@ -679,7 +679,7 @@ contains
                cycle
             end if
             if (whole_term /= 0) then
-               error stop 'operation_residual: one term states the physics on the whole manifold'
+               error stop 'operation_lagrangian: one term states the physics on the whole manifold'
             end if
             whole_term = k
          else
@@ -688,19 +688,19 @@ contains
        end associate
     end do
     if (whole_term == 0) then
-       error stop 'operation_residual: no term states the equations on the whole manifold'
+       error stop 'operation_lagrangian: no term states the equations on the whole manifold'
     end if
 
     associate (t => this % term(whole_term))
       if (.not. points % identity % matches(t % manifold % identity)) then
-         error stop 'operation_residual: the points discretize another manifold than the equations'' own'
+         error stop 'operation_lagrangian: the points discretize another manifold than the equations'' own'
       end if
       ! the unknowns of the state: every unknown of the manifold but
       ! the multiplier of the equations, declared after them
       nf = t % manifold % num_unknowns
       if (t % paired) nf = nf - t % multiplier % num_components()
       if (size(t % equation) /= nf) then
-         write(message,'(a,i0,a,i0)') 'operation_residual: one equation is required per unknown of the &
+         write(message,'(a,i0,a,i0)') 'operation_lagrangian: one equation is required per unknown of the &
               &manifold, its multiplier aside; equations = ', size(t % equation), ', unknowns = ', nf
          error stop trim(message)
       end if
@@ -726,7 +726,7 @@ contains
     if (projected) call projected_form(image, this % term(whole_term), space, points, defined)
     call image % check_representations(defined, present(time), present(space))
     if (any(image % manifold % of_time_alone(1:nf)) .and. .not. allocated(image % elements)) then
-       error stop 'operation_residual: an unknown of time alone on a manifold of space is stated under a &
+       error stop 'operation_lagrangian: an unknown of time alone on a manifold of space is stated under a &
             &projection on the cells, which tests its equation with the weight alone'
     end if
     if (present(time) .and. .not. allocated(image % elements)) call initial_form(image, this % term(whole_term))
@@ -756,13 +756,13 @@ contains
           image % condition(j) % equation(i) = image % condition(j) % equation(i) % jet_form()
        end do
        if (.not. image % condition(j) % manifold % parent % matches(image % manifold % identity)) then
-          error stop 'operation_residual: a condition is stated on a part of another manifold'
+          error stop 'operation_lagrangian: a condition is stated on a part of another manifold'
        end if
        ! a condition on a face of the region takes the rows of the
        ! physics at the points nearest the face: the derivatives along
        ! space come from a closed approximation at every point
        if (image % condition(j) % manifold % is_space_face() .and. .not. present(space)) then
-          error stop 'operation_residual: a condition on a face of the region requires the derivatives along &
+          error stop 'operation_lagrangian: a condition on a face of the region requires the derivatives along &
                &space approximated at every point, a derivative approximation'
        end if
        ! an inequality on the design factor is a function of the design
@@ -775,11 +775,11 @@ contains
                if (equation % is_integral()) then
                   if (equation % integrated_part /= WHOLE .or. &
                        & .not. equation % integrated_over % matches(image % manifold % identity)) then
-                     error stop 'operation_residual: an inequality on a functional of the state is over the whole &
+                     error stop 'operation_lagrangian: an inequality on a functional of the state is over the whole &
                           &manifold'
                   end if
                else if (form % reads_state()) then
-                  error stop 'operation_residual: an inequality on the design factor is a function of the design &
+                  error stop 'operation_lagrangian: an inequality on the design factor is a function of the design &
                        &coordinates alone, or a functional of the state over the manifold'
                end if
              end associate
@@ -788,18 +788,18 @@ contains
        ! at the value the manifold states: nu - nu_0 = 0, one equation
        else if (image % condition(j) % manifold % is_design_factor()) then
           if (size(image % condition(j) % equation) /= points % expansion % num_designs()) then
-             error stop 'operation_residual: the condition on the design factor fixes every design coordinate, &
+             error stop 'operation_lagrangian: the condition on the design factor fixes every design coordinate, &
                   &one equation per coordinate in the order of the coordinates'
           end if
           do i = 1, points % expansion % num_designs()
              call design_condition(image % condition(j) % equation(i), points % expansion % values(), given, slope)
              if (abs(given) > 1.0e-12_dp * max(1.0_dp, maxval(abs(points % expansion % values())))) then
-                error stop 'operation_residual: the condition on the design factor is each design coordinate &
+                error stop 'operation_lagrangian: the condition on the design factor is each design coordinate &
                      &minus the value the manifold fixes it at, nu - nu_0'
              end if
              slope(i) = slope(i) - 1.0_dp
              if (any(abs(slope) > 1.0e-12_dp)) then
-                error stop 'operation_residual: the condition on the design factor is each design coordinate &
+                error stop 'operation_lagrangian: the condition on the design factor is each design coordinate &
                      &minus its value, equation k the k-th coordinate'
              end if
           end do
@@ -824,38 +824,38 @@ contains
                & .and. .not. image % manifold % with_time
        end select
        if (.not. covering) then
-          error stop 'operation_residual: the objective is integrated over the whole manifold, over the &
+          error stop 'operation_lagrangian: the objective is integrated over the whole manifold, over the &
                &one factor of a manifold of time or of space alone, or over the face at an instant; a &
                &factor of a product does not cover the points'
        end if
        if (.not. image % with_adjoint) then
-          error stop 'operation_residual: an objective requires the equations paired with a multiplier, &
+          error stop 'operation_lagrangian: an objective requires the equations paired with a multiplier, &
                &the adjoint, whose equation is the stationarity of the Lagrangian in the state'
        end if
        if (any([(this % objective % component(i) % reads_time_map(), i = 1, this % objective % num_components())])) then
-          error stop 'operation_residual: the time map is read by the pin of the instants alone'
+          error stop 'operation_lagrangian: the time map is read by the pin of the instants alone'
        end if
        image % objective = this % objective % jet_form()
        if (allocated(image % elements) .and. this % objective % integrated_part /= WHOLE) then
-          error stop 'operation_residual: under a projection on the cells the objective is integrated over the &
+          error stop 'operation_lagrangian: under a projection on the cells the objective is integrated over the &
                &whole manifold, at the quadrature points of the cells'
        end if
     end if
 
     image % points = points
     if (image % manifold % with_time .neqv. present(time)) then
-       error stop 'operation_residual: the derivatives along time are approximated by a chain of &
+       error stop 'operation_lagrangian: the derivatives along time are approximated by a chain of &
             &families, given exactly when the manifold has a time coordinate'
     end if
     if (image % manifold % with_space .neqv. present(space)) then
-       error stop 'operation_residual: the derivatives along space are approximated by a method of an &
+       error stop 'operation_lagrangian: the derivatives along space are approximated by a method of an &
             &order, finite differences or finite volumes, given exactly when the manifold has a region'
     end if
     if (present(time)) then
        image % schemes    = time
        image % with_chain = .true.
        if (time % from(size(time % from)) > points % num_instants()) then
-          error stop 'operation_residual: a block of the chain begins after the last instant'
+          error stop 'operation_lagrangian: a block of the chain begins after the last instant'
        end if
     end if
     if (present(space)) then
@@ -864,10 +864,10 @@ contains
     end if
     if (present(placement)) then
        if (.not. present(time)) then
-          error stop 'operation_residual: an equidistribution places instants; the manifold has no time'
+          error stop 'operation_lagrangian: an equidistribution places instants; the manifold has no time'
        end if
        if (.not. allocated(image % objective)) then
-          error stop 'operation_residual: an equidistribution places the instants by the error of the objective; &
+          error stop 'operation_lagrangian: an equidistribution places the instants by the error of the objective; &
                &the Lagrangian has none'
        end if
        image % placement = placement
@@ -876,13 +876,13 @@ contains
     ! term's
     if (pin /= 0) then
        if (.not. present(time) .or. present(space)) then
-          error stop 'operation_residual: the instants of a manifold of time alone are pinned'
+          error stop 'operation_lagrangian: the instants of a manifold of time alone are pinned'
        end if
        if (present(placement)) then
-          error stop 'operation_residual: a placement moves the instants, which the pin fixes'
+          error stop 'operation_lagrangian: a placement moves the instants, which the pin fixes'
        end if
        if (.not. this % term(pin) % manifold % parent % matches(image % manifold % identity)) then
-          error stop 'operation_residual: a condition is stated on a part of another manifold'
+          error stop 'operation_lagrangian: a condition is stated on a part of another manifold'
        end if
        image % instant_multiplier = this % term(pin) % multiplier % name
     end if
@@ -953,20 +953,20 @@ contains
 
   recursive subroutine minimize(this, estimate, solution, checkpoint, snapshots, continued, by)
 
-    class(discrete_residual), intent(in)  :: this
+    class(discrete_lagrangian), intent(in)  :: this
     type(discrete_field)    , intent(in)  :: estimate
     type(discrete_field)    , intent(out) :: solution
     integer                 , intent(in), optional :: checkpoint, snapshots
     logical                 , intent(in), optional :: continued
     class(minimizer)        , intent(in), optional :: by
 
-    type(discrete_residual) :: iterate(1)
+    type(discrete_lagrangian) :: iterate(1)
     type(discrete_field)    :: estimates(1), solutions(1)
 
     if (present(continued)) then
        if (continued .neqv. this % continued) then
           select type (this)
-          type is (discrete_residual)
+          type is (discrete_lagrangian)
              iterate(1) = this
           end select
           iterate(1) % continued = continued
@@ -980,18 +980,18 @@ contains
     end if
     if (.not. free_design(this)) then
        if (any(this % condition % inequality)) then
-          error stop 'operation_residual: an inequality bounds a free design; an equality on the design &
+          error stop 'operation_lagrangian: an inequality bounds a free design; an equality on the design &
                &factor fixes it and leaves the inequality nothing to bound'
        end if
        call this % zero_at_design(estimate, solution, checkpoint, snapshots, by=by)
        return
     end if
     if (.not. (allocated(this % objective) .and. this % with_adjoint)) then
-       error stop 'operation_residual: a design on which no condition is stated is free, and is found where &
+       error stop 'operation_lagrangian: a design on which no condition is stated is free, and is found where &
             &dJ/ds = 0, which requires an objective and the equations paired with their multiplier'
     end if
     select type (this)
-    type is (discrete_residual)
+    type is (discrete_lagrangian)
        iterate(1) = this
     end select
     ! the estimate in an array of its own: a constructor passed straight
@@ -1042,12 +1042,12 @@ contains
   recursive subroutine placement_iteration(this, estimate, solution, checkpoint, snapshots, by)
     class(minimizer)        , intent(in), optional :: by
 
-    class(discrete_residual), intent(in)  :: this
+    class(discrete_lagrangian), intent(in)  :: this
     type(discrete_field)    , intent(in)  :: estimate
     type(discrete_field)    , intent(out) :: solution
     integer                 , intent(in), optional :: checkpoint, snapshots
 
-    type(discrete_residual) :: iterate, plus
+    type(discrete_lagrangian) :: iterate, plus
     type(discrete_field) :: start, trial, enriched, at_points, settled, objective_field
     type(equidistribution) :: placement
     real(dp), allocatable :: eta(:), goal(:), accepted_goal(:), position(:), total(:), total_plus(:)
@@ -1059,11 +1059,11 @@ contains
     logical :: free, taken
 
     if (present(checkpoint) .or. present(snapshots)) then
-       error stop 'operation_residual: an equidistribution reads the stages of every step, which a checkpoint or &
+       error stop 'operation_lagrangian: an equidistribution reads the stages of every step, which a checkpoint or &
             &snapshot schedule does not retain'
     end if
     select type (this)
-    type is (discrete_residual)
+    type is (discrete_lagrangian)
        iterate = this
     end select
     placement = iterate % placement
@@ -1073,7 +1073,7 @@ contains
        return
     end if
     if (placement % work > 0) then
-       error stop 'operation_residual: the least error at a work is chosen with a pool of families'
+       error stop 'operation_lagrangian: the least error at a work is chosen with a pool of families'
     end if
     free  = free_design(iterate)
     nf    = iterate % manifold % num_unknowns
@@ -1302,7 +1302,7 @@ contains
   subroutine pool_iteration(this, placement, estimate, solution, by)
     class(minimizer)        , intent(in), optional :: by
 
-    class(discrete_residual), intent(in)  :: this
+    class(discrete_lagrangian), intent(in)  :: this
     type(equidistribution)  , intent(in)  :: placement
     type(discrete_field)    , intent(in)  :: estimate
     type(discrete_field)    , intent(out) :: solution
@@ -1318,7 +1318,7 @@ contains
        real(dp) :: tolerance = 0.0_dp
     end type design_record
 
-    type(discrete_residual) :: iterate, base_residual
+    type(discrete_lagrangian) :: iterate, base_residual
     type(discrete_field) :: start, base_solution, objective_field, accepted_solution
     type(design_record), allocatable :: designs(:)
     type(expansion) :: original
@@ -1334,23 +1334,23 @@ contains
     logical :: converged, refused, at_work
 
     if (free_design(this)) then
-       error stop 'operation_residual: a pool of families is chosen for a design fixed by an equality'
+       error stop 'operation_lagrangian: a pool of families is chosen for a design fixed by an equality'
     end if
     if ((placement % tolerance > 0.0_dp) .eqv. (placement % work > 0)) then
-       error stop 'operation_residual: a pool of families is chosen to a tolerance on the error of J or at a work, &
+       error stop 'operation_lagrangian: a pool of families is chosen to a tolerance on the error of J or at a work, &
             &a number of solves, one of the two'
     end if
     at_work = placement % work > 0
     if (.not. allocated(this % objective)) then
-       error stop 'operation_residual: a pool of families is chosen by the error of the objective; the residual &
+       error stop 'operation_lagrangian: a pool of families is chosen by the error of the objective; the residual &
             &has none'
     end if
     if (.not. this % with_adjoint) then
-       error stop 'operation_residual: a pool of families reads the multipliers of the pins of the instants; the &
+       error stop 'operation_lagrangian: a pool of families reads the multipliers of the pins of the instants; the &
             &equations are paired with their multiplier'
     end if
     select type (this)
-    type is (discrete_residual)
+    type is (discrete_lagrangian)
        iterate = this
     end select
     pool = placement % pool
@@ -1374,12 +1374,12 @@ contains
        end if
     end do
     if (a == 0) then
-       error stop 'operation_residual: a pool of families includes a family of one step, whose errors the curvature gives'
+       error stop 'operation_lagrangian: a pool of families includes a family of one step, whose errors the curvature gives'
     end if
     base   = pool(a)
     original = iterate % points % expansion
     if (iterate % schemes % num_blocks() /= iterate % points % num_instants()) then
-       error stop 'operation_residual: a pool of families chooses the family of each step, a chain of one block &
+       error stop 'operation_lagrangian: a pool of families chooses the family of each step, a chain of one block &
             &per instant'
     end if
 
@@ -1397,7 +1397,7 @@ contains
        t = iterate % points % instant
        n = size(t)
        if (n < 4) then
-          error stop 'operation_residual: the curvature of J_h gives the error of each step from four instants'
+          error stop 'operation_lagrangian: the curvature of J_h gives the error of each step from four instants'
        end if
        call solve_base(converged)
        if (converged) then
@@ -1440,7 +1440,7 @@ contains
           ! a design on which the base family does not converge fails the
           ! tolerance, no error measured
           if (accepted == 0) then
-             error stop 'operation_residual: the base family of the pool does not converge on the instants given'
+             error stop 'operation_lagrangian: the base family of the pool does not converge on the instants given'
           end if
           designs = [designs, design_record(t, iterate % schemes, chain_work(iterate % schemes), huge(1.0_dp), &
                & .false., huge(1.0_dp))]
@@ -1551,7 +1551,7 @@ contains
        n = size(t)
        call solve_base(converged)
        if (.not. converged) then
-          error stop 'operation_residual: the base family of the pool does not converge again on a design it converged on'
+          error stop 'operation_lagrangian: the base family of the pool does not converge again on a design it converged on'
        end if
        start = discrete_field(iterate % points, values_at(base_solution, t, t, nf), names)
     else
@@ -2058,7 +2058,7 @@ contains
 
   function curvature_errors(this, solution, p, uncertainty) result(e)
 
-    class(discrete_residual), intent(in)  :: this
+    class(discrete_lagrangian), intent(in)  :: this
     type(discrete_field)    , intent(in)  :: solution
     integer                 , intent(in)  :: p
     real(dp)                , intent(out), optional :: uncertainty
@@ -2141,20 +2141,20 @@ contains
   subroutine design_disagreement(this, solution, slope, slope_plus, contribution, uncertainty, shift, by)
     class(minimizer)        , intent(in), optional :: by
 
-    class(discrete_residual), intent(in)  :: this
+    class(discrete_lagrangian), intent(in)  :: this
     type(discrete_field)    , intent(in)  :: solution
     real(dp)                , intent(in)  :: slope(:), slope_plus(:)
     real(dp), allocatable   , intent(out) :: contribution(:), shift(:)
     real(dp)                , intent(out) :: uncertainty
 
-    type(discrete_residual) :: pinned
+    type(discrete_lagrangian) :: pinned
     type(discrete_field) :: start, side
     real(dp), allocatable :: values(:), derivative(:,:), hessian(:,:), eta(:), kappa(:,:), eta_derivative(:,:)
     character(len=32), allocatable :: names(:)
     integer :: nd, nf, npts, i, p
 
     select type (this)
-    type is (discrete_residual)
+    type is (discrete_lagrangian)
        pinned = this
     end select
     select type (on => solution % on)
@@ -2162,7 +2162,7 @@ contains
        pinned % points = on
     end select
     if (.not. along_each_coordinate(pinned % points % expansion)) then
-       error stop 'operation_residual: the error of the design found is read along each design coordinate'
+       error stop 'operation_lagrangian: the error of the design found is read along each design coordinate'
     end if
     ! the derivatives of order one, read whatever the order of the
     ! image's expansion
@@ -2207,7 +2207,7 @@ contains
 
   function placement_instants(this, solution, eta, count) result(position)
 
-    class(discrete_residual), intent(in) :: this
+    class(discrete_lagrangian), intent(in) :: this
     type(discrete_field)    , intent(in) :: solution
     real(dp)                , intent(in) :: eta(:)
     integer                 , intent(in) :: count
@@ -2222,7 +2222,7 @@ contains
     type is (discrete_manifold)
        t = on % instant
     class default
-       error stop 'operation_residual: an equidistribution places the instants of a manifold'
+       error stop 'operation_lagrangian: an equidistribution places the instants of a manifold'
     end select
     ninst  = size(t)
     ncells = this % points % num_cells()
@@ -2295,37 +2295,37 @@ contains
   subroutine minimize_together(residuals, estimates, solutions, checkpoint, snapshots, continued, by)
     class(minimizer)        , intent(in), optional :: by
 
-    type(discrete_residual), intent(in)  :: residuals(:)
+    type(discrete_lagrangian), intent(in)  :: residuals(:)
     type(discrete_field)   , intent(in)  :: estimates(:)
     type(discrete_field)   , intent(out) :: solutions(:)
     integer                , intent(in), optional :: checkpoint, snapshots
     logical                , intent(in), optional :: continued
 
-    type(discrete_residual), allocatable :: iterates(:)
+    type(discrete_lagrangian), allocatable :: iterates(:)
     integer :: k
 
     if (size(estimates) /= size(residuals) .or. size(solutions) /= size(residuals)) then
-       error stop 'operation_residual: one estimate and one solution for each residual minimized together'
+       error stop 'operation_lagrangian: one estimate and one solution for each residual minimized together'
     end if
     iterates = residuals
     do k = 1, size(iterates)
        if (present(continued)) iterates(k) % continued = continued
        if (.not. free_design(iterates(k))) then
-          error stop 'operation_residual: residuals minimized together have a free design, no equality on it'
+          error stop 'operation_lagrangian: residuals minimized together have a free design, no equality on it'
        end if
        if (.not. iterates(k) % with_adjoint) then
-          error stop 'operation_residual: residuals minimized together have their equations paired with their &
+          error stop 'operation_lagrangian: residuals minimized together have their equations paired with their &
                &multiplier'
        end if
        if (iterates(k) % points % expansion % num_designs() /= iterates(1) % points % expansion % num_designs()) then
-          error stop 'operation_residual: residuals minimized together have the same design coordinates'
+          error stop 'operation_lagrangian: residuals minimized together have the same design coordinates'
        end if
        if (any(iterates(k) % points % expansion % values() /= iterates(1) % points % expansion % values())) then
-          error stop 'operation_residual: residuals minimized together begin at the same design'
+          error stop 'operation_lagrangian: residuals minimized together begin at the same design'
        end if
     end do
     if (.not. any([(allocated(iterates(k) % objective), k = 1, size(iterates))])) then
-       error stop 'operation_residual: residuals minimized together have an objective, one at least'
+       error stop 'operation_lagrangian: residuals minimized together have an objective, one at least'
     end if
     call design_iteration(iterates, estimates, solutions, checkpoint, snapshots, by=by)
 
@@ -2361,7 +2361,7 @@ contains
   subroutine design_iteration(iterates, estimates, solutions, checkpoint, snapshots, by)
     class(minimizer)        , intent(in), optional :: by
 
-    type(discrete_residual), intent(inout) :: iterates(:)
+    type(discrete_lagrangian), intent(inout) :: iterates(:)
     type(discrete_field)   , intent(in)    :: estimates(:)
     type(discrete_field)   , intent(out)   :: solutions(:)
     integer                , intent(in), optional :: checkpoint, snapshots
@@ -2386,7 +2386,7 @@ contains
     do k = 1, size(iterates)
        if (.not. quasi .and. (iterates(k) % points % expansion % order < 1 .or. &
             & .not. along_each_coordinate(iterates(k) % points % expansion))) then
-          error stop 'operation_residual: a free design is found by Newton''s iteration, whose hessian is the &
+          error stop 'operation_lagrangian: a free design is found by Newton''s iteration, whose hessian is the &
                &expansion of order one along each design coordinate, or, of order zero, its BFGS update'
        end if
     end do
@@ -2518,7 +2518,7 @@ contains
           theta = merge(0.0_dp, theta / 4.0_dp, quartering == 3)
        end do
        if (.not. solvable) then
-          error stop 'operation_residual: no step meets the inequalities on the design, not even the null step'
+          error stop 'operation_lagrangian: no step meets the inequalities on the design, not even the null step'
        end if
        if (refused .and. norm2(step) > limit) step = step * (limit / norm2(step))
        stationarity = norm2(gradient + matmul(transpose(a), mu))
@@ -2549,7 +2549,7 @@ contains
        end do
        deallocate(c, a)
     end do
-    write(message, '(a,i0,a)') 'operation_residual: Newton''s iteration on the free design did not reach &
+    write(message, '(a,i0,a)') 'operation_lagrangian: Newton''s iteration on the free design did not reach &
          &dJ/ds = 0 in ', MAX_DESIGN_ITERATIONS, ' iterations'
     error stop trim(message)
 
@@ -2567,7 +2567,7 @@ contains
 
   subroutine inequalities_at(this, solution, c, a, gradients)
 
-    class(discrete_residual), intent(in)  :: this
+    class(discrete_lagrangian), intent(in)  :: this
     type(discrete_field)    , intent(in)  :: solution
     real(dp), allocatable   , intent(out) :: c(:), a(:,:)
     real(dp)                , intent(in), optional :: gradients(:,:)
@@ -2611,7 +2611,7 @@ contains
   ! of the state
   function functional_inequalities(this) result(of_state)
 
-    class(discrete_residual), intent(in) :: this
+    class(discrete_lagrangian), intent(in) :: this
     logical, allocatable :: of_state(:)
 
     integer :: j, i
@@ -2629,7 +2629,7 @@ contains
   ! function on the design factor: its value at every point
   subroutine place_inequality_multipliers(this, mu, solution)
 
-    class(discrete_residual), intent(in)    :: this
+    class(discrete_lagrangian), intent(in)    :: this
     real(dp)                , intent(in)    :: mu(:)
     type(discrete_field)    , intent(inout) :: solution
 
@@ -2747,7 +2747,7 @@ contains
     end do
     if (size(c) > 0) then
        if (maxval(c + matmul(a, step)) > tolerance) then
-          error stop 'operation_residual: the dual method on the inequalities of the design does not settle'
+          error stop 'operation_lagrangian: the dual method on the inequalities of the design does not settle'
        end if
     end if
     mu(set) = max(u, 0.0_dp)
@@ -2847,7 +2847,7 @@ contains
 
   ! a design on which no equality is stated
   logical function free_design(this)
-    class(discrete_residual), intent(in) :: this
+    class(discrete_lagrangian), intent(in) :: this
     integer :: j
     free_design = this % manifold % with_design
     do j = 1, size(this % condition)
@@ -2888,7 +2888,7 @@ contains
     M(:, n + 1) = b
     do k = 1, n
        p = k - 1 + maxloc(abs(M(k:n, k)), 1)
-       if (M(p, k) == 0.0_dp) error stop 'operation_residual: the hessian of the free design is singular'
+       if (M(p, k) == 0.0_dp) error stop 'operation_lagrangian: the hessian of the free design is singular'
        if (p /= k) then
           row     = M(k, :)
           M(k, :) = M(p, :)
@@ -2944,7 +2944,7 @@ contains
   recursive subroutine zero_at_design(this, estimate, solution, checkpoint, snapshots, kappa, functional_kappa, &
        & converged, by)
 
-    class(discrete_residual), intent(in)  :: this
+    class(discrete_lagrangian), intent(in)  :: this
     type(discrete_field)    , intent(in)  :: estimate
     type(discrete_field)    , intent(out) :: solution
     integer                 , intent(in), optional :: checkpoint, snapshots
@@ -2954,7 +2954,7 @@ contains
 
     type(minimization) :: graph
     class(march_state), allocatable :: state
-    type(discrete_residual) :: halves
+    type(discrete_lagrangian) :: halves
     integer :: ninst, segment, shots, nc, k
     logical :: wavefront, scheduled
     integer(8) :: tick, tock, rate
@@ -2965,28 +2965,28 @@ contains
     shots   = 0
     if (present(checkpoint)) segment = checkpoint
     if (present(snapshots))  shots   = snapshots
-    if (segment < 0) error stop 'operation_residual: checkpoint is a number of blocks, at least one'
-    if (shots < 0)   error stop 'operation_residual: snapshots is a number of stored states, at least one'
+    if (segment < 0) error stop 'operation_lagrangian: checkpoint is a number of blocks, at least one'
+    if (shots < 0)   error stop 'operation_lagrangian: snapshots is a number of stored states, at least one'
     if (segment > 0 .and. shots > 0) then
-       error stop 'operation_residual: the states are stored every checkpoint blocks, or at snapshots placed by the &
+       error stop 'operation_lagrangian: the states are stored every checkpoint blocks, or at snapshots placed by the &
             &binomial schedule; one of the two is given'
     end if
     scheduled = segment > 0 .or. shots > 0
     if (scheduled .and. allocated(this % functional_weight)) then
        if (any(this % functional_weight /= 0.0_dp)) then
-          error stop 'operation_residual: an inequality on a functional of the state is solved without a checkpoint &
+          error stop 'operation_lagrangian: an inequality on a functional of the state is solved without a checkpoint &
                &or snapshot schedule, which integrates the objective alone'
        end if
     end if
     if (scheduled .and. allocated(this % elements)) then
-       error stop 'operation_residual: a law projected on the cells is not solved under a checkpoint or snapshot &
+       error stop 'operation_lagrangian: a law projected on the cells is not solved under a checkpoint or snapshot &
             &schedule'
     end if
     if (scheduled .and. .not. this % with_chain) then
-       error stop 'operation_residual: checkpoints and snapshots divide a chain of blocks; the residual has none'
+       error stop 'operation_lagrangian: checkpoints and snapshots divide a chain of blocks; the residual has none'
     end if
     if (present(functional_kappa) .and. scheduled) then
-       error stop 'operation_residual: the derivatives of the functionals of the inequalities are formed &
+       error stop 'operation_lagrangian: the derivatives of the functionals of the inequalities are formed &
             &without a checkpoint or snapshot schedule'
     end if
     ! with a schedule the wavefront, which retains every stage, is not
@@ -2996,7 +2996,7 @@ contains
     wavefront = this % pipelined() .and. .not. scheduled
     if (scheduled .and. num_images() == 2 .and. .not. this % manifold % with_space .and. .not. this % overlapped) then
        select type (this)
-       type is (discrete_residual)
+       type is (discrete_lagrangian)
           halves = this
        end select
        halves % overlapped = .true.
@@ -3044,11 +3044,11 @@ contains
     ! column m, the m-th inequality's, zero for one on the design alone
     if (present(functional_kappa)) then
        separate: block
-         type(discrete_residual) :: alone
+         type(discrete_lagrangian) :: alone
          logical , allocatable :: of_state(:)
          integer :: m
          select type (this)
-         type is (discrete_residual)
+         type is (discrete_lagrangian)
             alone = this
          end select
          if (allocated(alone % objective)) deallocate(alone % objective)
@@ -3078,7 +3078,7 @@ contains
   subroutine scheduled_march(this, estimate, segment, shots, solution, kappa, by)
     class(minimizer)        , intent(in), optional :: by
 
-    class(discrete_residual), intent(in)  :: this
+    class(discrete_lagrangian), intent(in)  :: this
     type(discrete_field)    , intent(in)  :: estimate
     integer                 , intent(in)  :: segment, shots
     type(discrete_field)    , intent(out) :: solution
@@ -3142,7 +3142,7 @@ contains
   subroutine wavefront_march(this, estimate, solution, state, by)
     class(minimizer)        , intent(in), optional :: by
 
-    class(discrete_residual)       , intent(in)  :: this
+    class(discrete_lagrangian)       , intent(in)  :: this
     type(discrete_field)           , intent(in)  :: estimate
     type(discrete_field)           , intent(out) :: solution
     class(march_state), allocatable, intent(out) :: state
@@ -3179,14 +3179,14 @@ contains
   !===================================================================!
 
   integer function march_blocks(this)
-    class(discrete_residual), intent(in) :: this
+    class(discrete_lagrangian), intent(in) :: this
     march_blocks = 1
     if (this % with_chain) march_blocks = this % schemes % num_blocks()
   end function march_blocks
 
   ! the blocks that solve the instants of block b's history, each once
   function block_history(this, b) result(read)
-    class(discrete_residual), intent(in) :: this
+    class(discrete_lagrangian), intent(in) :: this
     integer                 , intent(in) :: b
     integer, allocatable :: read(:)
     integer :: first, last, depth, k, c, cf, cl, cd
@@ -3204,7 +3204,7 @@ contains
 
   ! the line a block is announced by
   function block_label(this, b) result(line)
-    class(discrete_residual), intent(in) :: this
+    class(discrete_lagrangian), intent(in) :: this
     integer                 , intent(in) :: b
     character(len=:), allocatable :: line
     character(len=250) :: text
@@ -3219,7 +3219,7 @@ contains
   end function block_label
 
   function blocks_facts(this) result(facts)
-    class(discrete_residual), intent(in) :: this
+    class(discrete_lagrangian), intent(in) :: this
     type(block_facts) :: facts
     facts % with_space = this % manifold % with_space
     facts % whole_line = this % whole_line()
@@ -3234,14 +3234,14 @@ contains
 
   ! every block's history within the manifold
   subroutine blocks_checked(this)
-    class(discrete_residual), intent(in) :: this
+    class(discrete_lagrangian), intent(in) :: this
     integer :: b, first, last, depth
     character(len=250) :: message
     if (.not. this % with_chain) return
     do b = 1, this % schemes % num_blocks()
        call this % block_extent(b, first, last, depth)
        if (first < 1) then
-          write(message,'(a,i0,a,i0,a,i0)') 'operation_residual: block ', b, ' reads ', depth, &
+          write(message,'(a,i0,a,i0,a,i0)') 'operation_lagrangian: block ', b, ' reads ', depth, &
                & ' instants of history before instant ', first + depth
           error stop trim(message)
        end if
@@ -3250,7 +3250,7 @@ contains
 
   ! the design at every point of rows, their stored input
   function rows_design(this, rows) result(design)
-    class(discrete_residual), intent(in) :: this
+    class(discrete_lagrangian), intent(in) :: this
     type(residual_operator) , intent(in) :: rows
     type(stored_field) :: design
     type(typed_field_domain) :: designs
@@ -3269,7 +3269,7 @@ contains
 
   subroutine march_begun(this, estimate, state)
 
-    class(discrete_residual)       , intent(in)  :: this
+    class(discrete_lagrangian)       , intent(in)  :: this
     type(discrete_field)           , intent(in)  :: estimate
     class(march_state), allocatable, intent(out) :: state
 
@@ -3283,12 +3283,12 @@ contains
     ninst  = this % points % num_instants()
     ncol   = this % points % expansion % num_columns()
     if (.not. estimate % on % identity % matches(this % points % identity)) then
-       error stop 'operation_residual: the estimate is a field on another manifold than the residual''s'
+       error stop 'operation_lagrangian: the estimate is a field on another manifold than the residual''s'
     end if
     ! the unknowns of the projection start at zero where an estimate
     ! does not state them
     if (estimate % num_components() /= nf .and. estimate % num_components() /= nf - this % projection_unknowns) then
-       write(message,'(a,i0,a,i0)') 'operation_residual: the estimate has one component per unknown; &
+       write(message,'(a,i0,a,i0)') 'operation_lagrangian: the estimate has one component per unknown; &
             &components = ', estimate % num_components(), ', unknowns = ', nf
        error stop trim(message)
     end if
@@ -3331,7 +3331,7 @@ contains
 
   subroutine march_block_system(this, b, state, reversed, blk)
 
-    class(discrete_residual), intent(in)    :: this
+    class(discrete_lagrangian), intent(in)    :: this
     integer                 , intent(in)    :: b
     class(march_state)      , intent(inout) :: state
     logical                 , intent(in)    :: reversed
@@ -3382,7 +3382,7 @@ contains
   ! a column of a block's unknowns written into the state at the
   ! block's own instants and the stages of its steps
   subroutine block_written(this, blk, x, column, state)
-    class(discrete_residual), intent(in)    :: this
+    class(discrete_lagrangian), intent(in)    :: this
     type(chain_block)       , intent(in)    :: blk
     real(dp)                , intent(in)    :: x(:)
     integer                 , intent(in)    :: column
@@ -3396,7 +3396,7 @@ contains
   ! the columns of the expansion this image forms: (d, m, column),
   ! direction outer and order inner
   function march_columns(this) result(columns)
-    class(discrete_residual), intent(in) :: this
+    class(discrete_lagrangian), intent(in) :: this
     integer, allocatable :: columns(:,:)
     integer :: d, m
     allocate(columns(3, 0))
@@ -3409,7 +3409,7 @@ contains
   end function march_columns
 
   subroutine march_expansion_side(this, blk, d, m, state, rhs)
-    class(discrete_residual), intent(in)    :: this
+    class(discrete_lagrangian), intent(in)    :: this
     type(chain_block)       , intent(in)    :: blk
     integer                 , intent(in)    :: d, m
     class(march_state)      , intent(inout) :: state
@@ -3429,7 +3429,7 @@ contains
 
   subroutine march_solved(this, state, solution)
 
-    class(discrete_residual), intent(in)    :: this
+    class(discrete_lagrangian), intent(in)    :: this
     class(march_state)      , intent(inout) :: state
     type(discrete_field)    , intent(out)   :: solution
 
@@ -3471,14 +3471,14 @@ contains
 
   ! whether the equations are paired with their multiplier
   logical function pairing_of_equations(this)
-    class(discrete_residual), intent(in) :: this
+    class(discrete_lagrangian), intent(in) :: this
     pairing_of_equations = this % with_adjoint
   end function pairing_of_equations
 
   ! the adjoint's data from the solution: the Lagrangian's differential
   ! at the nodes, and the multipliers of every equality, zero
   subroutine march_adjoint_begun(this, solution, state)
-    class(discrete_residual), intent(in)    :: this
+    class(discrete_lagrangian), intent(in)    :: this
     type(discrete_field)    , intent(in)    :: solution
     class(march_state)      , intent(inout) :: state
     select type (state)
@@ -3501,7 +3501,7 @@ contains
 
   subroutine march_adjoint_side(this, blk, o, d, state, rhs)
 
-    class(discrete_residual), intent(in)    :: this
+    class(discrete_lagrangian), intent(in)    :: this
     type(chain_block)       , intent(in)    :: blk
     integer                 , intent(in)    :: o, d
     class(march_state)      , intent(inout) :: state
@@ -3520,7 +3520,7 @@ contains
   ! determine those instants
   subroutine march_adjoint_received(this, blk, o, d, x, state)
 
-    class(discrete_residual), intent(in)    :: this
+    class(discrete_lagrangian), intent(in)    :: this
     type(chain_block)       , intent(in)    :: blk
     integer                 , intent(in)    :: o, d
     real(dp)                , intent(in)    :: x(:)
@@ -3552,7 +3552,7 @@ contains
   ! face conditions and of the design conditions, of every order
   subroutine march_adjoint_placed(this, blk, state)
 
-    class(discrete_residual), intent(in)    :: this
+    class(discrete_lagrangian), intent(in)    :: this
     type(chain_block)       , intent(inout) :: blk
     class(march_state)      , intent(inout) :: state
 
@@ -3576,7 +3576,7 @@ contains
   ! the solution with every multiplier, the expansions shared among
   ! the images summed once first
   subroutine march_adjoint_solution(this, state, solution)
-    class(discrete_residual), intent(in)    :: this
+    class(discrete_lagrangian), intent(in)    :: this
     class(march_state)      , intent(inout) :: state
     type(discrete_field)    , intent(inout) :: solution
     select type (state)
@@ -3600,7 +3600,7 @@ contains
 
   subroutine solution_columns(this, nrow, value, names, jet, slot, nm)
 
-    class(discrete_residual)      , intent(in)  :: this
+    class(discrete_lagrangian)      , intent(in)  :: this
     integer                       , intent(in)  :: nrow
     real(dp), allocatable         , intent(out) :: value(:,:), jet(:,:,:)
     character(len=32), allocatable, intent(out) :: names(:)
@@ -3649,7 +3649,7 @@ contains
 
   subroutine multipliers_assembled(this, nrow, adjoint, reaction, gauge, design_multiplier, names, jet, value, slot)
 
-    class(discrete_residual), intent(in)    :: this
+    class(discrete_lagrangian), intent(in)    :: this
     integer                 , intent(in)    :: nrow
     real(dp)                , intent(in)    :: adjoint(:,:,:,0:), reaction(:,:,0:), gauge(:,:,0:)
     real(dp)                , intent(in)    :: design_multiplier(:,0:)
@@ -3743,7 +3743,7 @@ contains
   ! the solution with its multipliers, the quadrature nodes of the
   ! solution of the state retained
   subroutine solution_completed(this, value, names, jet, slot, solution)
-    class(discrete_residual), intent(in)    :: this
+    class(discrete_lagrangian), intent(in)    :: this
     real(dp)                , intent(in)    :: value(:,:), jet(:,:,:)
     character(len=32)       , intent(in)    :: names(:)
     integer                 , intent(in)    :: slot(:)
@@ -3785,7 +3785,7 @@ contains
 
   subroutine quadrature_nodes(this, lb, tuple, stages, solution, stage_node, blocks, density, step_term)
 
-    class(discrete_residual), intent(in)    :: this
+    class(discrete_lagrangian), intent(in)    :: this
     type(lower_bounds)      , intent(in)    :: lb
     real(dp)                , intent(in)    :: tuple(:,:,lb % instant:,0:), stages(:,:,:,lb % stage:,0:)
     type(discrete_field)    , intent(inout) :: solution
@@ -3809,7 +3809,7 @@ contains
     moving = allocated(this % points % expansion % instants) .and. order > 0
     pinned = allocated(this % instant_multiplier)
     if ((moving .or. pinned) .and. allocated(this % elements)) then
-       error stop 'operation_residual: the instants are moved or pinned in a residual whose solution is not &
+       error stop 'operation_lagrangian: the instants are moved or pinned in a residual whose solution is not &
             &projected on the cells'
     end if
     if (allocated(this % elements)) then
@@ -3848,7 +3848,7 @@ contains
           khi = last
           nnodes = (khi - lb % instant + 1) * ncells
           if (lb % node /= this % points % point_of(lb % instant, 1)) then
-             error stop 'operation_residual: the first node of a window is the first point of its first instant'
+             error stop 'operation_lagrangian: the first node of a window is the first point of its first instant'
           end if
        end if
        do b = 1, nb
@@ -4067,7 +4067,7 @@ contains
 
   ! the instants of block b: first - depth .. last, depth of history
   subroutine block_extent(this, b, first, last, depth)
-    class(discrete_residual), intent(in)  :: this
+    class(discrete_lagrangian), intent(in)  :: this
     integer                 , intent(in)  :: b
     integer                 , intent(out) :: first, last, depth
     integer :: nb
@@ -4108,7 +4108,7 @@ contains
        & adjoint, reaction, gauge, design_multiplier, by)
     class(minimizer)        , intent(in), optional :: by
 
-    class(discrete_residual), intent(in)  :: this
+    class(discrete_lagrangian), intent(in)  :: this
     type(discrete_field)    , intent(in)  :: estimate
     type(stencil)           , intent(in)  :: rows_along(:,:)
     integer                 , intent(in)  :: segment, shots
@@ -4293,7 +4293,7 @@ contains
       allocate(window(stride, ncells, wlo:whi, 0:ncol - 1), source=0.0_dp)
       if (own > wlo) then
          if (lbound(state, 3) > wlo .or. ubound(state, 3) < own - 1) then
-            error stop 'operation_residual: the state before a block of the schedule is not in the window'
+            error stop 'operation_lagrangian: the state before a block of the schedule is not in the window'
          end if
          window(:, :, wlo:own - 1, :) = state(:, :, wlo:own - 1, :)
       end if
@@ -4560,7 +4560,7 @@ contains
 
   subroutine lagrangian_differential(this, solution, gradient, partial)
 
-    class(discrete_residual), intent(in)  :: this
+    class(discrete_lagrangian), intent(in)  :: this
     type(discrete_field)    , intent(in)  :: solution
     real(dp), allocatable   , intent(out) :: gradient(:,:,:), partial(:,:)
 
@@ -4600,7 +4600,7 @@ contains
 
   function space_rows(this) result(rows_along)
 
-    class(discrete_residual), intent(in) :: this
+    class(discrete_lagrangian), intent(in) :: this
     type(stencil), allocatable :: rows_along(:,:)
 
     integer :: top, c, o
@@ -4638,7 +4638,7 @@ contains
 
   subroutine allocate_multipliers(this, partial, ninst, adjoint, incoming, reaction, gauge, design_multiplier)
 
-    class(discrete_residual), intent(in)  :: this
+    class(discrete_lagrangian), intent(in)  :: this
     real(dp)                , intent(in)  :: partial(:,0:)
     integer                 , intent(in)  :: ninst
     real(dp), allocatable   , intent(out) :: adjoint(:,:,:,:), incoming(:,:,:,:), reaction(:,:,:)
@@ -4677,7 +4677,7 @@ contains
   ! column zero is complete on every image and is left alone
   subroutine shared_expansions_summed(this, adjoint, reaction, gauge, design_multiplier)
 
-    class(discrete_residual), intent(in)    :: this
+    class(discrete_lagrangian), intent(in)    :: this
     real(dp)                , intent(inout) :: adjoint(:,:,:,0:), reaction(:,:,0:), gauge(:,:,0:)
     real(dp)                , intent(inout) :: design_multiplier(:,0:)
 
@@ -4749,7 +4749,7 @@ contains
 
   function block_positions(this, scheme, first, n, instant_moment, stage_moment) result(positions)
 
-    class(discrete_residual), intent(in) :: this
+    class(discrete_lagrangian), intent(in) :: this
     type(family)            , intent(in) :: scheme
     integer                 , intent(in) :: first, n, instant_moment(:), stage_moment(:,:)
     real(dp), allocatable :: positions(:,:)
@@ -4779,7 +4779,7 @@ contains
 
   subroutine block_rows(this, scheme, first, last, depth, rows_along, lb, tuple, stages, solved_stages, blk)
 
-    class(discrete_residual), intent(in)  :: this
+    class(discrete_lagrangian), intent(in)  :: this
     type(family)            , intent(in)  :: scheme
     integer                 , intent(in)  :: first, last, depth
     type(stencil)           , intent(in)  :: rows_along(:,:)
@@ -4888,7 +4888,7 @@ contains
     if (moving) then
        ! the laws are read at the moments' times, which would move too
        if (this % rule % num_position_coordinates() > 0) then
-          error stop 'operation_residual: an expansion moves the instants of laws that read no coordinate'
+          error stop 'operation_lagrangian: an expansion moves the instants of laws that read no coordinate'
        end if
        allocate(derivative(count, this % points % expansion % order, this % points % expansion % num_expansions()), &
             & source=0.0_dp)
@@ -4898,7 +4898,7 @@ contains
     pinned = allocated(this % instant_multiplier)
     if (pinned) then
        if (this % rule % num_position_coordinates() > 0) then
-          error stop 'operation_residual: the instants are pinned in laws that read no coordinate'
+          error stop 'operation_lagrangian: the instants are pinned in laws that read no coordinate'
        end if
        allocate(instant_derivative(count, n + 1, 0:this % points % expansion % order, &
             & max(1, this % points % expansion % num_expansions())), source=0.0_dp)
@@ -5104,7 +5104,7 @@ contains
     ! the equation it tests
     if (allocated(this % elements)) then
        if (size(gauge_rows) > 0) then
-          error stop 'operation_residual: under a projection on the cells the integral of an unknown over the &
+          error stop 'operation_lagrangian: under a projection on the cells the integral of an unknown over the &
                &region is not stated'
        end if
        cells = this % elements % num_cells()
@@ -5136,7 +5136,7 @@ contains
        laws = this % rule_laws
        if (allocated(this % initial_flux) .and. first == 1 .and. depth == 0) then
           if (n > 1) then
-             error stop 'operation_residual: a law the initial data satisfy is stated at the first instant by its &
+             error stop 'operation_lagrangian: a law the initial data satisfy is stated at the first instant by its &
                   &derivative along time, in a block of that instant alone'
           end if
           rule = this % initial_flux
@@ -5161,7 +5161,7 @@ contains
        laws = this % rule_laws
        if (allocated(this % initial_rule) .and. first == 1 .and. depth == 0) then
           if (n > 1) then
-             error stop 'operation_residual: a law the initial data satisfy is stated at the first instant by its &
+             error stop 'operation_lagrangian: a law the initial data satisfy is stated at the first instant by its &
                   &derivative along time, in a block of that instant alone'
           end if
           rule = this % initial_rule
@@ -5386,7 +5386,7 @@ contains
 
   subroutine block_inputs(this, blk)
 
-    class(discrete_residual), intent(in)    :: this
+    class(discrete_lagrangian), intent(in)    :: this
     type(chain_block)       , intent(inout) :: blk
 
     real(dp), allocatable :: y(:)
@@ -5404,7 +5404,7 @@ contains
   subroutine solve_block(this, scheme, first, last, depth, rows_along, lb, tuple, stages, expand, converged, by)
     class(minimizer)        , intent(in), optional :: by
 
-    class(discrete_residual), intent(in)    :: this
+    class(discrete_lagrangian), intent(in)    :: this
     type(family)            , intent(in)    :: scheme
     integer                 , intent(in)    :: first, last, depth
     type(stencil)           , intent(in)    :: rows_along(:,:)
@@ -5455,7 +5455,7 @@ contains
   subroutine solve_rows(this, blk, lb, tuple, stages, expand, converged, by)
     class(minimizer)        , intent(in), optional :: by
 
-    class(discrete_residual), intent(in)    :: this
+    class(discrete_lagrangian), intent(in)    :: this
     type(chain_block)       , intent(inout) :: blk
     type(lower_bounds)      , intent(in)    :: lb
     real(dp)                , intent(inout) :: tuple(:,:,lb % instant:,0:), stages(:,:,:,lb % stage:,0:)
@@ -5504,7 +5504,7 @@ contains
   subroutine expansion_order(this, blk, lb, d, m, tuple, stages, by)
     class(minimizer)        , intent(in), optional :: by
 
-    class(discrete_residual), intent(in)    :: this
+    class(discrete_lagrangian), intent(in)    :: this
     type(chain_block)       , intent(in)    :: blk
     type(lower_bounds)      , intent(in)    :: lb
     integer                 , intent(in)    :: d, m
@@ -5537,7 +5537,7 @@ contains
 
   subroutine expansion_source(this, blk, lb, d, m, tuple, stages, rhs)
 
-    class(discrete_residual), intent(in)  :: this
+    class(discrete_lagrangian), intent(in)  :: this
     type(chain_block)       , intent(in)  :: blk
     type(lower_bounds)      , intent(in)  :: lb
     integer                 , intent(in)  :: d, m
@@ -5608,7 +5608,7 @@ contains
   subroutine wavefront_expansion(this, rows_along, tuple, stages, by)
     class(minimizer)        , intent(in), optional :: by
 
-    class(discrete_residual), intent(in)    :: this
+    class(discrete_lagrangian), intent(in)    :: this
     type(stencil)           , intent(in)    :: rows_along(:,:)
     real(dp)                , intent(inout) :: tuple(:,:,:,0:), stages(:,:,:,:,0:)
 
@@ -5671,7 +5671,7 @@ contains
 
   function pipelined(this)
 
-    class(discrete_residual), intent(in) :: this
+    class(discrete_lagrangian), intent(in) :: this
     logical :: pipelined
     integer :: order
 
@@ -5697,7 +5697,7 @@ contains
        & adjoint, incoming, reaction, gauge, in_design, by)
     class(minimizer)        , intent(in), optional :: by
 
-    class(discrete_residual), intent(in)    :: this
+    class(discrete_lagrangian), intent(in)    :: this
     type(stencil)           , intent(in)    :: rows_along(:,:)
     real(dp)                , intent(in)    :: tuple(:,:,:,0:), stages(:,:,:,:,0:)
     real(dp)                , intent(in)    :: gradient(:,:,0:)
@@ -5940,7 +5940,7 @@ contains
        & stage_node, adjoint, incoming, reaction, gauge, in_design, by)
     class(minimizer)        , intent(in), optional :: by
 
-    class(discrete_residual), intent(in)    :: this
+    class(discrete_lagrangian), intent(in)    :: this
     type(family)            , intent(in)    :: scheme
     integer                 , intent(in)    :: first, last, depth
     type(stencil)           , intent(in)    :: rows_along(:,:)
@@ -5975,7 +5975,7 @@ contains
        & in_design, by)
     class(minimizer)        , intent(in), optional :: by
 
-    class(discrete_residual), intent(in)    :: this
+    class(discrete_lagrangian), intent(in)    :: this
     type(chain_block)       , intent(inout) :: blk
     type(lower_bounds)      , intent(in)    :: lb
     real(dp)                , intent(in)    :: tuple(:,:,lb % instant:,0:), stages(:,:,:,lb % stage:,0:)
@@ -6037,7 +6037,7 @@ contains
 
   function gauged_unknowns(this) result(gauged)
 
-    class(discrete_residual), intent(in) :: this
+    class(discrete_lagrangian), intent(in) :: this
     logical, allocatable :: gauged(:)
     integer :: i, j
 
@@ -6065,7 +6065,7 @@ contains
 
   subroutine adjoint_right_side_of(this, lb, blk, o, d, jets, mu, gradient, stage_node, incoming, rhs)
 
-    class(discrete_residual), intent(in)    :: this
+    class(discrete_lagrangian), intent(in)    :: this
     type(lower_bounds)      , intent(in)    :: lb
     type(chain_block)       , intent(in)    :: blk
     integer                 , intent(in)    :: o, d
@@ -6133,7 +6133,7 @@ contains
   subroutine adjoint_order(this, lb, blk, o, d, jets, mu, gradient, stage_node, incoming, x, by)
     class(minimizer)        , intent(in), optional :: by
 
-    class(discrete_residual), intent(in)    :: this
+    class(discrete_lagrangian), intent(in)    :: this
     type(lower_bounds)      , intent(in)    :: lb
     type(chain_block)       , intent(in)    :: blk
     integer                 , intent(in)    :: o, d
@@ -6186,7 +6186,7 @@ contains
 
   subroutine multipliers_of_order(this, blk, o, d, gauged, jets, mu, adjoint, gauge, reaction, in_design)
 
-    class(discrete_residual), intent(in)    :: this
+    class(discrete_lagrangian), intent(in)    :: this
     type(chain_block)       , intent(in)    :: blk
     integer                 , intent(in)    :: o, d
     logical                 , intent(in)    :: gauged(:)
@@ -6901,7 +6901,7 @@ contains
 
   subroutine point_rows(this, tuple, blk)
 
-    class(discrete_residual), intent(in)  :: this
+    class(discrete_lagrangian), intent(in)  :: this
     real(dp)                , intent(in)  :: tuple(:,:,:)
     type(chain_block)       , intent(out) :: blk
 
@@ -6933,7 +6933,7 @@ contains
   subroutine solved(this, rows, unknowns, stride, npts, q, converged, by)
     class(minimizer)        , intent(in), optional :: by
 
-    class(discrete_residual), intent(in)    :: this
+    class(discrete_lagrangian), intent(in)    :: this
     type(residual_operator) , intent(in)    :: rows
     integer                 , intent(in)    :: unknowns, stride, npts
     real(dp)                , intent(inout) :: q(:)
@@ -6959,7 +6959,7 @@ contains
        converged = met
        return
     end if
-    if (.not. met) error stop 'operation_residual: minimize did not converge'
+    if (.not. met) error stop 'operation_lagrangian: minimize did not converge'
 
   end subroutine solved
 
@@ -6979,7 +6979,7 @@ contains
     integer :: p
 
     if (designs > size(values)) then
-       error stop 'operation_residual: the equations read a design coordinate the manifold does not have'
+       error stop 'operation_lagrangian: the equations read a design coordinate the manifold does not have'
     end if
     allocate(v(designs * npts))
     do p = 1, npts
@@ -7006,7 +7006,7 @@ contains
     integer :: i
 
     if (size(seed) /= size(values)) then
-       error stop 'operation_residual: a seed of the expansion has one entry per design coordinate'
+       error stop 'operation_lagrangian: a seed of the expansion has one entry per design coordinate'
     end if
     allocate(unit(order), source=0.0_dp)
     if (order > 0) unit(1) = 1.0_dp
@@ -7035,7 +7035,7 @@ contains
     if (status /= 0) call get_environment_variable('PMI_SIZE', value, status=status)
     if (status == 0) read(value, *, iostat=status) ranks
     if (ranks > 1) then
-       error stop 'operation_residual: this program was built for one image, but the launcher &
+       error stop 'operation_lagrangian: this program was built for one image, but the launcher &
             &started several processes; run it without mpirun, or build it with COARRAY=lib'
     end if
 
@@ -7061,7 +7061,7 @@ contains
 
   function cell_owners(this) result(cell_owner)
 
-    class(discrete_residual), intent(in) :: this
+    class(discrete_lagrangian), intent(in) :: this
     integer, allocatable :: cell_owner(:)
 
     type(partitioner) :: cut
@@ -7088,7 +7088,7 @@ contains
 
   logical function expansion_owned(this, d)
 
-    class(discrete_residual), intent(in) :: this
+    class(discrete_lagrangian), intent(in) :: this
     integer                 , intent(in) :: d
 
     expansion_owned = .true.
@@ -7100,7 +7100,7 @@ contains
   ! the owner of every point of a block, moment outer and cell inner
   function point_owners(this, npts) result(owner)
 
-    class(discrete_residual), intent(in) :: this
+    class(discrete_lagrangian), intent(in) :: this
     integer                 , intent(in) :: npts
     integer, allocatable :: owner(:)
 
@@ -7119,7 +7119,7 @@ contains
 
   function owners_of_unknowns(this, unknowns, stride, npts) result(owner)
 
-    class(discrete_residual), intent(in) :: this
+    class(discrete_lagrangian), intent(in) :: this
     integer                 , intent(in) :: unknowns, stride, npts
     integer, allocatable :: owner(:)
 
@@ -7138,7 +7138,7 @@ contains
        owner(at + 1:at + stride) = cell_owner(c)
     end do
     if (any(owner == 0)) then
-       error stop 'operation_residual: an unknown of the block lies at no point of the manifold'
+       error stop 'operation_lagrangian: an unknown of the block lies at no point of the manifold'
     end if
 
   end function owners_of_unknowns
@@ -7161,7 +7161,7 @@ contains
 
   subroutine projected_form(image, physics, space, points, defined)
 
-    type(discrete_residual)        , intent(inout) :: image
+    type(discrete_lagrangian)        , intent(inout) :: image
     type(residual_term)            , intent(in)    :: physics
     class(derivative_approximation), intent(in)    :: space
     type(discrete_manifold)        , intent(in)    :: points
@@ -7178,7 +7178,7 @@ contains
     first = merge(FIRST_COORDINATE + 1, FIRST_COORDINATE, image % manifold % with_time)
     last  = first + points % dimension - 1
     if (any(defined(3, :) >= first)) then
-       error stop 'operation_residual: under a projection on the cells the basis states the representation &
+       error stop 'operation_lagrangian: under a projection on the cells the basis states the representation &
             &laws along space; none is stated'
     end if
     allocate(group(3, 0), groups(0), over_region(0), with_region(0))
@@ -7207,7 +7207,7 @@ contains
             order      = [0]
          else
             if (allocated(equation % integrand)) then
-               error stop 'operation_residual: an integral over the region is a term of the equation of an &
+               error stop 'operation_lagrangian: an integral over the region is a term of the equation of an &
                     &unknown of time alone'
             end if
             call flux_form(equation % graph(1), first, coordinate, order, flux)
@@ -7291,7 +7291,7 @@ contains
 
   subroutine initial_form(image, physics)
 
-    type(discrete_residual), intent(inout) :: image
+    type(discrete_lagrangian), intent(inout) :: image
     type(residual_term)    , intent(in)    :: physics
 
     type(expression), allocatable :: laws(:)
@@ -7342,7 +7342,7 @@ contains
 
   subroutine projection_form(image, physics)
 
-    type(discrete_residual), intent(inout) :: image
+    type(discrete_lagrangian), intent(inout) :: image
     type(residual_term)    , intent(in)    :: physics
 
     type(expression), allocatable :: laws(:), reduced(:), zeros(:), rows(:)
@@ -7469,7 +7469,7 @@ contains
 
   pure integer function coefficient_component(this, f, k, a) result(at)
 
-    class(discrete_residual), intent(in) :: this
+    class(discrete_lagrangian), intent(in) :: this
     integer                 , intent(in) :: f, k, a
 
     integer :: first, axis, o
@@ -7497,7 +7497,7 @@ contains
 
   pure subroutine stored_order(this, component, field, order)
 
-    class(discrete_residual), intent(in)  :: this
+    class(discrete_lagrangian), intent(in)  :: this
     integer                 , intent(in)  :: component
     integer                 , intent(out) :: field, order
 
@@ -7513,7 +7513,7 @@ contains
        end if
     end do
     if (field == 0) then
-       error stop 'operation_residual: a condition on a time face reads the values of the unknowns and their &
+       error stop 'operation_lagrangian: a condition on a time face reads the values of the unknowns and their &
             &derivatives along time'
     end if
 
@@ -7530,7 +7530,7 @@ contains
 
   subroutine formed_components(this, formed)
 
-    class(discrete_residual), intent(in)  :: this
+    class(discrete_lagrangian), intent(in)  :: this
     integer, allocatable    , intent(out) :: formed(:,:)
 
     integer :: f, a, c, cc, o, k, axis, first, top, nk
@@ -7591,7 +7591,7 @@ contains
 
   subroutine projected_nodes(this, tuple, stages, solution, stage_node, density, step_term)
 
-    class(discrete_residual), intent(in)    :: this
+    class(discrete_lagrangian), intent(in)    :: this
     real(dp)                , intent(in)    :: tuple(:,:,:,0:), stages(:,:,:,:,0:)
     type(discrete_field)    , intent(inout) :: solution
     integer , allocatable   , intent(out)   :: stage_node(:,:,:)
@@ -7734,7 +7734,7 @@ contains
 
   pure function site_jet(this, formed, e, q, tuples) result(jet)
 
-    class(discrete_residual), intent(in) :: this
+    class(discrete_lagrangian), intent(in) :: this
     integer                 , intent(in) :: formed(0:,:), e, q
     real(dp)                , intent(in) :: tuples(:,:,0:)
     real(dp) :: jet(size(formed, 2), 0:ubound(tuples, 3))
@@ -7757,7 +7757,7 @@ contains
 
   subroutine site_gradient(this, formed, site, g, blk, m, rhs)
 
-    class(discrete_residual), intent(in)    :: this
+    class(discrete_lagrangian), intent(in)    :: this
     integer                 , intent(in)    :: formed(0:,:), site, m
     real(dp)                , intent(in)    :: g(:)
     type(chain_block)       , intent(in)    :: blk
@@ -7790,7 +7790,7 @@ contains
 
   integer function fixed_coefficient(this, j, i, field, equation_row) result(component)
 
-    class(discrete_residual), intent(in)  :: this
+    class(discrete_lagrangian), intent(in)  :: this
     integer                 , intent(in)  :: j, i, equation_row(:)
     integer                 , intent(out) :: field
 
@@ -7818,7 +7818,7 @@ contains
 
   subroutine projected_datum(this, equation, instant, m, values, seed, blk, rhs)
 
-    class(discrete_residual), intent(in)    :: this
+    class(discrete_lagrangian), intent(in)    :: this
     type(continuous_field)  , intent(in)    :: equation
     integer                 , intent(in)    :: instant, m
     real(dp)                , intent(in)    :: values(:), seed(:)
@@ -7858,7 +7858,7 @@ contains
   ! the derivative of the basis a coefficient names: the value for the
   ! coefficient zero, the same order along the same axis otherwise
   pure integer function coefficient_derivative(this, k) result(d)
-    class(discrete_residual), intent(in) :: this
+    class(discrete_lagrangian), intent(in) :: this
     integer                 , intent(in) :: k
     integer :: axis, o
     d = 0
@@ -7876,7 +7876,7 @@ contains
 
   function points_on_face(this, j) result(on_face)
 
-    class(discrete_residual), intent(in) :: this
+    class(discrete_lagrangian), intent(in) :: this
     integer                 , intent(in) :: j
     integer, allocatable :: on_face(:)
 
@@ -7893,7 +7893,7 @@ contains
       on_face   = pack([(c, c = 1, ncells)], distance <= tolerance)
     end associate
     if (size(on_face) == 0) then
-       error stop 'operation_residual: a condition on a face of the region requires a point on the face'
+       error stop 'operation_lagrangian: a condition on a face of the region requires a point on the face'
     end if
 
   end function points_on_face
@@ -7911,7 +7911,7 @@ contains
 
   subroutine estimated_rates(this, tuple, first)
 
-    class(discrete_residual), intent(in)    :: this
+    class(discrete_lagrangian), intent(in)    :: this
     real(dp)                , intent(inout) :: tuple(:,:,:)
     integer                 , intent(in)    :: first
 
@@ -7962,7 +7962,7 @@ contains
 
   subroutine extrapolated(this, tuple, h)
 
-    class(discrete_residual), intent(in)    :: this
+    class(discrete_lagrangian), intent(in)    :: this
     real(dp)                , intent(inout) :: tuple(:,:)
     real(dp)                , intent(in)    :: h
 
@@ -8020,7 +8020,7 @@ contains
   subroutine time_alone_rows_of(this, depth, nm, instant_moment, at, primary, fixed_rows, rows, columns, weights, &
        & constants, added)
 
-    class(discrete_residual), intent(in)    :: this
+    class(discrete_lagrangian), intent(in)    :: this
     integer                 , intent(in)    :: depth, nm, instant_moment(:), at(:), primary(:), fixed_rows(:)
     integer , allocatable   , intent(inout) :: rows(:), columns(:)
     real(dp), allocatable   , intent(inout) :: weights(:), constants(:)
@@ -8136,7 +8136,7 @@ contains
 
   subroutine fixed_rows_of(this, first, last, depth, instant_moment, at, lb, tuple, fixed_rows, fixed)
 
-    class(discrete_residual), intent(in)  :: this
+    class(discrete_lagrangian), intent(in)  :: this
     integer                 , intent(in)  :: first, last, depth, instant_moment(:), at(:)
     type(lower_bounds)      , intent(in)  :: lb
     real(dp)                , intent(in)  :: tuple(:,:,lb % instant:)
@@ -8212,7 +8212,7 @@ contains
   subroutine face_rows_of(this, first, last, depth, nm, instant_moment, at, primary, positions, rows_along, &
        & implicit_moment, rows, columns, weights, constants)
 
-    class(discrete_residual), intent(in)  :: this
+    class(discrete_lagrangian), intent(in)  :: this
     integer                 , intent(in)  :: first, last, depth, nm, instant_moment(:), at(:), primary(:)
     real(dp)                , intent(in)  :: positions(:,:)
     type(stencil)           , intent(in)  :: rows_along(:,:)
@@ -8457,7 +8457,7 @@ contains
                call this % space_face_relation(this % condition(j) % equation(i), &
                     & positions(:, (m - 1) * ncells + on_face(n)), column_of, slopes, given, f, along)
                if (along(2) > this % elements % order) then
-                  error stop 'operation_residual: under a projection on the cells a condition on a face fixes a &
+                  error stop 'operation_lagrangian: under a projection on the cells a condition on a face fixes a &
                        &coefficient of the element, the value or a derivative to its order; a condition on a &
                        &higher derivative is natural and is not stated'
                end if
@@ -8537,7 +8537,7 @@ contains
 
   function disagreement(this, solution, other, schemes, derivatives, by) result(contribution)
 
-    class(discrete_residual)       , intent(in) :: this
+    class(discrete_lagrangian)       , intent(in) :: this
     type(discrete_field)           , intent(in) :: solution
     class(derivative_approximation), intent(in), optional :: other
     type(chain)                    , intent(in), optional :: schemes
@@ -8601,7 +8601,7 @@ contains
        end do
     end if
     if (.not. stated) then
-       error stop 'operation_residual: the disagreement reads the multipliers of a representation along space, &
+       error stop 'operation_lagrangian: the disagreement reads the multipliers of a representation along space, &
             &stated as a residual and paired'
     end if
 
@@ -8619,15 +8619,15 @@ contains
 
   function chain_of_enrichment(this) result(schemes)
 
-    class(discrete_residual), intent(in) :: this
+    class(discrete_lagrangian), intent(in) :: this
     type(chain) :: schemes
 
-    type(discrete_residual) :: enriched
+    type(discrete_lagrangian) :: enriched
     integer :: b, first, last, depth
 
     schemes = enrichment(this % schemes)
     select type (this)
-    type is (discrete_residual)
+    type is (discrete_lagrangian)
        enriched = this
     end select
     enriched % schemes = schemes
@@ -8679,13 +8679,13 @@ contains
   function time_disagreement(this, solution, schemes, derivative, by) result(contribution)
     class(minimizer)        , intent(in), optional :: by
 
-    class(discrete_residual), intent(in) :: this
+    class(discrete_lagrangian), intent(in) :: this
     type(discrete_field)    , intent(in) :: solution
     type(chain)             , intent(in), optional :: schemes
     real(dp), allocatable   , intent(out), optional :: derivative(:,:)
     real(dp), allocatable :: contribution(:)
 
-    type(discrete_residual) :: base, plus
+    type(discrete_lagrangian) :: base, plus
     type(discrete_field) :: state, replay, value_field, value_plus
     type(chain_block) :: blk
     type(stencil), allocatable :: rows_along(:,:)
@@ -8703,7 +8703,7 @@ contains
     character(len=250) :: message
 
     if (.not. (this % with_chain .and. allocated(this % objective))) then
-       error stop 'operation_residual: the disagreement along time compares a chain with its enrichment through &
+       error stop 'operation_lagrangian: the disagreement along time compares a chain with its enrichment through &
             &the objective; the residual has no chain or no objective'
     end if
     ! its derivative along each expansion, of order one: the
@@ -8715,44 +8715,44 @@ contains
     expanding = present(derivative)
     if (expanding) then
        if (this % points % expansion % order < 1) then
-          error stop 'operation_residual: the derivative of the disagreement is read along an expansion of order &
+          error stop 'operation_lagrangian: the derivative of the disagreement is read along an expansion of order &
                &one at least'
        end if
        if (this % objective % weight > 0.0_dp) then
-          error stop 'operation_residual: the derivative of the disagreement is formed for an integral objective'
+          error stop 'operation_lagrangian: the derivative of the disagreement is formed for an integral objective'
        end if
     end if
     if (allocated(this % functional_weight)) then
        if (any(this % functional_weight /= 0.0_dp)) then
-          error stop 'operation_residual: the disagreement along time reads the objective alone; an inequality on &
+          error stop 'operation_lagrangian: the disagreement along time reads the objective alone; an inequality on &
                &a functional of the state enters it'
        end if
     end if
     if (allocated(solution % objective_value)) then
-       error stop 'operation_residual: the disagreement along time reads the stages of the solution''s steps, &
+       error stop 'operation_lagrangian: the disagreement along time reads the stages of the solution''s steps, &
             &which a solution stored over checkpoints does not retain'
     end if
 
     stride = this % rule % num_components()
     nf     = this % manifold % num_unknowns
     select type (this)
-    type is (discrete_residual)
+    type is (discrete_lagrangian)
        base = this
     end select
     ! the instants and the design are the solution's
     select type (on => solution % on)
     type is (discrete_manifold)
        if (.not. on % identity % matches(this % points % identity)) then
-          error stop 'operation_residual: the solution is a field on another manifold than the residual''s'
+          error stop 'operation_lagrangian: the solution is a field on another manifold than the residual''s'
        end if
        base % points = on
     class default
-       error stop 'operation_residual: the disagreement along time reads a solution at the points of a manifold'
+       error stop 'operation_lagrangian: the disagreement along time reads a solution at the points of a manifold'
     end select
     plus = base
     if (present(schemes)) then
        if (schemes % num_blocks() /= base % schemes % num_blocks()) then
-          error stop 'operation_residual: the chain the solution is compared with has the blocks of the residual''s'
+          error stop 'operation_lagrangian: the chain the solution is compared with has the blocks of the residual''s'
        end if
        plus % schemes = schemes
     else
@@ -8784,7 +8784,7 @@ contains
        top = max(top, plus % schemes % scheme(b) % num_stages())
        call plus % block_extent(b, first, last, depth)
        if (first < 1) then
-          write(message,'(a,i0,a,i0,a,i0)') 'operation_residual: block ', b, ' of the enrichment reads ', depth, &
+          write(message,'(a,i0,a,i0,a,i0)') 'operation_lagrangian: block ', b, ' of the enrichment reads ', depth, &
                & ' instants of history before instant ', first + depth
           error stop trim(message)
        end if
@@ -8942,7 +8942,7 @@ contains
 
   logical function open_line(this)
 
-    class(discrete_residual), intent(in) :: this
+    class(discrete_lagrangian), intent(in) :: this
 
     open_line = .false.
     if (.not. this % with_differences) return
@@ -8956,7 +8956,7 @@ contains
   ! whether a block of the sweeps is the whole line at one moment: on
   ! an open line, and for a law projected on the cells of a line
   logical function whole_line(this)
-    class(discrete_residual), intent(in) :: this
+    class(discrete_lagrangian), intent(in) :: this
     whole_line = this % open_line()
     if (allocated(this % elements)) whole_line = whole_line .or. this % points % dimension == 1
   end function whole_line
@@ -8974,7 +8974,7 @@ contains
 
   subroutine segment_rows_of(this, nm, at, implicit_moment, rows, columns, weights)
 
-    class(discrete_residual), intent(in)  :: this
+    class(discrete_lagrangian), intent(in)  :: this
     integer                 , intent(in)  :: nm, at(:)
     logical                 , intent(in)  :: implicit_moment(:)
     integer , allocatable   , intent(out) :: rows(:), columns(:)
@@ -8985,13 +8985,13 @@ contains
 
     ncells = this % points % num_cells()
     if (this % points % dimension /= 1) then
-       error stop 'operation_residual: the segment relations act on a line; the region has several coordinates'
+       error stop 'operation_lagrangian: the segment relations act on a line; the region has several coordinates'
     end if
     if (any(this % points % centre(2:) <= this % points % centre(:ncells - 1))) then
-       error stop 'operation_residual: the segment relations read the points of the line in ascending order'
+       error stop 'operation_lagrangian: the segment relations read the points of the line in ascending order'
     end if
     if (any([(this % rule % mixed_degree(f) > 0, f = 1, this % manifold % num_unknowns)])) then
-       error stop 'operation_residual: the segment relations do not state a mixed component; its chain &
+       error stop 'operation_lagrangian: the segment relations do not state a mixed component; its chain &
             &along the line has no conditions at the ends'
     end if
     ! four entries per segment, order and coordinate at each implicit moment
@@ -9041,7 +9041,7 @@ contains
 
   subroutine space_face_placement(this, j, primary, face_point, target, row_point, row_offset, field, determined)
 
-    class(discrete_residual), intent(in)  :: this
+    class(discrete_lagrangian), intent(in)  :: this
     integer                 , intent(in)  :: j, primary(:)
     integer                 , intent(out) :: face_point
     integer , allocatable   , intent(out) :: target(:), row_point(:), row_offset(:), field(:), determined(:,:)
@@ -9071,7 +9071,7 @@ contains
       ! positions: the vertex-centred mesh of an interval has one at
       ! each end, a cell-centred mesh has none
       if (distance(face_point) > 4.0_dp * epsilon(1.0_dp) * max(abs(face % face_value), distance(nearest(2)))) then
-         error stop 'operation_residual: a condition on a face of the region requires a point on the face; &
+         error stop 'operation_lagrangian: a condition on a face of the region requires a point on the face; &
               &the region of an interval discretized by points has one at each end'
       end if
       used = 0
@@ -9083,7 +9083,7 @@ contains
          end if
       end do
       if (used + n > ncells) then
-         error stop 'operation_residual: a face of the region has more conditions than the region has points'
+         error stop 'operation_lagrangian: a face of the region has more conditions than the region has points'
       end if
     end associate
     allocate(target(n), row_point(n), row_offset(n), field(n), determined(2, n))
@@ -9101,7 +9101,7 @@ contains
        end do
        axis = this % condition(j) % manifold % face_axis
        if (top /= this % rule % degree_along(axis)) then
-          error stop 'operation_residual: the faces of an open line state as many conditions as its chain has &
+          error stop 'operation_lagrangian: the faces of an open line state as many conditions as its chain has &
                &orders; each takes one open row'
        end if
        do i = 1, n
@@ -9147,7 +9147,7 @@ contains
 
   subroutine condition_relation(this, equation, values, position, columns, slopes, given, leaves)
 
-    class(discrete_residual), intent(in)  :: this
+    class(discrete_lagrangian), intent(in)  :: this
     type(continuous_field)  , intent(in)  :: equation
     real(dp)                , intent(in)  :: values(:), position(:)
     integer , allocatable   , intent(out) :: columns(:), leaves(:,:)
@@ -9164,7 +9164,7 @@ contains
     g = equation % graph(1)
     call g % read_components(reads)
     if (size(reads) < 1) then
-       error stop 'operation_residual: a condition on a face reads a component of the unknowns'
+       error stop 'operation_lagrangian: a condition on a face reads a component of the unknowns'
     end if
     allocate(q(0:g % num_components() - 1), grad(0:g % num_components() - 1), source=0.0_dp)
     call g % gradient_at(q, values, value, grad, position)
@@ -9194,7 +9194,7 @@ contains
 
   subroutine space_face_relation(this, equation, position, columns, slopes, given, field, determined)
 
-    class(discrete_residual), intent(in)  :: this
+    class(discrete_lagrangian), intent(in)  :: this
     type(continuous_field)  , intent(in)  :: equation
     real(dp)                , intent(in)  :: position(:)
     integer , allocatable   , intent(out) :: columns(:)
@@ -9218,19 +9218,19 @@ contains
 
   integer function face_row_moment(this, instant, first, last, depth, instant_moment) result(m)
 
-    class(discrete_residual), intent(in) :: this
+    class(discrete_lagrangian), intent(in) :: this
     integer                 , intent(in) :: instant, first, last, depth, instant_moment(:)
 
     if (instant == 1) then
        m = instant_moment(instant - first + 1)
     else if (instant == this % points % num_instants()) then
        if (depth > 0 .or. first > 1 .or. last < instant) then
-          error stop 'operation_residual: a condition at the last instant is satisfied by one block over every &
+          error stop 'operation_lagrangian: a condition at the last instant is satisfied by one block over every &
                &instant, its rows at the first instant; a chain of several blocks marches past it'
        end if
        m = instant_moment(1)
     else
-       error stop 'operation_residual: a face is at the first or the last instant'
+       error stop 'operation_lagrangian: a face is at the first or the last instant'
     end if
 
   end function face_row_moment
@@ -9246,7 +9246,7 @@ contains
 
   subroutine face_relation(this, equation, values, position, columns, slopes, given, row)
 
-    class(discrete_residual), intent(in)  :: this
+    class(discrete_lagrangian), intent(in)  :: this
     type(continuous_field)  , intent(in)  :: equation
     real(dp)                , intent(in)  :: values(:), position(:)
     integer , allocatable   , intent(out) :: columns(:)
@@ -9263,7 +9263,7 @@ contains
     row_degree = -1
     do k = 1, size(columns)
        if (leaves(2, k) /= FIRST_COORDINATE .and. leaves(3, k) > 0) then
-          error stop 'operation_residual: a condition on a face reads the values of the unknowns and their &
+          error stop 'operation_lagrangian: a condition on a face reads the values of the unknowns and their &
                &derivatives along time'
        end if
        if (abs(abs(slopes(k)) - 1.0_dp) > 1.0e-12_dp) cycle
@@ -9275,7 +9275,7 @@ contains
        end if
     end do
     if (row_field == 0) then
-       error stop 'operation_residual: a condition on a face determines one component, read with coefficient &
+       error stop 'operation_lagrangian: a condition on a face determines one component, read with coefficient &
             &+1 or -1: of the last field declared among those so read, the one of highest order'
     end if
     slopes = slopes / sign
@@ -9285,7 +9285,7 @@ contains
 
   ! the instant of a face at a time of the interval
   integer function face_instant(this, time)
-    class(discrete_residual), intent(in) :: this
+    class(discrete_lagrangian), intent(in) :: this
     real(dp)                , intent(in) :: time
     integer :: k
     face_instant = 0
@@ -9293,7 +9293,7 @@ contains
        if (abs(this % points % instant(k) - time) <= 1.0e-12_dp * max(1.0_dp, abs(time))) face_instant = k
     end do
     if (face_instant == 0) then
-       error stop 'operation_residual: a face condition is stated at a time that is not an instant'
+       error stop 'operation_lagrangian: a face condition is stated at a time that is not an instant'
     end if
   end function face_instant
 
@@ -9308,7 +9308,7 @@ contains
 
   subroutine gauge_rows_of(this, nm, history_last, at, primary, rows, columns, weights)
 
-    class(discrete_residual), intent(in)  :: this
+    class(discrete_lagrangian), intent(in)  :: this
     integer                 , intent(in)  :: nm, history_last, at(:), primary(:)
     integer , allocatable   , intent(out) :: rows(:), columns(:)
     real(dp), allocatable   , intent(out) :: weights(:)
@@ -9328,7 +9328,7 @@ contains
        do i = 1, size(this % condition(j) % equation)
           associate (g => this % condition(j) % equation(i))
             if (.not. (g % is_integral() .and. g % is_unknown())) then
-               error stop 'operation_residual: a condition on the time factor is the integral of one &
+               error stop 'operation_lagrangian: a condition on the time factor is the integral of one &
                     &unknown over the region'
             end if
             f = g % index(1)
@@ -9346,4 +9346,4 @@ contains
 
   end subroutine gauge_rows_of
 
-end module operation_residual
+end module operation_lagrangian

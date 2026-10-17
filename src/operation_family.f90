@@ -528,7 +528,7 @@ contains
   ! the instant ahead it is the law's own row - at the instant ahead,
   ! whose lower degrees the family fixes, a law that reads no
   ! component of top degree in its form at the first instant
-  ! (operation_residual, initial_form). Degree outer, stage inner;
+  ! (operation_lagrangian, initial_form). Degree outer, stage inner;
   ! within a row the instant behind precedes the stages.
   !===================================================================!
 

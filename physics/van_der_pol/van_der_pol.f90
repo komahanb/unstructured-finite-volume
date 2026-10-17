@@ -257,7 +257,7 @@ program van_der_pol
   use operation_expansion, only : expansion
   use operation_field    , only : continuous_field, discrete_field, integral, &
        &                          operator(+), operator(-), operator(*), operator(/), operator(**)
-  use operation_residual , only : continuous_residual, discrete_residual, operator(+), operator(*), &
+  use operation_lagrangian , only : continuous_lagrangian, discrete_lagrangian, operator(+), operator(*), &
        &                          equidistribution
   use operation_family   , only : family, dirk, bdf, adams, chain
   use view_residual      , only : formula, tree
@@ -275,8 +275,8 @@ program van_der_pol
   type(continuous_manifold) :: manifold
   type(discrete_manifold)   :: manifold_bar
   type(continuous_field)    :: t, t_map, nu, u, J, lambda_omega, lambda_ic, lambda_s, lambda_t, rest
-  type(continuous_residual) :: r_omega, r_ic, r_s, r_t, L
-  type(discrete_residual)   :: L_bar
+  type(continuous_lagrangian) :: r_omega, r_ic, r_s, r_t, L
+  type(discrete_lagrangian)   :: L_bar
   type(family), allocatable :: pool(:)
   type(discrete_field)      :: estimate, solution, u_bar, lambda_omega_bar, lambda_ic_bar, lambda_s_bar, lambda_t_bar, &
        &                       J_bar, nu_bar
@@ -305,10 +305,10 @@ program van_der_pol
   ! the time map, the position of each instant, to its reference
   ! position
   t_map   = manifold % time_map()
-  r_omega = continuous_residual(manifold, [u % derivative([t, t]) - nu*(1.0_dp - u*u)*u % derivative([t]) + u])
-  r_ic    = continuous_residual(manifold % boundary(t, 0.0_dp), [u - u_0, u % derivative([t]) - u_t_0])
-  r_s     = continuous_residual(manifold % design(), [nu - nu_0])
-  r_t     = continuous_residual(manifold % time(), [t_map - t])
+  r_omega = continuous_lagrangian(manifold, [u % derivative([t, t]) - nu*(1.0_dp - u*u)*u % derivative([t]) + u])
+  r_ic    = continuous_lagrangian(manifold % boundary(t, 0.0_dp), [u - u_0, u % derivative([t]) - u_t_0])
+  r_s     = continuous_lagrangian(manifold % design(), [nu - nu_0])
+  r_t     = continuous_lagrangian(manifold % time(), [t_map - t])
 
   ! THE OBJECTIVE. The energy J, the integral over the time factor
   J = integral((u*u + u % derivative([t])**2)/2.0_dp, over=manifold % time())
@@ -531,9 +531,9 @@ contains
   ! reading the instants before it; along nu the derivatives of the
   ! laws exact; with a placement, the instants placed by it
   function discrete_image(L, placement) result(L_bar)
-    type(continuous_residual), intent(in) :: L
+    type(continuous_lagrangian), intent(in) :: L
     type(equidistribution)   , intent(in), optional :: placement
-    type(discrete_residual) :: L_bar
+    type(discrete_lagrangian) :: L_bar
     integer :: k
     L_bar = L % discretize(manifold_bar, time=chain([(dirk(2), k = 1, 3), (bdf(2), k = 4, 7), &
          &                                           (adams(2), k = 8, num_instants)], from=[(k, k = 1, num_instants)]), &

@@ -43,7 +43,7 @@ program taylor_green_study
   use operation_manifold         , only : continuous_manifold, discrete_manifold, interval, region, points, mesh
   use operation_field            , only : continuous_field, discrete_field, integral, sin, cos, exp, &
        &                                  operator(+), operator(-), operator(*), operator(/), operator(**)
-  use operation_residual         , only : continuous_residual, discrete_residual, operator(+), operator(*)
+  use operation_lagrangian         , only : continuous_lagrangian, discrete_lagrangian, operator(+), operator(*)
   use operation_family           , only : family, dirk, bdf, adams, chain
   use operation_finite_difference, only : finite_difference
   use operation_finite_volume    , only : finite_volume
@@ -67,8 +67,8 @@ program taylor_green_study
   type(continuous_field)    :: u, v, p, lambda, mu, momentum_x, momentum_y, pressure, lambda_r, energy
   type(discrete_field)      :: estimate, solution, error, functional
   real(dp) :: J(1)
-  type(continuous_residual) :: r, g, gauge, L
-  type(discrete_residual)   :: L_h
+  type(continuous_lagrangian) :: r, g, gauge, L
+  type(discrete_lagrangian)   :: L_h
   integer(int64) :: t0, t1, rate
 
   call arguments()
@@ -126,9 +126,9 @@ program taylor_green_study
   pressure   = p % derivative([x, x]) + p % derivative([y, y]) &
        &     + u % derivative([x])**2 + 2.0_dp*u % derivative([y])*v % derivative([x]) + v % derivative([y])**2
 
-  r      = continuous_residual(omega,  [momentum_x, momentum_y, pressure])
-  g      = continuous_residual(domega, [u - u_exact, v - v_exact])
-  gauge  = continuous_residual(tau,    [integral(p, over=omega % space())])
+  r      = continuous_lagrangian(omega,  [momentum_x, momentum_y, pressure])
+  g      = continuous_lagrangian(domega, [u - u_exact, v - v_exact])
+  gauge  = continuous_lagrangian(tau,    [integral(p, over=omega % space())])
   lambda = g % multiplier('lambda', [x, y])
   mu     = gauge % multiplier('mu', [t])
   L      = r + lambda*g + mu*gauge

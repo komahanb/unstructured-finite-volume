@@ -149,7 +149,7 @@ it does under finite differences.
 - `operation_expression.f90`: `flux_form`, the law's terms grouped by
   the derivative of the multiplier that tests them; `coefficient_form`,
   the layout of the coefficients a node stores.
-- `operation_residual.f90`: the residual operator projects the law on
+- `operation_lagrangian.f90`: the residual operator projects the law on
   the cells when the space method gives elements. The rules are
   evaluated at the quadrature points, on the jet the basis forms from
   the nodes' coefficients. The values are tested into the rows of the

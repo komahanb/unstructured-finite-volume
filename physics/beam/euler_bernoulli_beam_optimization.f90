@@ -114,7 +114,7 @@ program euler_bernoulli_beam_optimization
   use operation_expansion        , only : expansion
   use operation_field            , only : continuous_field, discrete_field, integral
   use operation_field            , only : sin, cos, operator(+), operator(-), operator(*), operator(/), operator(**)
-  use operation_residual         , only : continuous_residual, discrete_residual, operator(+), operator(*), &
+  use operation_lagrangian         , only : continuous_lagrangian, discrete_lagrangian, operator(+), operator(*), &
        &                                  minimize_together
   use operation_family           , only : dirk, bdf, adams, chain
   use operation_finite_element   , only : finite_element
@@ -136,7 +136,7 @@ program euler_bernoulli_beam_optimization
 
   type(continuous_field)    :: misfit, stiffness, misfits(2), stiffnesses(2)
   type(discrete_field)      :: estimate, solution, functional, s_h, mu_h, estimates(2), solutions(2)
-  type(discrete_residual)   :: L_h, L_hs(2)
+  type(discrete_lagrangian)   :: L_h, L_hs(2)
   real(dp) :: values(3), total(3)
   type(newton)       :: stack
   type(minimization) :: graph
@@ -245,7 +245,7 @@ contains
   subroutine scenario(harmonic, L_h, estimate, misfit, stiffness)
 
     real(dp)               , intent(in)  :: harmonic
-    type(discrete_residual), intent(out) :: L_h
+    type(discrete_lagrangian), intent(out) :: L_h
     type(discrete_field)   , intent(out) :: estimate
     type(continuous_field) , intent(out) :: misfit, stiffness
 
@@ -254,7 +254,7 @@ contains
     type(continuous_field)    :: t, x, s1, s2, w, w_true, exact
     type(continuous_field)    :: EI, EI_true, rhoA, moment, moment_true, load
     type(continuous_field)    :: adjoint, lambda, lambda_0, lambda_L, mu
-    type(continuous_residual) :: r, ic, bc_0, bc_L, bound, Lagrangian
+    type(continuous_lagrangian) :: r, ic, bc_0, bc_L, bound, Lagrangian
     real(dp) :: frequency
     integer  :: k
 
@@ -288,10 +288,10 @@ contains
     ! no condition on the design
     w      = omega % unknown('w')
     moment = EI * w % derivative([x, x])
-    r      = continuous_residual(omega, [rhoA * w % derivative([t, t]) + moment % derivative([x, x]) - load])
-    ic     = continuous_residual(initial, [w - w_true, w % derivative([t])])
-    bc_0   = continuous_residual(left , [w, w % derivative([x])])
-    bc_L   = continuous_residual(right, [w, w % derivative([x])])
+    r      = continuous_lagrangian(omega, [rhoA * w % derivative([t, t]) + moment % derivative([x, x]) - load])
+    ic     = continuous_lagrangian(initial, [w - w_true, w % derivative([t])])
+    bc_0   = continuous_lagrangian(left , [w, w % derivative([x])])
+    bc_L   = continuous_lagrangian(right, [w, w % derivative([x])])
 
     ! the misfit, and the Lagrangian
     misfit    = integral((w - w_true)**2 / 2.0_dp, over=omega)
@@ -304,7 +304,7 @@ contains
        ! the mean stiffness, its misfit at most the bound given: the
        ! misfit less the bound one integral over Omega
        Lagrangian = stiffness + adjoint*r + lambda*ic + lambda_0*bc_0 + lambda_L*bc_L
-       bound      = continuous_residual(omega % design(), &
+       bound      = continuous_lagrangian(omega % design(), &
             & [integral((w - w_true)**2 / 2.0_dp - misfit_max / (L * T_final), over=omega)], inequality=.true.)
        mu         = bound % multiplier('mu')
        Lagrangian = Lagrangian + mu*bound
@@ -314,7 +314,7 @@ contains
 
     ! the bound on s1 when given, paired with mu >= 0
     if (bounded) then
-       bound      = continuous_residual(omega % design(), [s1 - s1_max], inequality=.true.)
+       bound      = continuous_lagrangian(omega % design(), [s1 - s1_max], inequality=.true.)
        mu         = bound % multiplier('mu')
        Lagrangian = Lagrangian + mu*bound
     end if

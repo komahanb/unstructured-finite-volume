@@ -36,7 +36,7 @@ program triple_pendulum
   use util_verbosity    , only : set_verbosity
   use operation_manifold, only : continuous_manifold, discrete_manifold, interval, points
   use operation_field   , only : continuous_field, discrete_field, operator(+), operator(-)
-  use operation_residual, only : continuous_residual, discrete_residual, operator(+)
+  use operation_lagrangian, only : continuous_lagrangian, discrete_lagrangian, operator(+)
   use operation_family  , only : dirk, bdf, chain
   use multibody_dynamics, only : rigid_body, mechanism, joint_conditions, spherical, revolute
   use operation_newton      , only : newton
@@ -53,8 +53,8 @@ program triple_pendulum
   type(discrete_manifold)   :: omega_h
   type(continuous_field)    :: t, energy, joints, motion
   type(discrete_field)      :: estimate, solution, energy_h, joints_h
-  type(continuous_residual) :: r, g, L
-  type(discrete_residual)   :: L_h
+  type(continuous_lagrangian) :: r, g, L
+  type(discrete_lagrangian)   :: L_h
   type(newton)              :: stack
   type(minimization)        :: graph
   type(mechanism)           :: pendulum
@@ -89,8 +89,8 @@ program triple_pendulum
   call pendulum % joint(omega, 'joint3', revolute(b, [3.0_dp, 0.0_dp, 0.0_dp], [0.0_dp, 1.0_dp, 0.0_dp], c))
 
   ! the laws on [0, T], the initial data on {0}
-  r = continuous_residual(omega,  pendulum % laws())
-  g = continuous_residual(domega, pendulum % initial)
+  r = continuous_lagrangian(omega,  pendulum % laws())
+  g = continuous_lagrangian(domega, pendulum % initial)
   L = r + g
   L_h = L % discretize(omega_h, time=chain([dirk(2), bdf(1), (bdf(2), k = 3, num_instants)], &
        &                                   from=[(k, k = 1, num_instants)]))

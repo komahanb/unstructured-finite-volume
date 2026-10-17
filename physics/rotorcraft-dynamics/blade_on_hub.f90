@@ -47,7 +47,7 @@ program blade_on_hub
   use util_verbosity          , only : set_verbosity
   use operation_manifold      , only : continuous_manifold, discrete_manifold, interval, region, points
   use operation_field         , only : continuous_field, discrete_field
-  use operation_residual      , only : continuous_residual, discrete_residual, operator(+)
+  use operation_lagrangian      , only : continuous_lagrangian, discrete_lagrangian, operator(+)
   use operation_family        , only : dirk, bdf, chain
   use operation_finite_element, only : finite_element
   use multibody_dynamics      , only : rigid_body, beam_blade, mechanism, revolute_driver, rigid_link
@@ -73,8 +73,8 @@ program blade_on_hub
   type(discrete_manifold)   :: omega_h
   type(continuous_field)    :: t, x, motion
   type(discrete_field)      :: estimate, solution, reactions, tip_h
-  type(continuous_residual) :: L
-  type(discrete_residual)   :: L_h
+  type(continuous_lagrangian) :: L
+  type(discrete_lagrangian)   :: L_h
   type(newton)              :: stack
   type(minimization)        :: graph
   type(mechanism)           :: spinner
@@ -135,9 +135,9 @@ program blade_on_hub
 
   ! the laws, the initial data, and for the beam its root fixed to the
   ! hub
-  L = continuous_residual(omega, spinner % laws()) + continuous_residual(initial, spinner % initial)
+  L = continuous_lagrangian(omega, spinner % laws()) + continuous_lagrangian(initial, spinner % initial)
   if (trim(model) == 'beam') then
-     L = L + continuous_residual(left, spinner % root)
+     L = L + continuous_lagrangian(left, spinner % root)
      omega_h = omega % discretize(time=points(num_instants), space=points(span_points))
      L_h = L % discretize(omega_h, time=chain([dirk(2), (bdf(1), k = 2, num_instants)], &
           &                                   from=[(k, k = 1, num_instants)]), space=finite_element(degree=3))

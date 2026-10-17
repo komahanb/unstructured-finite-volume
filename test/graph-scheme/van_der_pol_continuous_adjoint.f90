@@ -55,7 +55,7 @@ program van_der_pol_continuous_adjoint
   use operation_expansion, only : expansion
   use operation_field    , only : continuous_field, discrete_field, integral, &
        &                          operator(+), operator(-), operator(*), operator(/), operator(**)
-  use operation_residual , only : continuous_residual, discrete_residual, operator(+), operator(*)
+  use operation_lagrangian , only : continuous_lagrangian, discrete_lagrangian, operator(+), operator(*)
   use operation_family   , only : dirk, bdf, adams, chain
   use view_expression    , only : expression_view
 
@@ -70,8 +70,8 @@ program van_der_pol_continuous_adjoint
   type(continuous_field)    :: t, nu, u, lambda, r, density, adjoint, u0, v0, rest, sensitivity
   type(continuous_field), allocatable :: terminal(:)
   type(discrete_field)      :: estimate, solution, lambda_h, functional
-  type(continuous_residual) :: system, g_0, g_T, g_nu, L
-  type(discrete_residual)   :: L_h
+  type(continuous_lagrangian) :: system, g_0, g_T, g_nu, L
+  type(discrete_lagrangian)   :: L_h
   type(continuous_field)    :: rho_0, rho_T
 
   ! the discrete adjoint: the manifold of the sensitivity contract
@@ -79,8 +79,8 @@ program van_der_pol_continuous_adjoint
   type(discrete_manifold)   :: omega_dh
   type(continuous_field)    :: t_d, nu_d, u_d, lambda_r, lambda_g, kappa, r_d, u0_d, v0_d, energy, rest_d
   type(discrete_field)      :: estimate_d, solution_d, kappa_h, adjoint_h, energy_h
-  type(continuous_residual) :: r_term, g_term, d_term, L_d
-  type(discrete_residual)   :: L_dh
+  type(continuous_lagrangian) :: r_term, g_term, d_term, L_d
+  type(discrete_lagrangian)   :: L_dh
 
   type(expression_view) :: view
   real(dp) :: J(1), sensitivities(2)
@@ -125,10 +125,10 @@ program van_der_pol_continuous_adjoint
   ! Lagrangian
   u0  = u - u_initial
   v0  = u % derivative([t]) - v_initial
-  system = continuous_residual(omega,    [r, adjoint])
-  g_0    = continuous_residual(domega_0, [u0, v0])
-  g_T    = continuous_residual(domega_T, terminal)
-  g_nu   = continuous_residual(omega % design(), [nu - nu_design])
+  system = continuous_lagrangian(omega,    [r, adjoint])
+  g_0    = continuous_lagrangian(domega_0, [u0, v0])
+  g_T    = continuous_lagrangian(domega_T, terminal)
+  g_nu   = continuous_lagrangian(omega % design(), [nu - nu_design])
   rho_0  = g_0 % multiplier('rho_0', [nu])
   rho_T  = g_T % multiplier('rho_T', [nu])
   L      = system + rho_0*g_0 + rho_T*g_T + g_nu
@@ -162,9 +162,9 @@ program van_der_pol_continuous_adjoint
   u0_d = u_d - u_initial
   v0_d = u_d % derivative([t_d]) - v_initial
   energy   = integral((u_d*u_d + u_d % derivative([t_d])**2)/2.0_dp, over=omega_d % time())
-  r_term   = continuous_residual(omega_d,  [r_d])
-  g_term   = continuous_residual(domega_d, [u0_d, v0_d])
-  d_term   = continuous_residual(omega_d % design(), [nu_d - nu_design])
+  r_term   = continuous_lagrangian(omega_d,  [r_d])
+  g_term   = continuous_lagrangian(domega_d, [u0_d, v0_d])
+  d_term   = continuous_lagrangian(omega_d % design(), [nu_d - nu_design])
   lambda_r = r_term % multiplier('adjoint', [t_d, nu_d])
   lambda_g = g_term % multiplier('lambda', [nu_d])
   kappa    = d_term % multiplier('kappa')

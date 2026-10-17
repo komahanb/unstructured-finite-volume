@@ -49,7 +49,7 @@ The kinds of residual are:
 - `ic`, the initial conditions;
 - `bc0` and `bcL`, the boundary conditions at the two ends.
 
-Each residual is a `continuous_residual` on a manifold, and each has a
+Each residual is a `continuous_lagrangian` on a manifold, and each has a
 multiplier.
 
 - The stationarity of L in the multipliers is the forward problem.
@@ -198,16 +198,16 @@ component per point, less the rows left open for the conditions
 
 **The laws are stated as residuals on Omega, like the physics:**
 
-    r   = continuous_residual(omega, [rhoA*w % derivative([t, t]) + (EI*w % derivative([x, x])) % derivative([x, x]) - f])
+    r   = continuous_lagrangian(omega, [rhoA*w % derivative([t, t]) + (EI*w % derivative([x, x])) % derivative([x, x]) - f])
 
-    r_t = continuous_residual(omega, representation(w, t, 2))
+    r_t = continuous_lagrangian(omega, representation(w, t, 2))
 
-    r_x = continuous_residual(omega, representation(w, x, 4))
+    r_x = continuous_lagrangian(omega, representation(w, x, 4))
 
-    ic  = continuous_residual(omega % boundary(t, 0.0_dp), [...])
+    ic  = continuous_lagrangian(omega % boundary(t, 0.0_dp), [...])
 
-    bc0 = continuous_residual(omega % boundary(x, 0.0_dp), [w, w % derivative([x])])
-    bcL = continuous_residual(omega % boundary(x, L),      [w, w % derivative([x])])
+    bc0 = continuous_lagrangian(omega % boundary(x, 0.0_dp), [w, w % derivative([x])])
+    bcL = continuous_lagrangian(omega % boundary(x, L),      [w, w % derivative([x])])
 
     L   = energy + lambda_r*r + mu_t*r_t + mu_x*r_x + lambda_ic*ic + lambda_0*bc0 + lambda_L*bcL
 
@@ -417,7 +417,7 @@ excluded:
    - `derivative(u, alpha)`, the stored component formed inside the
      library, and `representation(w, x, k)` for the laws.
    - Operator nodes kept unexpanded.
-   - Representation residuals as `continuous_residual`s, generated when
+   - Representation residuals as `continuous_lagrangian`s, generated when
      not stated.
    - Along t, the rows the families build today.
    - Check: every output unchanged, and `mu_t` reported.

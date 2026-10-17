@@ -32,7 +32,7 @@ requires its own solver or its own adjoint.
   (`doc/finite-element-method.md`).
 - **Sensitivity:** the Lagrangian of
   `physics/beam/euler_bernoulli_beam_optimization.f90` with `+ kappa*d`,
-  `d = continuous_residual(omega % design(), [s1 - s1_0, s2 - s2_0])`:
+  `d = continuous_lagrangian(omega % design(), [s1 - s1_0, s2 - s2_0])`:
   `minimize` returns kappa = -dJ/ds at (s1_0, s2_0).
 - **Optimization:** that program as it stands, without `+ kappa*d`.
   `minimize` finds s = (0.51178039, -0.31039058) at 21 x 17 by Newton's

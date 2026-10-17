@@ -46,7 +46,7 @@ program van_der_pol_design_audit
   use operation_expansion, only : expansion
   use operation_field    , only : continuous_field, discrete_field, integral, &
        &                          operator(+), operator(-), operator(*), operator(/), operator(**)
-  use operation_residual , only : continuous_residual, discrete_residual, operator(+), operator(*)
+  use operation_lagrangian , only : continuous_lagrangian, discrete_lagrangian, operator(+), operator(*)
   use operation_family   , only : dirk, bdf, adams, chain
 
   implicit none
@@ -59,8 +59,8 @@ program van_der_pol_design_audit
   type(continuous_manifold) :: omega
   type(discrete_manifold)   :: omega_h
   type(continuous_field)    :: t, nu, mu, w, u, energy, lambda_r, lambda, kappa, rest
-  type(continuous_residual) :: r, g, d, L
-  type(discrete_residual)   :: L_h
+  type(continuous_lagrangian) :: r, g, d, L
+  type(discrete_lagrangian)   :: L_h
   type(discrete_field)      :: estimate, solution, bare, kappa_h, slope, energy_h, bare_energy, design_h
   type(discrete_field)      :: u_h, u_t_h, u_tt_h
   type(continuous_field)    :: along(3)
@@ -77,9 +77,9 @@ program van_der_pol_design_audit
 
   ! THE RESIDUALS: the oscillator, the initial data whose velocity
   ! reads nu, the design fixed at (1, 1); THE OBJECTIVE, reading mu
-  r = continuous_residual(omega, [u % derivative([t, t]) - nu*(1.0_dp - u*u)*u % derivative([t]) + mu*u])
-  g = continuous_residual(omega % boundary(t, 0.0_dp), [u - 2.0_dp, u % derivative([t]) - 0.25_dp*nu])
-  d = continuous_residual(omega % design(), [nu - 1.0_dp, mu - 1.0_dp])
+  r = continuous_lagrangian(omega, [u % derivative([t, t]) - nu*(1.0_dp - u*u)*u % derivative([t]) + mu*u])
+  g = continuous_lagrangian(omega % boundary(t, 0.0_dp), [u - 2.0_dp, u % derivative([t]) - 0.25_dp*nu])
+  d = continuous_lagrangian(omega % design(), [nu - 1.0_dp, mu - 1.0_dp])
   energy = integral((u*u + mu*u % derivative([t])**2)/2.0_dp, over=omega % time())
 
   ! THE LAGRANGIAN, every condition paired

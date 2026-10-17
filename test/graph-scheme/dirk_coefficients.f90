@@ -29,7 +29,7 @@ program dirk_coefficients
   use operation_manifold, only : continuous_manifold, discrete_manifold
   use operation_field   , only : continuous_field, discrete_field
   use operation_field   , only : operator(+), operator(-), operator(*), operator(/), operator(**)
-  use operation_residual, only : continuous_residual, discrete_residual
+  use operation_lagrangian, only : continuous_lagrangian, discrete_lagrangian
   use util_verbosity    , only : set_verbosity
 
   implicit none
@@ -44,8 +44,8 @@ program dirk_coefficients
   type(continuous_field)    :: W11, W21, W22, B1, B2, delta1, delta2, equation(7), crouzeix
   type(discrete_field)      :: estimate, solution
 
-  type(continuous_residual) :: r
-  type(discrete_residual)   :: r_h
+  type(continuous_lagrangian) :: r
+  type(discrete_lagrangian)   :: r_h
 
   real(dp) :: values(7)
   integer  :: i
@@ -73,7 +73,7 @@ program dirk_coefficients
   equation(7) = W11 - W22
 
   ! R on Omega, and R_h = R on Omega_h
-  r   = continuous_residual(omega, equation)
+  r   = continuous_lagrangian(omega, equation)
   r_h = r % discretize(omega_h)
 
   ! the initial estimate near the Crouzeix root, a field Omega -> R^7,

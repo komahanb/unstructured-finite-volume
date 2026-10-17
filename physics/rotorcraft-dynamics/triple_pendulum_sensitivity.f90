@@ -38,7 +38,7 @@ program triple_pendulum_sensitivity
   use operation_expansion, only : expansion
   use operation_field    , only : continuous_field, discrete_field, integral, cos, &
        &                          operator(+), operator(-), operator(*), operator(/), operator(**)
-  use operation_residual , only : continuous_residual, discrete_residual, operator(+), operator(*)
+  use operation_lagrangian , only : continuous_lagrangian, discrete_lagrangian, operator(+), operator(*)
   use operation_family   , only : dirk, bdf, chain
   use multibody_dynamics , only : rigid_body, mechanism, joint_conditions, spherical, revolute
   use operation_newton      , only : newton
@@ -57,8 +57,8 @@ program triple_pendulum_sensitivity
   type(continuous_field)    :: t, s1, s2, motion, objective, lambda_r, lambda, kappa
   type(joint_conditions)    :: g1
   type(discrete_field)      :: estimate, solution, kappa_h, functional
-  type(continuous_residual) :: r, g, d, L
-  type(discrete_residual)   :: L_h
+  type(continuous_lagrangian) :: r, g, d, L
+  type(discrete_lagrangian)   :: L_h
   type(newton)              :: stack
   type(minimization)        :: graph
   type(mechanism)           :: pendulum
@@ -105,9 +105,9 @@ program triple_pendulum_sensitivity
   ! J, the integral of the square of C's fall
   objective = integral(c % u(3) * c % u(3), over=omega % time())
 
-  r = continuous_residual(omega,  pendulum % laws())
-  g = continuous_residual(domega, pendulum % initial)
-  d = continuous_residual(omega % design(), [s1 - s1_value, s2 - s2_value])
+  r = continuous_lagrangian(omega,  pendulum % laws())
+  g = continuous_lagrangian(domega, pendulum % initial)
+  d = continuous_lagrangian(omega % design(), [s1 - s1_value, s2 - s2_value])
   lambda_r = r % multiplier('adjoint')
   lambda   = g % multiplier('lambda')
   kappa    = d % multiplier('kappa')

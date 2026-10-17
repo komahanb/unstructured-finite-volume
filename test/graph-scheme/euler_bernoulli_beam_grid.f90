@@ -46,7 +46,7 @@ program euler_bernoulli_beam_grid
   use operation_manifold         , only : continuous_manifold, discrete_manifold, interval, region, points
   use operation_field            , only : continuous_field, discrete_field, integral, representation
   use operation_field            , only : sin, cos, operator(+), operator(-), operator(*), operator(/), operator(**)
-  use operation_residual         , only : continuous_residual, discrete_residual, operator(+), operator(*)
+  use operation_lagrangian         , only : continuous_lagrangian, discrete_lagrangian, operator(+), operator(*)
   use operation_family           , only : dirk, bdf, adams, chain
   use operation_finite_difference, only : finite_difference
   use operation_segment_trapezoid, only : segment_trapezoid
@@ -113,8 +113,8 @@ contains
     type(continuous_field)    :: t, x, w, w_exact, exact, load, goal
     type(continuous_field)    :: adjoint, mu_x, lambda, lambda_0, lambda_L
     type(discrete_field)      :: estimate, solution, functional, error
-    type(continuous_residual) :: r, r_x, ic, bc_0, bc_L, Lagrangian
-    type(discrete_residual)   :: L_h
+    type(continuous_lagrangian) :: r, r_x, ic, bc_0, bc_L, Lagrangian
+    type(discrete_lagrangian)   :: L_h
     real(dp), allocatable :: xi(:), contribution(:)
     real(dp) :: frequency, J(1)
     integer  :: k, i
@@ -138,11 +138,11 @@ contains
     ! the physics, the representation laws along x, the initial data,
     ! and the clamped ends
     w    = omega % unknown('w', [t, x])
-    r    = continuous_residual(omega, [rhoA * w % derivative([t, t]) + EI * w % derivative([x, x, x, x]) - load])
-    r_x  = continuous_residual(omega, representation(w, x, 4))
-    ic   = continuous_residual(initial, [w - w_exact, w % derivative([t])])
-    bc_0 = continuous_residual(left , [w, w % derivative([x])])
-    bc_L = continuous_residual(right, [w, w % derivative([x])])
+    r    = continuous_lagrangian(omega, [rhoA * w % derivative([t, t]) + EI * w % derivative([x, x, x, x]) - load])
+    r_x  = continuous_lagrangian(omega, representation(w, x, 4))
+    ic   = continuous_lagrangian(initial, [w - w_exact, w % derivative([t])])
+    bc_0 = continuous_lagrangian(left , [w, w % derivative([x])])
+    bc_L = continuous_lagrangian(right, [w, w % derivative([x])])
 
     ! the goal, and the Lagrangian
     goal     = integral(w**2 / 2.0_dp, over=omega)

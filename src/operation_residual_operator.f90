@@ -145,7 +145,8 @@ module operation_residual_operator
      ! rules(variant(j)), the reduced rule's - a law that reads no
      ! component of top degree stated by its derivative along time
      ! (initial_form) - appended to the rules, and rule j itself where
-     ! the law reads one
+     ! the law reads one. Under a projection on the cells the flags are
+     ! of the sites, a site reduced where its instance's moment is.
      integer, allocatable :: variant(:)
      logical, allocatable, private :: reduced_point(:)
      ! the count of the rules, one per multiplier, their variants after
@@ -440,10 +441,6 @@ contains
        do j = 1, this % laws
           this % variant(j) = j
           if (.not. varying(j)) cycle
-          if (present(projected)) then
-             error stop 'operation_lagrangian: under a projection on the cells a law that reads no component &
-                  &of top degree is not stated at an explicit moment'
-          end if
           k = k + 1
           this % rules(k) = reduced_laws(j)
           call this % rules(k) % share_arguments(rule)
@@ -515,6 +512,12 @@ contains
                   & projected % elements % position(:, q, projected % element_cell(n))
           end do
        end do
+       ! a site is reduced where the moment of its instance is: every
+       ! node of an instance is at that moment
+       if (allocated(this % reduced_point)) then
+          this % reduced_point = [((reduced(abs(projected % element_point(1, n))), q = 1, nq), &
+               & n = 1, size(projected % element_cell))]
+       end if
     end if
     call this % declare_arguments(2, [contract(FIELD_REAL, 1), contract(FIELD_REAL, this % designs)])
 
@@ -685,6 +688,10 @@ contains
     if (allocated(this % connected_law)) connected = part_stencil(this % connected_law, part, summed)
     if (allocated(this % prescribed))    prescribed = part_stencil(this % prescribed, part, summed)
     if (allocated(this % projected)) then
+       if (allocated(this % variant)) then
+          error stop 'operation_lagrangian: a law projected on the cells and stated by its variant at the &
+               &explicit moments is solved on one image; its rows are not cut into parts'
+       end if
        allocate(point_place(size(this % at)), source=0)
        point_place(points) = [(i, i = 1, npts)]
        owned_point = [(part % is_owned((i - 1) * w + 1), i = 1, npts)]
@@ -1168,14 +1175,14 @@ contains
   end subroutine governed_at_points
 
   ! every rule's value at every site of the projection, on the real
-  ! values the basis forms there
+  ! values the basis forms there, at a reduced site its variant
   subroutine governed_on_reals(this, inputs, x, governing)
     class(residual_operator), intent(in)  :: this
     type(binding)           , intent(in)  :: inputs(:)
     real(dp)                , intent(in)  :: x(:)
     real(dp), allocatable   , intent(out) :: governing(:,:)
     real(dp), allocatable :: design_values(:), xs(:), ns(:)
-    integer :: j, s, width, nd, nsites, coordinates, nq
+    integer :: j, s, width, nd, nsites, coordinates, nq, k
     call bound_real_vector(inputs, this % argument(2), design_values)
     xs     = this % formed_at_sites(x)
     ns     = this % design_at_sites(design_values)
@@ -1185,7 +1192,6 @@ contains
     allocate(governing(nsites, this % laws))
     nq = this % projected % elements % num_quadrature_points()
     do j = 1, this % laws
-       coordinates = this % rules(j) % num_position_coordinates()
        do s = 1, nsites
           ! no rule is evaluated where its test functions vanish
           if (.not. tested_at(this % projected % elements, this % projected % tested(2, j), s - ((s - 1) / nq) * nq, &
@@ -1193,11 +1199,13 @@ contains
              governing(s, j) = 0.0_dp
              cycle
           end if
+          k = this % law_at(j, s)
+          coordinates = this % rules(k) % num_position_coordinates()
           if (coordinates > 0) then
-             governing(s, j) = this % rules(j) % value_on(xs((s - 1) * width + 1:s * width), &
+             governing(s, j) = this % rules(k) % value_on(xs((s - 1) * width + 1:s * width), &
                   & ns((s - 1) * nd + 1:s * nd), this % site_positions(1:coordinates, s))
           else
-             governing(s, j) = this % rules(j) % value_on(xs((s - 1) * width + 1:s * width), ns((s - 1) * nd + 1:s * nd))
+             governing(s, j) = this % rules(k) % value_on(xs((s - 1) * width + 1:s * width), ns((s - 1) * nd + 1:s * nd))
           end if
        end do
     end do
@@ -1943,12 +1951,12 @@ contains
       do j = 1, this % laws
          f = pr % tested(1, j)
          call this % rules(j) % read_components(reads)
-         do m = 1, size(reads)
-            do k2 = 1, ubound(pr % formed, 1)
-               if (pr % formed(k2, reads(m) + 1) < 0) cycle
-               slot(place(pr % formed(k2, reads(m) + 1)), f) = 1
-            end do
-         end do
+         call slots_of(reads)
+         ! a variant at the reduced sites reads its own components
+         if (allocated(this % variant)) then
+            call this % rules(this % variant(j)) % read_components(reads)
+            call slots_of(reads)
+         end if
       end do
     end associate
     allocate(columns_of(nf), first(nf), column(count(slot > 0)))
@@ -1963,6 +1971,21 @@ contains
        end do
        columns_of(f) = r - first(f) + 1
     end do
+
+  contains
+
+    subroutine slots_of(components)
+      integer, intent(in) :: components(:)
+      associate (pr => this % projected)
+        do m = 1, size(components)
+           do k2 = 1, ubound(pr % formed, 1)
+              if (pr % formed(k2, components(m) + 1) < 0) cycle
+              slot(place(pr % formed(k2, components(m) + 1)), f) = 1
+           end do
+        end do
+      end associate
+    end subroutine slots_of
+
   end subroutine projected_columns
 
   ! the components of a node's tuple the basis reads, each once
@@ -2024,8 +2047,8 @@ contains
                f = pr % tested(1, j)
                d = pr % tested(2, j)
                if (.not. tested_at(el, d, q, e)) cycle
-               call this % rules(j) % read_components(reads)
-               call this % rules(j) % gradient_at(xs((s - 1) * width + 1:s * width), &
+               call this % rules(this % law_at(j, s)) % read_components(reads)
+               call this % rules(this % law_at(j, s)) % gradient_at(xs((s - 1) * width + 1:s * width), &
                     & ns((s - 1) * nd + 1:s * nd), value, g, this % site_positions(:, s))
                do i = 1, nodes
                   do k = 0, nk - 1

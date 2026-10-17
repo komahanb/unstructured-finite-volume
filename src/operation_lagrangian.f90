@@ -5102,6 +5102,28 @@ contains
     do e = 1, size(face_rows)
        zeros(face_rows(e)) = face_constants(e)
     end do
+    ! THE REDUCED POINTS, after the history, the manifold's first
+    ! instant aside, where a law that reads no component of top degree
+    ! is stated in its form at the first instant (initial_form, and
+    ! projected_form for a law projected on the cells): at an explicit
+    ! moment, whose components below each field's top degree the family
+    ! determines from other moments, as the initial data determine them
+    ! at the first instant, it would restate a condition on values the
+    ! family fixes and leave its multiplier no row; and at every stage
+    ! of a family that marches by stages, where a condition on the
+    ! stage's values reaches its multiplier only through h^2 a_ii^2 and
+    ! the tableau's order is lost
+    allocate(reduced_points(npts), source=.false.)
+    if (allocated(this % initial_rule_laws)) then
+       variant_laws = this % initial_rule_laws
+       varying      = this % initial_varying
+       do m = 1, nm
+          if (implicit_moment(m) .and. .not. staged) cycle
+          if (any(instant_moment(1:depth) == m)) cycle
+          if (first == 1 .and. instant_moment(1) == m) cycle
+          reduced_points((m - 1) * ncells + 1:m * ncells) = .true.
+       end do
+    end if
     ! PROJECTED ON THE CELLS: each element at each moment an instance,
     ! the law in flux form tested at its quadrature points against the
     ! basis, its rules each in the row of the value's coefficient of
@@ -5150,14 +5172,17 @@ contains
           gauge = stencil(face_rows, face_columns, face_weights, zeros, 'prescribed')
           if (factor > 0) then
              blk % rows = residual_operator(relations, rule, at, unknowns, stride, rule_primary, fixed_rows, &
-                  & fixed, prescribed=gauge, positions=point_positions, projected=projected, tying=tying, laws=laws)
+                  & fixed, prescribed=gauge, positions=point_positions, projected=projected, tying=tying, &
+                  & reduced=reduced_points, reduced_laws=variant_laws, varying=varying, laws=laws)
           else
              blk % rows = residual_operator(relations, rule, at, unknowns, stride, rule_primary, fixed_rows, &
-                  & fixed, prescribed=gauge, positions=point_positions, projected=projected, laws=laws)
+                  & fixed, prescribed=gauge, positions=point_positions, projected=projected, &
+                  & reduced=reduced_points, reduced_laws=variant_laws, varying=varying, laws=laws)
           end if
        else
           blk % rows = residual_operator(relations, rule, at, unknowns, stride, rule_primary, fixed_rows, &
-               & fixed, positions=point_positions, projected=projected, laws=laws)
+               & fixed, positions=point_positions, projected=projected, reduced=reduced_points, &
+               & reduced_laws=variant_laws, varying=varying, laws=laws)
        end if
     else
        ! the block of the manifold's first instant states the laws there
@@ -5170,27 +5195,6 @@ contains
           end if
           rule = this % initial_rule
           laws = this % initial_rule_laws
-       end if
-       ! THE REDUCED POINTS, after the history, the manifold's first
-       ! instant aside, where a law that reads no component of top degree
-       ! is stated in its form at the first instant (initial_form): at an
-       ! explicit moment, whose components below each field's top degree
-       ! the family determines from other moments, as the initial data
-       ! determine them at the first instant, it would restate a condition
-       ! on values the family fixes and leave its multiplier no row; and
-       ! at every stage of a family that marches by stages, where a
-       ! condition on the stage's values reaches its multiplier only
-       ! through h^2 a_ii^2 and the tableau's order is lost
-       allocate(reduced_points(npts), source=.false.)
-       if (allocated(this % initial_rule)) then
-          variant_laws = this % initial_rule_laws
-          varying      = this % initial_varying
-          do m = 1, nm
-             if (implicit_moment(m) .and. .not. staged) cycle
-             if (any(instant_moment(1:depth) == m)) cycle
-             if (first == 1 .and. instant_moment(1) == m) cycle
-             reduced_points((m - 1) * ncells + 1:m * ncells) = .true.
-          end do
        end if
        ! with corrected instants, the laws of initial_form at every
        ! moment, and at the corrected instants the rows of the projection
@@ -6676,7 +6680,7 @@ contains
                      call q(c) % set_symmetric(k, formed((s - 1) * width + c + 1, k))
                   end do
                end do
-               r     = rows % rules(j) % at_instant(q, design, rows % site_positions(:, s))
+               r     = rows % rules(rows % law_at(j, s)) % at_instant(q, design, rows % site_positions(:, s))
                value = -mixed_partial(r)
                do i = 1, size(pr % element_point, 1)
                   p = pr % element_point(i, n)
@@ -6709,7 +6713,7 @@ contains
     type(derivative_terms) :: r, along
     logical , allocatable :: is_fixed(:)
     real(dp), allocatable :: source(:), formed(:,:), lambda(:), partial(:), lower(:)
-    integer , allocatable :: reads(:)
+    integer , allocatable :: reads(:), variant_reads(:)
     integer :: width, nq, j, f, d, n, e, qp, s, c, k, i, p, row, i2, p2, k2, offset, dd, m
     real(dp) :: value, tau
 
@@ -6727,8 +6731,13 @@ contains
       do j = 1, rows % laws
          f = pr % tested(1, j)
          d = pr % tested(2, j)
-         ! the components the rule reads: its partial in any other is zero
+         ! the components the rule reads, and its variant at the reduced
+         ! sites: its partial in any other is zero
          call rows % rules(j) % read_components(reads)
+         if (allocated(rows % variant)) then
+            call rows % rules(rows % variant(j)) % read_components(variant_reads)
+            reads = [reads, pack(variant_reads, [(all(reads /= variant_reads(m)), m = 1, size(variant_reads))])]
+         end if
          do n = 1, size(pr % element_cell)
             if (owner(abs(pr % element_point(1, n))) /= this_image()) cycle
             e = pr % element_cell(n)
@@ -6758,7 +6767,7 @@ contains
                do m = 1, size(reads)
                   c = reads(m)
                   call q(c) % set_coefficient(2**o, 1.0_dp)
-                  r = rows % rules(j) % at_instant(q, design, rows % site_positions(:, s))
+                  r = rows % rules(rows % law_at(j, s)) % at_instant(q, design, rows % site_positions(:, s))
                   call q(c) % set_coefficient(2**o, 0.0_dp)
                   do k = 0, o
                      partial(k) = coefficient(r, 2**k - 1 + 2**o)
@@ -6836,8 +6845,8 @@ contains
                      end do
                   end do
                   if (o == 0) then
-                     call rows % rules(j) % gradient_at(formed((s - 1) * width + 1:s * width, 0), values, value, g, &
-                          & rows % site_positions(:, s), g_design=gd)
+                     call rows % rules(rows % law_at(j, s)) % gradient_at(formed((s - 1) * width + 1:s * width, 0), &
+                          & values, value, g, rows % site_positions(:, s), g_design=gd)
                      total = total + lambda(0) * gd
                      cycle
                   end if
@@ -6845,7 +6854,7 @@ contains
                      q(c) = symmetric_terms(formed((s - 1) * width + c + 1, 0), &
                           & [(formed((s - 1) * width + c + 1, k), k = 1, o)], o + 1)
                   end do
-                  r = rows % rules(j) % at_instant(q, design, rows % site_positions(:, s))
+                  r = rows % rules(rows % law_at(j, s)) % at_instant(q, design, rows % site_positions(:, s))
                   do k = 0, o
                      partial(k) = coefficient(r, 2**k - 1 + 2**o)
                   end do
@@ -7262,12 +7271,14 @@ contains
     if (.not. image % manifold % with_time) return
     differentiated = .false.
     law = constant(0.0_dp)
+    image % initial_varying = spread(.false., 1, m)
     do g = 1, m
        if (image % manifold % of_time_alone(group(1, g))) then
           do o = 1, top_degree(image % rule, image % manifold % num_unknowns)
              if (reads_top_degree(groups(g), image % rule, image % manifold % num_unknowns)) exit
              groups(g) = total_derivative(groups(g), FIRST_COORDINATE)
              differentiated = .true.
+             image % initial_varying(g) = .true.
           end do
        end if
        law = law + multiplier(g) * groups(g)
@@ -8432,9 +8443,15 @@ contains
     ! every node on the face, the coefficient it determines - the value,
     ! or a derivative along space to the element's order - in place of
     ! that coefficient's row, at the moments the conditions of the
-    ! points act at. A condition on a derivative above the element's
-    ! order is natural: the projection satisfies it through the terms
-    ! of the integration by parts, and it is not stated as a row.
+    ! points act at. At an explicit moment, after the history and the
+    ! manifold's first instant aside, the family fixes the components
+    ! below the top degree, which satisfy the condition, and the
+    ! condition fixes the top one by its derivative along time
+    ! (condition_relation): left to the law there, the top component
+    ! at the face would follow a law the condition replaces. A
+    ! condition on a derivative above the element's order is natural:
+    ! the projection satisfies it through the terms of the integration
+    ! by parts, and it is not stated as a row.
     !-----------------------------------------------------------------!
 
     subroutine coefficient_condition(j)
@@ -8443,23 +8460,21 @@ contains
 
       integer, allocatable :: on_face(:)
       integer :: i, m, k, n, c, coefficient, start_space
-      logical :: initial
+      logical :: initial, history, explicit
 
       start_space = merge(FIRST_COORDINATE + 1, FIRST_COORDINATE, this % manifold % with_time)
       on_face = this % points_on_face(j)
       do i = 1, size(this % condition(j) % equation)
          do m = 1, nm
-            acting = implicit_moment(m)
-            do k = 1, depth
-               if (instant_moment(k) == m) acting = .false.
-            end do
+            history = any(instant_moment(1:depth) == m)
             ! the manifold's first instant, the block's own
-            initial = first == 1 .and. depth == 0 .and. instant_moment(1) == m
-            if (initial) acting = .true.
-            if (.not. acting) cycle
+            initial  = first == 1 .and. depth == 0 .and. instant_moment(1) == m
+            acting   = (implicit_moment(m) .and. .not. history) .or. initial
+            explicit = .not. (acting .or. history .or. (first == 1 .and. instant_moment(1) == m))
+            if (.not. (acting .or. explicit)) cycle
             do n = 1, size(on_face)
                call this % space_face_relation(this % condition(j) % equation(i), &
-                    & positions(:, (m - 1) * ncells + on_face(n)), column_of, slopes, given, f, along)
+                    & positions(:, (m - 1) * ncells + on_face(n)), column_of, slopes, given, f, along, explicit)
                if (along(2) > this % elements % order) then
                   error stop 'operation_lagrangian: under a projection on the cells a condition on a face fixes a &
                        &coefficient of the element, the value or a derivative to its order; a condition on a &
@@ -9146,11 +9161,15 @@ contains
   ! tuple at one point: the sum over k of slopes(k) times the component
   ! columns(k) equals given, given = -g at zero state. The components
   ! are in the order of the condition's own tuple; leaves(:, k) is
-  ! the field, the coordinate and the order of each. Invalid input: a
-  ! condition that reads no component of the unknowns.
+  ! the field, the coordinate and the order of each. With explicit,
+  ! the condition is stated by its derivative along time of the least
+  ! order that reads a component of top degree, as initial_form states
+  ! a law: at an explicit moment the family fixes the components below
+  ! the top degree, and the condition there fixes the top one. Invalid
+  ! input: a condition that reads no component of the unknowns.
   !===================================================================!
 
-  subroutine condition_relation(this, equation, values, position, columns, slopes, given, leaves)
+  subroutine condition_relation(this, equation, values, position, columns, slopes, given, leaves, explicit)
 
     class(discrete_lagrangian), intent(in)  :: this
     type(continuous_field)    , intent(in)  :: equation
@@ -9158,15 +9177,25 @@ contains
     integer , allocatable   , intent(out) :: columns(:), leaves(:,:)
     real(dp), allocatable   , intent(out) :: slopes(:)
     real(dp)                  , intent(out) :: given
+    logical                   , intent(in), optional :: explicit
 
     type(expression) :: g
     type(expression_vertex), allocatable :: v(:)
     integer , allocatable :: reads(:)
     real(dp), allocatable :: q(:), grad(:)
     real(dp) :: value
-    integer :: k, i, along
+    integer :: k, i, along, o
 
     g = equation % graph(1)
+    if (present(explicit)) then
+       if (explicit) then
+          g = jet_form(g)
+          do o = 1, top_degree(this % rule, this % manifold % num_unknowns)
+             if (reads_top_degree(g, this % rule, this % manifold % num_unknowns)) exit
+             g = total_derivative(g, FIRST_COORDINATE)
+          end do
+       end if
+    end if
     call g % read_components(reads)
     if (size(reads) < 1) then
        error stop 'operation_lagrangian: a condition on a face reads a component of the unknowns'
@@ -9194,10 +9223,11 @@ contains
   ! A condition on a face of the region as that relation, with the
   ! field of its last component, and the coordinate and the order of
   ! the space derivative of highest order it reads (the order zero
-  ! when it reads none).
+  ! when it reads none); with explicit, of the condition's derivative
+  ! along time (condition_relation).
   !===================================================================!
 
-  subroutine space_face_relation(this, equation, position, columns, slopes, given, field, determined)
+  subroutine space_face_relation(this, equation, position, columns, slopes, given, field, determined, explicit)
 
     class(discrete_lagrangian), intent(in)  :: this
     type(continuous_field)    , intent(in)  :: equation
@@ -9206,12 +9236,13 @@ contains
     real(dp), allocatable   , intent(out) :: slopes(:)
     real(dp)                  , intent(out) :: given
     integer                   , intent(out) :: field, determined(2)
+    logical                   , intent(in), optional :: explicit
 
     integer, allocatable :: leaves(:,:)
     integer :: k
 
     call this % condition_relation(equation, this % points % expansion % values(), position, columns, slopes, given, &
-         & leaves)
+         & leaves, explicit)
     field      = leaves(1, size(columns))
     determined = [FIRST_COORDINATE, 0]
     do k = 1, size(columns)

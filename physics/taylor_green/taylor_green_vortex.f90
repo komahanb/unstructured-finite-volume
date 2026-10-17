@@ -40,6 +40,12 @@
 ! over each cell divided by its volume, of order 2.
 ! The discrete solution is the zero of L_h; the printed number is
 ! || (u, v, p)_h - (u*, v*, p*)|Omega_h ||.
+!
+! THE MINIMIZER STACK, paired with the rows of every block as a
+! multiplier is with its condition (operation_minimization), the
+! minimization printed before the solve: newton over GMRES(60) to a
+! relative residual of 1e-3, preconditioned by four Gauss-Seidel
+! sweeps over the blocks of the rows' cells.
 !=====================================================================!
 
 program taylor_green_vortex
@@ -54,6 +60,10 @@ program taylor_green_vortex
   use view_paraview_writer       , only : paraview
   use util_verbosity             , only : set_verbosity
   use view_residual              , only : formula, tree
+  use operation_newton           , only : newton
+  use operation_gmres            , only : gmres
+  use operation_gauss_seidel     , only : gauss_seidel
+  use operation_minimization     , only : minimization
 
   implicit none
 
@@ -68,6 +78,8 @@ program taylor_green_vortex
 
   type(continuous_residual) :: r, g, gauge, L
   type(discrete_residual)   :: L_h
+  type(newton)              :: stack
+  type(minimization)        :: graph
   integer                   :: k
 
   ! Omega = [0, T] x B, B the region of box.geo; dOmega = {0} x B;
@@ -164,7 +176,12 @@ program taylor_green_vortex
      call set_verbosity(1)
   end if
 
-  call L_h % minimize(estimate, solution)
+  ! the minimizer stack of every block's rows, and the minimization
+  stack = newton(gmres(gauss_seidel(4), restart=60, tolerance=1.0e-3_dp))
+  graph = minimization(L_h, stack)
+  if (this_image() == 1) call graph % view(L_h)
+
+  call L_h % minimize(estimate, solution, by=stack)
 
   ! || (u, v, p)_h - (u*, v*, p*)|Omega_h ||
   error = solution % fields(['u', 'v', 'p']) - estimate

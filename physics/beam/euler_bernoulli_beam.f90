@@ -143,6 +143,15 @@
 ! instants, case 1 as 2.36e-3, 4.82e-4, 1.06e-4, 2.47e-5 and case 2
 ! as 1.70e-3, 2.57e-4, 4.98e-5, 1.73e-5: order 4 or more in x and 2
 ! in t, case 2 reaching 9.5e-6 at 65 points.
+!
+! THE MINIMIZER STACKS, paired with the rows of every block as a
+! multiplier is with its condition (operation_minimization), the
+! minimization of each case printed before its solve: newton over
+! GMRES(60) to a relative residual of 1e-3 preconditioned by four
+! Gauss-Seidel sweeps, each sweep's blocks the rows' points - the whole
+! line at one moment on the open line; on the hub newton to 1e-13 over
+! the elimination of the rows its unknowns of time alone tie and an
+! equilibrated direct solve of the rest.
 !=====================================================================!
 
 program euler_bernoulli_beam
@@ -157,6 +166,12 @@ program euler_bernoulli_beam
   use operation_finite_difference, only : finite_difference
   use operation_finite_element   , only : finite_element
   use operation_segment_trapezoid, only : segment_trapezoid
+  use operation_newton           , only : newton
+  use operation_gmres            , only : gmres
+  use operation_gauss_seidel     , only : gauss_seidel
+  use operation_elimination      , only : elimination
+  use operation_dense_direct     , only : dense_direct
+  use operation_minimization     , only : minimization
 
   implicit none
 
@@ -164,6 +179,7 @@ program euler_bernoulli_beam
   real(dp), parameter :: L = 2.0_dp, T_final = 1.0_dp, EI_0 = 2.0_dp, rhoA_0 = 1.5_dp
   integer  :: num_instants = 41, num_points = 17
   character(len=32) :: item
+  type(newton) :: stack, hub_stack
 
   if (command_argument_count() >= 1) then
      call get_command_argument(1, item)
@@ -177,6 +193,16 @@ program euler_bernoulli_beam
   ! each case under its name, the convergence of every solve printed
   ! by image 1
   if (this_image() == 1) call set_verbosity(1)
+
+  ! THE MINIMIZER STACKS, paired with the rows of every block: newton
+  ! over GMRES(60) to a relative residual of 1e-3, preconditioned by
+  ! four Gauss-Seidel sweeps over the blocks of the rows' points; on the
+  ! hub, whose unknowns of time alone tie their rows, newton to 1e-13
+  ! over the elimination of the tying rows and an equilibrated direct
+  ! solve of the rest
+  stack     = newton(gmres(gauss_seidel(4), restart=60, tolerance=1.0e-3_dp))
+  hub_stack = newton(elimination(dense_direct(equilibrated=.true.)), tolerance=1.0e-13_dp)
+
   call simply_supported(open_line=.false.)
   call clamped(open_line=.false.)
   call clamped(open_line=.true.)
@@ -204,6 +230,7 @@ contains
     type(discrete_field)      :: estimate, solution, error, functional, at_0, at_L
     type(continuous_residual) :: r, r_t, r_x, ic, bc_0, bc_L, Lagrangian
     type(discrete_residual)   :: L_h
+    type(minimization)        :: graph
     real(dp) :: frequency, J(1), J_exact
     integer  :: k
 
@@ -256,7 +283,9 @@ contains
        if (this_image() == 1) print '(a)', 'simply supported, uniform EI and rhoA'
     end if
     estimate = exact % discretize(omega_h)
-    call L_h % minimize(estimate, solution)
+    graph = minimization(L_h, stack)
+    if (this_image() == 1) call graph % view(L_h)
+    call L_h % minimize(estimate, solution, by=stack)
 
     error      = solution % fields(['w']) - estimate
     functional = energy % at(solution)
@@ -300,6 +329,7 @@ contains
     type(discrete_field)      :: estimate, solution, error
     type(continuous_residual) :: r, ic, bc_0, bc_L, Lagrangian
     type(discrete_residual)   :: L_h
+    type(minimization)        :: graph
     real(dp) :: frequency
     integer  :: k
     logical  :: by_elements
@@ -372,7 +402,9 @@ contains
        if (this_image() == 1) print '(a)', 'clamped, EI(x) and rhoA(x) varying, manufactured load'
     end if
     estimate = exact % discretize(omega_h)
-    call L_h % minimize(estimate, solution)
+    graph = minimization(L_h, stack)
+    if (this_image() == 1) call graph % view(L_h)
+    call L_h % minimize(estimate, solution, by=stack)
 
     error = solution % fields(['w']) - estimate
     if (this_image() == 1) print '(a, es12.4)', '   error against the exact solution  ', error % norm()
@@ -397,6 +429,7 @@ contains
     type(discrete_field)      :: estimate, solution, error_w, error_theta
     type(continuous_residual) :: r, ic, bc_0, bc_L, Lagrangian
     type(discrete_residual)   :: L_h
+    type(minimization)        :: graph
     real(dp) :: frequency
     integer  :: k
 
@@ -459,7 +492,9 @@ contains
 
     if (this_image() == 1) print '(a)', 'clamped, case 6 on a turning hub, the hub''s angle an unknown of time alone'
     estimate = exact % discretize(omega_h)
-    call L_h % minimize(estimate, solution, continued=.true.)
+    graph = minimization(L_h, hub_stack)
+    if (this_image() == 1) call graph % view(L_h)
+    call L_h % minimize(estimate, solution, continued=.true., by=hub_stack)
 
     w_only      = continuous_field(omega, [w_exact])
     theta_only  = continuous_field(omega, [theta_exact])

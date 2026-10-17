@@ -30,6 +30,14 @@
 ! E = 70e9 the tip has moved by 7.55e-4 along the span, -4.15e-3 along
 ! the chord and -1.66e-4 along the thickness.
 !
+! THE MINIMIZER STACK, paired with the rows of every block as a
+! multiplier is with its condition (operation_minimization), the
+! minimization printed before the march: newton to 1e-13 by the chord
+! method over the elimination of the rows the family's relations, the
+! data and the unknowns of time alone tie, and a direct solve of the
+! rest, equilibrated for the beam, whose rows of positions, rotations
+! and reactions differ in scale.
+!
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 
@@ -43,6 +51,10 @@ program blade_on_hub
   use operation_family        , only : dirk, bdf, chain
   use operation_finite_element, only : finite_element
   use multibody_dynamics      , only : rigid_body, beam_blade, mechanism, revolute_driver, rigid_link
+  use operation_newton      , only : newton
+  use operation_elimination , only : elimination
+  use operation_dense_direct, only : dense_direct
+  use operation_minimization, only : minimization
 
   implicit none
 
@@ -63,6 +75,8 @@ program blade_on_hub
   type(discrete_field)      :: estimate, solution, reactions, tip_h
   type(continuous_residual) :: L
   type(discrete_residual)   :: L_h
+  type(newton)              :: stack
+  type(minimization)        :: graph
   type(mechanism)           :: spinner
   type(rigid_body)          :: hub, slab
   type(beam_blade)          :: blade
@@ -138,7 +152,10 @@ program blade_on_hub
   motion   = spinner % estimate(omega)
   estimate = motion % discretize(omega_h)
   if (this_image() == 1) call set_verbosity(1)
-  call L_h % minimize(estimate, solution, continued=.true.)
+  stack = newton(elimination(dense_direct(equilibrated=trim(model) == 'beam')), tolerance=1.0e-13_dp, chord=.true.)
+  graph = minimization(L_h, stack)
+  if (this_image() == 1) call graph % view(L_h)
+  call L_h % minimize(estimate, solution, continued=.true., by=stack)
 
   names = [character(len=32) :: 'driver_4', 'driver_5', 'driver_6']
   reactions = solution % fields(names)

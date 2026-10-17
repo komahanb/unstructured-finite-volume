@@ -20,6 +20,13 @@
 ! scheme at its order; the conditions hold at every instant. The
 ! instant count is read from the command line (default 201).
 !
+! THE MINIMIZER STACK, paired with the rows of every block as a
+! multiplier is with its condition (operation_minimization), the
+! minimization printed before the march: newton to 1e-13 by the chord
+! method, every step of a block against the factors of its first,
+! over the elimination of the rows the family's relations, the data and
+! the joints' unknowns tie and a dense direct solve of the rest.
+!
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 
@@ -32,6 +39,10 @@ program triple_pendulum
   use operation_residual, only : continuous_residual, discrete_residual, operator(+)
   use operation_family  , only : dirk, bdf, chain
   use multibody_dynamics, only : rigid_body, mechanism, joint_conditions, spherical, revolute
+  use operation_newton      , only : newton
+  use operation_elimination , only : elimination
+  use operation_dense_direct, only : dense_direct
+  use operation_minimization, only : minimization
 
   implicit none
 
@@ -44,6 +55,8 @@ program triple_pendulum
   type(discrete_field)      :: estimate, solution, energy_h, joints_h
   type(continuous_residual) :: r, g, L
   type(discrete_residual)   :: L_h
+  type(newton)              :: stack
+  type(minimization)        :: graph
   type(mechanism)           :: pendulum
   type(rigid_body)          :: a, b, c
   type(joint_conditions)    :: conditions(3)
@@ -87,7 +100,10 @@ program triple_pendulum
   motion   = pendulum % estimate(omega)
   estimate = motion % discretize(omega_h)
   if (this_image() == 1) call set_verbosity(1)
-  call L_h % minimize(estimate, solution, continued=.true.)
+  stack = newton(elimination(dense_direct()), tolerance=1.0e-13_dp, chord=.true.)
+  graph = minimization(L_h, stack)
+  if (this_image() == 1) call graph % view(L_h)
+  call L_h % minimize(estimate, solution, continued=.true., by=stack)
 
   ! the energy at every instant, and the conditions of the joints
   energy = a % kinetic_energy(t) + b % kinetic_energy(t) + c % kinetic_energy(t) &

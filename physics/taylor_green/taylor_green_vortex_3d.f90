@@ -20,6 +20,12 @@
 ! one, and the Lagrangian L = r + lambda . g + mu gauge minimised
 ! block by block, one instant per block, by dirk(2).
 !
+! THE MINIMIZER STACK, paired with the rows of every block as a
+! multiplier is with its condition (operation_minimization), the
+! minimization printed before the solve: newton over GMRES(60) to a
+! relative residual of 1e-3, preconditioned by four Gauss-Seidel
+! sweeps over the blocks of the rows' cells.
+!
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 
@@ -34,6 +40,10 @@ program taylor_green_vortex_3d
   use operation_family           , only : dirk, chain
   use operation_finite_volume    , only : finite_volume
   use view_paraview_writer       , only : paraview
+  use operation_newton           , only : newton
+  use operation_gmres            , only : gmres
+  use operation_gauss_seidel     , only : gauss_seidel
+  use operation_minimization     , only : minimization
 
   implicit none
 
@@ -47,6 +57,8 @@ program taylor_green_vortex_3d
   type(discrete_field)      :: estimate, solution, error
   type(continuous_residual) :: r, g, gauge, L
   type(discrete_residual)   :: L_h
+  type(newton)              :: stack
+  type(minimization)        :: graph
   integer                   :: k
 
   ! Omega = [0, T] x B, B the box of box_3d.py; dOmega = {0} x B;
@@ -110,7 +122,11 @@ program taylor_green_vortex_3d
   ! by image 1
   estimate = exact % discretize(omega_h)
   if (this_image() == 1) call set_verbosity(1)
-  call L_h % minimize(estimate, solution)
+  ! the minimizer stack of every block's rows, and the minimization
+  stack = newton(gmres(gauss_seidel(4), restart=60, tolerance=1.0e-3_dp))
+  graph = minimization(L_h, stack)
+  if (this_image() == 1) call graph % view(L_h)
+  call L_h % minimize(estimate, solution, by=stack)
 
   ! || (u, v, w, p)_h - (u*, v*, w*, p*)|Omega_h ||
   error = solution % fields(['u', 'v', 'w', 'p']) - estimate

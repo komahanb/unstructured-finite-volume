@@ -98,6 +98,12 @@
 ! the expansion took 6, the misfit at most 1e-4 in 15 and at most 1e-6
 ! in 45 where it took 13 and 32: the same designs, the multipliers to
 ! 7e-9 and the mean stiffness to 6e-13 of the expansion's.
+!
+! THE MINIMIZER STACK, paired with the rows of every block as a
+! multiplier is with its condition (operation_minimization), the
+! minimization printed before the design's iteration: newton over
+! GMRES(60) to a relative residual of 1e-3, preconditioned by four
+! Gauss-Seidel sweeps over the blocks of the rows' points.
 !=====================================================================!
 
 program euler_bernoulli_beam_optimization
@@ -112,6 +118,10 @@ program euler_bernoulli_beam_optimization
        &                                  minimize_together
   use operation_family           , only : dirk, bdf, adams, chain
   use operation_finite_element   , only : finite_element
+  use operation_newton           , only : newton
+  use operation_gmres            , only : gmres
+  use operation_gauss_seidel     , only : gauss_seidel
+  use operation_minimization     , only : minimization
 
   implicit none
 
@@ -128,6 +138,8 @@ program euler_bernoulli_beam_optimization
   type(discrete_field)      :: estimate, solution, functional, s_h, mu_h, estimates(2), solutions(2)
   type(discrete_residual)   :: L_h, L_hs(2)
   real(dp) :: values(3), total(3)
+  type(newton)       :: stack
+  type(minimization) :: graph
   integer  :: k
 
   if (command_argument_count() >= 1) then
@@ -160,13 +172,20 @@ program euler_bernoulli_beam_optimization
   ! printed by image 1
   if (this_image() == 1) call set_verbosity(1)
 
+  ! THE MINIMIZER STACK, paired with the rows of every block: newton
+  ! over GMRES(60) to a relative residual of 1e-3, preconditioned by
+  ! four Gauss-Seidel sweeps over the blocks of the rows' points
+  stack = newton(gmres(gauss_seidel(4), restart=60, tolerance=1.0e-3_dp))
+
   ! two scenarios on one design: the deflections at the frequency and
   ! at twice it, the sum of their misfits least
   if (scenarios) then
      do k = 1, 2
         call scenario(real(k, dp), L_hs(k), estimates(k), misfits(k), stiffnesses(k))
      end do
-     call minimize_together(L_hs, estimates, solutions)
+     graph = minimization(L_hs(1), stack)
+     if (this_image() == 1) call graph % view(L_hs(1))
+     call minimize_together(L_hs, estimates, solutions, by=stack)
      total = 0.0_dp
      do k = 1, 2
         functional = misfits(k) % at(solutions(k))
@@ -181,7 +200,9 @@ program euler_bernoulli_beam_optimization
   end if
 
   call scenario(1.0_dp, L_h, estimate, misfit, stiffness)
-  call L_h % minimize(estimate, solution)
+  graph = minimization(L_h, stack)
+  if (this_image() == 1) call graph % view(L_h)
+  call L_h % minimize(estimate, solution, by=stack)
 
   ! J at the design found, dJ/ds there by the expansion of the state,
   ! and the design

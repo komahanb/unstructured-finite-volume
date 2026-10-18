@@ -9886,10 +9886,11 @@ contains
     integer , allocatable :: node_field(:), node_coefficient(:), node_order(:), site_field(:), site_order(:)
     integer , allocatable :: row(:), column(:), condition(:,:), row_dof(:), row_condition(:), column_dof(:)
     integer , allocatable :: local(:), entry_owner(:), entry_row(:), entry_column(:), entry_order(:), place(:)
-    real(dp), allocatable :: matrix(:,:), nu(:), scale(:), entry_value(:), mass(:,:), d(:), v(:,:)
+    integer , allocatable :: block_owner(:), block_row(:), block_column(:)
+    real(dp), allocatable :: matrix(:,:), nu(:), scale(:), entry_value(:), block_value(:), mass(:,:), d(:), v(:,:)
     logical , allocatable :: reading(:), coordinate(:), conditional(:)
     integer :: stride, ncells, cells, nphys, nk, width, first, last, depth, m, e, n, f, kk, a, c, cc, o, comp
-    integer :: p, i, j, l, q, nodes
+    integer :: p, i, j, l, q, nodes, stated
     real(dp) :: bound
 
     stride = this % rule % num_components()
@@ -9985,11 +9986,11 @@ contains
                   end if
                   if (coordinate(f)) then
                      row_dof(i) = numbered(dof, [c, f, kk])
-                     local = [local, row_dof(i)]
                   else
                      row_condition(i) = numbered(condition, [c, f, kk])
                   end if
                end do
+               local = [local, pack(row_dof, row_dof > 0)]
             end if
             allocate(column_dof(size(column)), source=0)
             do j = 1, size(column)
@@ -10000,29 +10001,40 @@ contains
                if (.not. coordinate(f) .or. node_order(comp) /= a) cycle
                c = merge(0, p - (m - 1) * ncells, this % manifold % of_time_alone(f))
                column_dof(j) = numbered(dof, [c, f, node_coefficient(comp)])
-               local = [local, column_dof(j)]
             end do
+            local = [local, pack(column_dof, column_dof > 0)]
             ! the entries, each row times its scale: of the element's
             ! mass and stiffness, owner -e, or of a condition, owner its
             ! number
+            ! those of the element at this order are stated in turn, then
+            ! placed after the entries before them at once
+            allocate(block_owner(size(row) * size(column)), block_row(size(row) * size(column)), &
+                 &   block_column(size(row) * size(column)), block_value(size(row) * size(column)))
+            stated = 0
             do i = 1, size(row)
                do j = 1, size(column)
                   if (column_dof(j) == 0 .or. matrix(i, j) == 0.0_dp) cycle
                   if (row_dof(i) > 0 .and. a /= 1) then
-                     entry_owner = [entry_owner, -e]
-                     entry_row   = [entry_row, row_dof(i)]
+                     stated = stated + 1
+                     block_owner(stated) = -e
+                     block_row(stated)   = row_dof(i)
                   else if (row_condition(i) > 0) then
-                     entry_owner = [entry_owner, row_condition(i)]
-                     entry_row   = [entry_row, 0]
+                     stated = stated + 1
+                     block_owner(stated) = row_condition(i)
+                     block_row(stated)   = 0
                   else
                      cycle
                   end if
-                  entry_column = [entry_column, column_dof(j)]
-                  entry_order  = [entry_order, a]
-                  entry_value  = [entry_value, scale(i) * matrix(i, j)]
+                  block_column(stated) = column_dof(j)
+                  block_value(stated)  = scale(i) * matrix(i, j)
                end do
             end do
-            deallocate(column_dof)
+            entry_owner  = [entry_owner, block_owner(1:stated)]
+            entry_row    = [entry_row, block_row(1:stated)]
+            entry_column = [entry_column, block_column(1:stated)]
+            entry_order  = [entry_order, [(a, l = 1, stated)]]
+            entry_value  = [entry_value, block_value(1:stated)]
+            deallocate(column_dof, block_owner, block_row, block_column, block_value)
          end do
          deallocate(row_dof, row_condition, scale)
          pencil(e) % coordinate = unique_numbers(local)

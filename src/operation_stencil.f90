@@ -56,6 +56,7 @@ module operation_stencil
   public :: combine_triples
   public :: triple_list
   public :: compile_matrix_from_action
+  public :: compile_entries_from_action
 
   type, extends(operation) :: stencil
 
@@ -300,6 +301,34 @@ contains
     end do
 
   end subroutine compile_matrix_from_action
+
+  !===================================================================!
+  ! THE ENTRIES OF A LINEAR OPERATION that is a stencil of width
+  ! vertices, its matrix as compile_matrix_from_action reads it from
+  ! its edges, without the matrix: stated true, rows, columns and
+  ! weights; false for an operation of another kind.
+  !===================================================================!
+
+  subroutine compile_entries_from_action(action, width, rows, columns, weights, stated)
+
+    class(operation)     , intent(in)  :: action
+    integer              , intent(in)  :: width
+    integer , allocatable, intent(out) :: rows(:), columns(:)
+    real(dp), allocatable, intent(out) :: weights(:)
+    logical              , intent(out) :: stated
+
+    real(dp), allocatable :: constant(:)
+
+    stated = .false.
+    select type (action)
+    type is (stencil)
+       if (action % pattern % num_vertices() /= width) return
+       call action % constants % real_vector(constant)
+       call action % entries(rows, columns, weights)
+       stated = size(constant) == width .and. size(weights) == size(rows)
+    end select
+
+  end subroutine compile_entries_from_action
 
   !===================================================================!
   ! THE STENCIL RESTRICTED to a subset of its vertices, everything

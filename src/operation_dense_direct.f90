@@ -38,7 +38,7 @@
 module operation_dense_direct
 
   use util_precision  , only : dp, spacing_at_one
-  use operation_stencil, only : compile_matrix_from_action
+  use operation_stencil, only : compile_matrix_from_action, compile_entries_from_action
   use operation_minimizer , only : minimizer, restrict, solve_result, SOLVE_SINGULAR, SOLVE_CONTINUE, SOLVE_EXHAUSTED
   use iso_fortran_env   , only : int64
   use util_factorisation, only : dense_factorisation
@@ -158,9 +158,10 @@ contains
     real(dp), intent(inout) :: x(:)
     real(dp), intent(out)   :: achieved
 
-    real(dp), allocatable :: a(:,:), constant(:), r(:), solution(:)
+    real(dp), allocatable :: a(:,:), constant(:), r(:), solution(:), weights(:)
+    integer , allocatable :: rows(:), columns(:)
     integer :: n
-    logical :: factors_current
+    logical :: factors_current, entries_stated
     type(solve_result) :: outcome
     character(len=250) :: message
 
@@ -199,7 +200,19 @@ contains
     ! this statement's.
     !----------------------------------------------------------------!
 
-    if (.not. factors_current) then
+    ! block triangular, a stencil is factorised from its entries, no
+    ! matrix of the order of the system formed
+    entries_stated = .false.
+    if (.not. factors_current .and. this % block_triangular) then
+       call compile_entries_from_action(this % action, n, rows, columns, weights, entries_stated)
+    end if
+    if (entries_stated) then
+       call this % record_event(factorisations)
+       call this % factor % factorise_entries(n, rows, columns, weights, this % singular_tolerance, &
+            & this % equilibrated)
+       this % retained_version  = this % action % version()
+       this % retained_transposed = this % action % transpose_version()
+    else if (.not. factors_current) then
        call compile_matrix_from_action(this % action, this % graph, this % unknown_domain, &
             & this % num_unknowns, n, this % num_components, a, constant, stored=this % stored)
        call this % record_event(factorisations)

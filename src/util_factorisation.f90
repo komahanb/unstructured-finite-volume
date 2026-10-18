@@ -42,6 +42,13 @@
 ! the unknown of the same index, so the permutation is the same on
 ! both sides.
 !
+! FROM ITS ENTRIES, the block triangular factorisation of a matrix
+! stated by its nonzero entries forms the diagonal blocks alone, and
+! stores the entries below them by rows: no array of the order of the
+! matrix squared is formed, and a substitution reads the entries
+! below the blocks once each. Its scaling, its blocks and their
+! factors are those of the matrix the entries state.
+!
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 
@@ -66,10 +73,15 @@ module util_factorisation
      ! factorisation of each diagonal block
      integer , allocatable, private :: permutation(:), block_first(:)
      type(dense_factorisation), allocatable, private :: diagonal(:)
+     ! from its entries: the entries below the diagonal blocks, by the
+     ! rows of the permuted matrix, their columns permuted alike
+     integer , allocatable, private :: lower_start(:), lower_column(:)
+     real(dp), allocatable, private :: lower_value(:)
 
    contains
 
      procedure :: factorise
+     procedure :: factorise_entries
      procedure :: substitute
      procedure :: substituted
      procedure :: order
@@ -130,6 +142,7 @@ contains
        end if
     end if
     if (allocated(this % permutation)) deallocate(this % permutation, this % block_first, this % diagonal)
+    if (allocated(this % lower_start)) deallocate(this % lower_start, this % lower_column, this % lower_value)
     if (present(block_triangular)) then
        if (block_triangular) then
           call strong_components(this % lu, this % permutation, this % block_first)
@@ -198,6 +211,188 @@ contains
   end subroutine factorise
 
   !===================================================================!
+  ! THE BLOCK TRIANGULAR FACTORISATION OF A MATRIX OF ORDER n STATED BY
+  ! ITS ENTRIES: weights(e) at row rows(e) and column columns(e), the
+  ! weights of an entry stated more than once summed in the order
+  ! given. Its scaling, its blocks and the factors of each are those
+  ! of factorise on the matrix the entries state, with block_triangular
+  ! and, without equilibrated, the largest entry of each column the
+  ! scale of its pivots. An entry outside 1..n stops the program.
+  !===================================================================!
+
+  subroutine factorise_entries(this, n, rows, columns, weights, threshold, equilibrated)
+
+    class(dense_factorisation), intent(inout) :: this
+    integer                   , intent(in)    :: n, rows(:), columns(:)
+    real(dp)                  , intent(in)    :: weights(:), threshold
+    logical                   , intent(in)    :: equilibrated
+
+    integer , allocatable :: start(:), column(:), place(:), edge_start(:), edge(:), position(:)
+    real(dp), allocatable :: value(:), scales(:), block(:,:)
+    integer :: e, i, j, k, b, m, filled
+    real(dp) :: summed
+
+    if (any(rows < 1) .or. any(rows > n) .or. any(columns < 1) .or. any(columns > n)) then
+       error stop 'util_factorisation: an entry of the matrix lies outside its order'
+    end if
+    this % n           = n
+    this % is_singular = .false.
+    if (allocated(this % lu)) deallocate(this % lu)
+    if (allocated(this % pivot_rows)) deallocate(this % pivot_rows)
+    if (allocated(this % row_scale)) deallocate(this % row_scale, this % column_scale)
+    if (allocated(this % permutation)) deallocate(this % permutation, this % block_first, this % diagonal)
+    if (allocated(this % lower_start)) deallocate(this % lower_start, this % lower_column, this % lower_value)
+
+    ! the entries by rows, each row in the order given, then by columns
+    ! within it, an entry stated more than once summed from zero in that
+    ! order and an entry of zero dropped
+    allocate(start(n + 1), source=0)
+    do e = 1, size(rows)
+       start(rows(e) + 1) = start(rows(e) + 1) + 1
+    end do
+    start(1) = 1
+    do i = 1, n
+       start(i + 1) = start(i) + start(i + 1)
+    end do
+    place = start(1:n)
+    allocate(column(size(rows)), value(size(rows)))
+    do e = 1, size(rows)
+       column(place(rows(e))) = columns(e)
+       value(place(rows(e)))  = weights(e)
+       place(rows(e)) = place(rows(e)) + 1
+    end do
+    filled = 0
+    do i = 1, n
+       call ordered(column(start(i):start(i + 1) - 1), value(start(i):start(i + 1) - 1))
+       e = start(i)
+       start(i) = filled + 1
+       do while (e < start(i + 1))
+          j      = column(e)
+          summed = 0.0_dp
+          do while (e < start(i + 1))
+             if (column(e) /= j) exit
+             summed = summed + value(e)
+             e = e + 1
+          end do
+          if (summed == 0.0_dp) cycle
+          filled = filled + 1
+          column(filled) = j
+          value(filled)  = summed
+       end do
+    end do
+    start(n + 1) = filled + 1
+
+    ! the rows and then the columns scaled to a largest entry of one; or
+    ! the largest entry of each column, the scale of its pivots
+    if (equilibrated) then
+       allocate(this % row_scale(n), this % column_scale(n), source=0.0_dp)
+       do i = 1, n
+          do e = start(i), start(i + 1) - 1
+             this % row_scale(i) = max(this % row_scale(i), abs(value(e)))
+          end do
+       end do
+       this % row_scale = 1.0_dp / max(tiny(1.0_dp), this % row_scale)
+       do i = 1, n
+          value(start(i):start(i + 1) - 1) = value(start(i):start(i + 1) - 1) * this % row_scale(i)
+       end do
+       do e = 1, filled
+          this % column_scale(column(e)) = max(this % column_scale(column(e)), abs(value(e)))
+       end do
+       this % column_scale = 1.0_dp / max(tiny(1.0_dp), this % column_scale)
+       do e = 1, filled
+          value(e) = value(e) * this % column_scale(column(e))
+       end do
+    else
+       allocate(scales(n), source=0.0_dp)
+       do e = 1, filled
+          scales(column(e)) = max(scales(column(e)), abs(value(e)))
+       end do
+    end if
+
+    ! the blocks: the components of the pattern, an edge from i to j
+    ! where the scaled entry is not zero and i /= j
+    allocate(edge_start(n + 1))
+    allocate(edge(filled))
+    k = 0
+    do i = 1, n
+       edge_start(i) = k + 1
+       do e = start(i), start(i + 1) - 1
+          if (column(e) == i .or. value(e) == 0.0_dp) cycle
+          k = k + 1
+          edge(k) = column(e)
+       end do
+    end do
+    edge_start(n + 1) = k + 1
+    call components_of_edges(edge_start, edge(1:k), this % permutation, this % block_first)
+    allocate(position(n))
+    position(this % permutation) = [(i, i = 1, n)]
+
+    ! each diagonal block formed and factorised; the entries below it
+    ! stored by its rows
+    allocate(this % lower_start(n + 1), this % lower_column(filled), this % lower_value(filled))
+    allocate(this % diagonal(size(this % block_first) - 1))
+    k = 0
+    do b = 1, size(this % diagonal)
+       associate (first => this % block_first(b), last => this % block_first(b + 1) - 1)
+         m = last - first + 1
+         allocate(block(m, m), source=0.0_dp)
+         do i = first, last
+            this % lower_start(i) = k + 1
+            do e = start(this % permutation(i)), start(this % permutation(i) + 1) - 1
+               ! a scaled entry of zero is no edge, and may lie above the
+               ! blocks
+               if (value(e) == 0.0_dp) cycle
+               j = position(column(e))
+               if (j >= first) then
+                  block(i - first + 1, j - first + 1) = value(e)
+               else
+                  k = k + 1
+                  this % lower_column(k) = j
+                  this % lower_value(k)  = value(e)
+               end if
+            end do
+         end do
+         if (equilibrated) then
+            call this % diagonal(b) % factorise(block, threshold)
+         else
+            call this % diagonal(b) % factorise(block, threshold, scales(this % permutation(first:last)))
+         end if
+         deallocate(block)
+         if (this % diagonal(b) % is_singular) then
+            this % is_singular = .true.
+            return
+         end if
+       end associate
+    end do
+    this % lower_start(n + 1) = k + 1
+
+  contains
+
+    ! the entries of a row in the order of their columns, entries of
+    ! one column in the order given
+    pure subroutine ordered(c, v)
+      integer , intent(inout) :: c(:)
+      real(dp), intent(inout) :: v(:)
+      integer  :: p, q, inserted_column
+      real(dp) :: inserted_value
+      do p = 2, size(c)
+         inserted_column = c(p)
+         inserted_value  = v(p)
+         q = p - 1
+         do while (q >= 1)
+            if (c(q) <= inserted_column) exit
+            c(q + 1) = c(q)
+            v(q + 1) = v(q)
+            q = q - 1
+         end do
+         c(q + 1) = inserted_column
+         v(q + 1) = inserted_value
+      end do
+    end subroutine ordered
+
+  end subroutine factorise_entries
+
+  !===================================================================!
   ! x with A x = b, or with A^T x = b where transposed. A right side of
   ! the wrong extent, or a factorisation left singular or never formed,
   ! stops the program.
@@ -259,13 +454,30 @@ contains
        allocate(part(n))
        do k = merge(nb, 1, transposed), merge(1, nb, transposed), merge(-1, 1, transposed)
           associate (first => this % block_first(k), last => this % block_first(k + 1) - 1)
-            if (transposed) then
+            if (allocated(this % lower_start)) then
+               if (.not. transposed) then
+                  do i = first, last
+                     do j = this % lower_start(i), this % lower_start(i + 1) - 1
+                        y(i) = y(i) - this % lower_value(j) * y(this % lower_column(j))
+                     end do
+                  end do
+               end if
+            else if (transposed) then
                if (last < n) y(first:last) = y(first:last) - matmul(y(last + 1:n), this % lu(last + 1:n, first:last))
             else
                if (first > 1) y(first:last) = y(first:last) - matmul(this % lu(first:last, 1:first - 1), y(1:first - 1))
             end if
             call this % diagonal(k) % substituted(y(first:last), part(first:last), transposed)
             y(first:last) = part(first:last)
+            ! against the transpose, from its entries, the block solved
+            ! less from the right sides of the blocks before it
+            if (allocated(this % lower_start) .and. transposed) then
+               do i = first, last
+                  do j = this % lower_start(i), this % lower_start(i + 1) - 1
+                     y(this % lower_column(j)) = y(this % lower_column(j)) - this % lower_value(j) * y(i)
+                  end do
+               end do
+            end if
           end associate
        end do
        x(this % permutation) = y
@@ -333,9 +545,8 @@ contains
     real(dp)            , intent(in)  :: a(:,:)
     integer, allocatable, intent(out) :: permutation(:), block_first(:)
 
-    integer, allocatable :: count(:), start(:), edge(:), index(:), low(:), path(:), next(:), visit(:)
-    logical, allocatable :: on_path(:)
-    integer :: n, i, j, v, w, top, depth, number, filled, root, blocks
+    integer, allocatable :: count(:), start(:), edge(:)
+    integer :: n, i, j
 
     n = size(a, 1)
     ! the edges of each vertex, in compressed rows, from a sweep of the
@@ -361,7 +572,26 @@ contains
           end if
        end do
     end do
+    call components_of_edges(start, edge, permutation, block_first)
 
+  end subroutine strong_components
+
+  !===================================================================!
+  ! THE STRONGLY CONNECTED COMPONENTS of the graph whose edges from
+  ! vertex i are edge(start(i):start(i + 1) - 1), as strong_components
+  ! states them.
+  !===================================================================!
+
+  subroutine components_of_edges(start, edge, permutation, block_first)
+
+    integer             , intent(in)  :: start(:), edge(:)
+    integer, allocatable, intent(out) :: permutation(:), block_first(:)
+
+    integer, allocatable :: index(:), low(:), path(:), next(:), visit(:)
+    logical, allocatable :: on_path(:)
+    integer :: n, v, w, top, depth, number, filled, root, blocks
+
+    n = size(start) - 1
     allocate(index(n), low(n), source=0)
     allocate(on_path(n), source=.false.)
     allocate(path(n), visit(n), next(n))
@@ -424,7 +654,7 @@ contains
     block_first(blocks + 1) = n + 1
     block_first = block_first(1:blocks + 1)
 
-  end subroutine strong_components
+  end subroutine components_of_edges
 
   pure integer function order(this) result(n)
 

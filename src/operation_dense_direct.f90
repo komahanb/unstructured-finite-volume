@@ -203,8 +203,15 @@ contains
        call compile_matrix_from_action(this % action, this % graph, this % unknown_domain, &
             & this % num_unknowns, n, this % num_components, a, constant, stored=this % stored)
        call this % record_event(factorisations)
-       call this % factor % factorise(a, this % singular_tolerance, maxval(abs(a), dim=1), &
-            & equilibrated=this % equilibrated, block_triangular=this % block_triangular)
+       ! the scale of each column bounds its pivots; equilibrated, every
+       ! column's is one
+       if (this % equilibrated) then
+          call this % factor % factorise(a, this % singular_tolerance, equilibrated=.true., &
+               & block_triangular=this % block_triangular)
+       else
+          call this % factor % factorise(a, this % singular_tolerance, maxval(abs(a), dim=1), &
+               & equilibrated=.false., block_triangular=this % block_triangular)
+       end if
        this % retained_version  = this % action % version()
        this % retained_transposed = this % action % transpose_version()
     end if

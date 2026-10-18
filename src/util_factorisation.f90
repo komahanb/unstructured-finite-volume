@@ -113,9 +113,15 @@ contains
     if (allocated(this % row_scale)) deallocate(this % row_scale, this % column_scale)
     if (present(equilibrated)) then
        if (equilibrated) then
-          this % row_scale = [(1.0_dp / max(tiny(1.0_dp), maxval(abs(a(k, :)))), k = 1, n)]
+          ! the rows' largest entries and their scaling, by sweeps of
+          ! the columns, the array's memory order
+          allocate(this % row_scale(n), source=0.0_dp)
           do k = 1, n
-             this % lu(k, :) = this % lu(k, :) * this % row_scale(k)
+             this % row_scale = max(this % row_scale, abs(a(:, k)))
+          end do
+          this % row_scale = 1.0_dp / max(tiny(1.0_dp), this % row_scale)
+          do k = 1, n
+             this % lu(:, k) = this % lu(:, k) * this % row_scale
           end do
           this % column_scale = [(1.0_dp / max(tiny(1.0_dp), maxval(abs(this % lu(:, k)))), k = 1, n)]
           do k = 1, n
@@ -329,7 +335,7 @@ contains
 
     integer, allocatable :: count(:), start(:), edge(:), index(:), low(:), path(:), next(:), visit(:)
     logical, allocatable :: on_path(:)
-    integer :: n, i, j, v, w, top, depth, number, filled, root
+    integer :: n, i, j, v, w, top, depth, number, filled, root, blocks
 
     n = size(a, 1)
     ! the edges of each vertex, in compressed rows, from a sweep of the
@@ -359,7 +365,8 @@ contains
     allocate(index(n), low(n), source=0)
     allocate(on_path(n), source=.false.)
     allocate(path(n), visit(n), next(n))
-    allocate(permutation(n), block_first(0))
+    allocate(permutation(n), block_first(n + 1))
+    blocks = 0
     top    = 0
     depth  = 0
     number = 0
@@ -399,7 +406,8 @@ contains
           ! every edge of v visited: v closes a component where it is
           ! its own root
           if (low(v) == index(v)) then
-             block_first = [block_first, filled + 1]
+             blocks = blocks + 1
+             block_first(blocks) = filled + 1
              do
                 w = path(top)
                 top = top - 1
@@ -413,7 +421,8 @@ contains
           if (depth > 0) low(visit(depth)) = min(low(visit(depth)), low(v))
        end do
     end do
-    block_first = [block_first, n + 1]
+    block_first(blocks + 1) = n + 1
+    block_first = block_first(1:blocks + 1)
 
   end subroutine strong_components
 

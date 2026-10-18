@@ -135,6 +135,12 @@ module operation_residual_operator
      type(projection), allocatable :: projected
      type(stored_directed_graph)   :: sites
      real(dp), allocatable         :: site_positions(:,:)
+     ! the instances of the projection divided over the images, where
+     ! every image solves the same rows: each image forms the values
+     ! and the matrices of the instances it owns (instance_owned), the
+     ! others zero, and their sum over the images is the whole on every
+     ! image, each entry formed by one image alone
+     logical :: divided = .false.
      ! the tying rows, each of one unknown on its own diagonal reading
      ! others before it: the history, the family's relations, and the
      ! copies and zero coefficients of the unknowns of time alone,
@@ -221,6 +227,7 @@ module operation_residual_operator
      procedure, private :: projected_count
      procedure, private :: projected_columns
      procedure, private :: projected_triples
+     procedure, private :: instance_owned
      procedure :: projected_instance
      procedure, private :: projected_edges
      procedure, private :: projected_part
@@ -1194,7 +1201,12 @@ contains
     nq = this % projected % elements % num_quadrature_points()
     do j = 1, this % laws
        do s = 1, nsites
-          ! no rule is evaluated where its test functions vanish
+          ! no rule is evaluated where its test functions vanish, nor at
+          ! the sites of another image's instance
+          if (.not. this % instance_owned((s - 1) / nq + 1)) then
+             governing(s, j) = 0.0_dp
+             cycle
+          end if
           if (.not. tested_at(this % projected % elements, this % projected % tested(2, j), s - ((s - 1) / nq) * nq, &
                & this % projected % element_cell((s - 1) / nq + 1))) then
              governing(s, j) = 0.0_dp
@@ -1210,7 +1222,18 @@ contains
           end if
        end do
     end do
+    if (this % divided) call co_sum(governing)
   end subroutine governed_on_reals
+
+  ! whether this image forms instance n of the projection: every
+  ! instance on one image, or not divided; divided, the instances
+  ! whose number it owns, one after another of every num_images()
+  logical function instance_owned(this, n)
+    class(residual_operator), intent(in) :: this
+    integer                 , intent(in) :: n
+    instance_owned = .not. this % divided
+    if (this % divided) instance_owned = mod(n - 1, num_images()) + 1 == this_image()
+  end function instance_owned
 
   !===================================================================!
   ! The first `coordinates` coordinates of every point's position as a
@@ -2011,11 +2034,10 @@ contains
     integer                 , intent(inout) :: r(:), c(:)
     real(dp)                , intent(inout) :: w(:)
     integer                 , intent(inout) :: num_triples
-    real(dp), allocatable :: xs(:), ns(:), g(:), local(:)
+    real(dp), allocatable :: xs(:), ns(:), g(:), local(:), matrices(:,:)
     integer , allocatable :: reads(:), offsets(:), place(:), slot(:,:), columns_of(:), first(:), column(:), base(:)
-    integer :: width, nd, nq, nodes, nk, nf, no, j, f, d, n, e, q, s, i, p, k, m, comp, dd, i2, k2, offset, row, o
+    integer :: width, nd, nq, nodes, nk, nf, no, f, n, i, p, k, row, o, i2
     integer :: at_row
-    real(dp) :: value, tau
     width   = size(this % projected % formed, 2)
     nd      = this % designs
     xs      = this % formed_at_sites(x)
@@ -2038,40 +2060,22 @@ contains
       do f = 1, nf
          base(f + 1) = base(f) + nodes * nk * nodes * columns_of(f)
       end do
+      ! divided over the images, the matrices of the instances each
+      ! image owns, summed over the images before their rows are placed
+      if (this % divided) then
+         allocate(matrices(base(nf + 1), size(pr % element_cell)), source=0.0_dp)
+         do n = 1, size(pr % element_cell)
+            if (this % instance_owned(n)) call instance_matrix(n, matrices(:, n))
+         end do
+         call co_sum(matrices)
+      end if
       allocate(local(base(nf + 1)))
       do n = 1, size(pr % element_cell)
-         e     = pr % element_cell(n)
-         local = 0.0_dp
-         do q = 1, nq
-            s = (n - 1) * nq + q
-            do j = 1, this % laws
-               f = pr % tested(1, j)
-               d = pr % tested(2, j)
-               if (.not. tested_at(el, d, q, e)) cycle
-               call this % rules(this % law_at(j, s)) % read_components(reads)
-               call this % rules(this % law_at(j, s)) % gradient_at(xs((s - 1) * width + 1:s * width), &
-                    & ns((s - 1) * nd + 1:s * nd), value, g, this % site_positions(:, s))
-               do i = 1, nodes
-                  do k = 0, nk - 1
-                     tau = el % test(d, k, i, q, e)
-                     if (tau == 0.0_dp) cycle
-                     at_row = base(f) + ((i - 1) * nk + k) * nodes * columns_of(f)
-                     do m = 1, size(reads)
-                        comp = reads(m)
-                        dd   = pr % formed(0, comp + 1)
-                        do i2 = 1, nodes
-                           do k2 = 0, nk - 1
-                              offset = pr % formed(k2 + 1, comp + 1)
-                              if (offset < 0) cycle
-                              o = at_row + (i2 - 1) * columns_of(f) + slot(place(offset), f)
-                              local(o) = local(o) + tau * g(comp) * el % basis(dd, k2, i2, q, e)
-                           end do
-                        end do
-                     end do
-                  end do
-               end do
-            end do
-         end do
+         if (this % divided) then
+            local = matrices(:, n)
+         else
+            call instance_matrix(n, local)
+         end if
          ! the rows the instance states, once each
          do f = 1, nf
             do i = 1, nodes
@@ -2095,6 +2099,52 @@ contains
          end do
       end do
     end associate
+
+  contains
+
+    ! the matrix of instance n: the partials of every rule at its sites,
+    ! through the basis, times the test functions, in its block
+    subroutine instance_matrix(n, local)
+      integer , intent(in)  :: n
+      real(dp), intent(out) :: local(:)
+      integer :: e, q, s, j, f, d, i, k, m, comp, dd, i2, k2, offset, o, at_row
+      real(dp) :: value, tau
+      associate (pr => this % projected, el => this % projected % elements)
+        e     = pr % element_cell(n)
+        local = 0.0_dp
+        do q = 1, nq
+           s = (n - 1) * nq + q
+           do j = 1, this % laws
+              f = pr % tested(1, j)
+              d = pr % tested(2, j)
+              if (.not. tested_at(el, d, q, e)) cycle
+              call this % rules(this % law_at(j, s)) % read_components(reads)
+              call this % rules(this % law_at(j, s)) % gradient_at(xs((s - 1) * width + 1:s * width), &
+                   & ns((s - 1) * nd + 1:s * nd), value, g, this % site_positions(:, s))
+              do i = 1, nodes
+                 do k = 0, nk - 1
+                    tau = el % test(d, k, i, q, e)
+                    if (tau == 0.0_dp) cycle
+                    at_row = base(f) + ((i - 1) * nk + k) * nodes * columns_of(f)
+                    do m = 1, size(reads)
+                       comp = reads(m)
+                       dd   = pr % formed(0, comp + 1)
+                       do i2 = 1, nodes
+                          do k2 = 0, nk - 1
+                             offset = pr % formed(k2 + 1, comp + 1)
+                             if (offset < 0) cycle
+                             o = at_row + (i2 - 1) * columns_of(f) + slot(place(offset), f)
+                             local(o) = local(o) + tau * g(comp) * el % basis(dd, k2, i2, q, e)
+                          end do
+                       end do
+                    end do
+                 end do
+              end do
+           end do
+        end do
+      end associate
+    end subroutine instance_matrix
+
   end subroutine projected_triples
 
   !===================================================================!

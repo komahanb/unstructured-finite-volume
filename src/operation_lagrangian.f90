@@ -266,6 +266,10 @@ module operation_lagrangian
      ! the segments again, image 1 forms their multipliers; every
      ! image then owns every expansion
      logical                   :: overlapped = .false.
+     ! every image solves blocks of its own, as the references of an
+     ! estimate do: no block's instances are then divided over the
+     ! images (instances_divided)
+     logical                   :: images_apart = .false.
      character(len=32)         :: adjoint_name = ''
      ! THE LAW PROJECTED ON THE CELLS, for a method that tests it
      ! against a basis: its flux form as a Lagrangian, each multiplier
@@ -366,6 +370,7 @@ module operation_lagrangian
      procedure, private :: segment_rows_of
      procedure, private :: open_line
      procedure, private :: whole_line
+     procedure, private :: instances_divided
      procedure, private :: fixed_rows_of
      procedure, private :: gauge_rows_of
      procedure, private :: time_alone_rows_of
@@ -5244,6 +5249,7 @@ contains
                & tying=tying, laws=laws)
        end if
     end if
+    blk % rows % divided = this % instances_divided()
     blk % first      = first
     blk % last       = last
     blk % depth      = depth
@@ -9089,6 +9095,8 @@ contains
     end if
     if (measuring) allocate(ell(stride, ncells, ninst), source=0.0_dp)
     nd = top_degree(base % rule, nf) + 1
+    ! the references solved apart, each image its own steps
+    base % images_apart = .true.
     call step_references(base, plus, scale, residual_form, halved)
 
     allocate(coarse(stride, ncells, ninst, 0:ncol - 1))
@@ -9151,6 +9159,8 @@ contains
        call co_sum(stages(:, :, :, :, 0))
        if (measuring .or. returned) call co_sum(ell)
     end if
+    base % images_apart = .false.
+    plus % images_apart = .false.
     call system_clock(tock)
     ! THE TRANSPORT, step after step, on every image alike
     do b = 1, nb
@@ -10456,6 +10466,16 @@ contains
     whole_line = this % open_line()
     if (allocated(this % elements)) whole_line = whole_line .or. this % points % dimension == 1
   end function whole_line
+
+  ! whether the instances of a block's law projected on the cells are
+  ! divided over the images (residual_operator, divided): over several
+  ! images, on a line every image solves whole, every block alike,
+  ! unless the images solve blocks of their own
+  logical function instances_divided(this)
+    class(discrete_lagrangian), intent(in) :: this
+    instances_divided = num_images() > 1 .and. this % manifold % with_space .and. this % whole_line() &
+         & .and. .not. this % images_apart
+  end function instances_divided
 
   !===================================================================!
   ! THE SEGMENT ROWS of a block, at its implicit moments: for each

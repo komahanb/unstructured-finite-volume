@@ -41,6 +41,11 @@
 ! largest measured over them, so that a family that damps the
 ! vibration out does not lower the bounds it is measured against.
 !
+! THE SELECTION (select_march) chooses the instants and the family of
+! a march to meet these laws with the least work, by rounds of
+! marches; the solve law fails at a design whose march does not
+! converge, and is then named first.
+!
 ! Invalid input: as energy_norms; a chain of other than one block per
 ! instant; a family whose amplification is not stated.
 !
@@ -52,18 +57,22 @@ module operation_march_laws
   use util_precision      , only : dp
   use operation_field     , only : discrete_field
   use operation_manifold  , only : discrete_manifold
-  use operation_family    , only : family
+  use operation_family    , only : family, chain
   use operation_lagrangian, only : discrete_lagrangian
+  use operation_minimization, only : discrete_minimizer
+  use util_verbosity      , only : verbosity, set_verbosity
 
   implicit none
 
   private
-  public :: march_laws
+  public :: march_laws, select_march
 
   type :: march_laws
      real(dp) :: tolerance = 0.0_dp
      ! each law's ratio to its bound, and where it binds
      real(dp) :: accuracy  = 0.0_dp, phase = 0.0_dp, amplitude = 0.0_dp, stability = 0.0_dp, ratio = 0.0_dp
+     ! the solve, huge where the march does not converge
+     real(dp) :: solve = 0.0_dp
      integer  :: accuracy_instant = 0, accuracy_cell = 0, phase_step = 0, amplitude_step = 0
      integer  :: stability_step = 0, ratio_step = 0
      ! the frequency of the vibration, the highest of the free motions,
@@ -213,7 +222,7 @@ contains
     end if
   end function cell_measures
 
-  ! the name of the first law that fails, in the order phase,
+  ! the name of the first law that fails, in the order solve, phase,
   ! amplitude, stability, ratio, accuracy; empty where every law is met
   function failed(this) result(name)
     class(march_laws), intent(in) :: this
@@ -224,6 +233,7 @@ contains
     if (this % stability > 1.0_dp) name = 'stability'
     if (this % amplitude > 1.0_dp) name = 'amplitude'
     if (this % phase > 1.0_dp) name = 'phase'
+    if (this % solve > 1.0_dp) name = 'solve'
   end function failed
 
   ! the laws, one to a line, each its ratio to its bound and where it
@@ -234,6 +244,10 @@ contains
     character(len=160) :: line
     character(len=1), parameter :: newline = achar(10)
     text = ''
+    if (this % solve > 1.0_dp) then
+       text = 'solve      the march does not converge'
+       return
+    end if
     write(line, '(a, es10.3, a, es10.3, a, es10.3, a, i0)') 'frequency of the vibration ', this % frequency, &
          & ', highest ', this % highest, ', largest energy of the free motion ', this % energy, ', work ', this % work
     text = text // trim(line) // newline
@@ -256,5 +270,319 @@ contains
     end if
     text = text // trim(line)
   end function lines
+
+  !===================================================================!
+  ! THE SELECTION OF A MARCH: the instants and the family of a march
+  ! chosen to meet the laws at the tolerance with the least work, by
+  ! rounds.
+  !
+  ! Each round marches the design and reads its laws against the
+  ! largest frequency, highest frequency and energy measured over the
+  ! rounds (march_laws).
+  ! Where every law is met, the design is selected.
+  ! Where the phase or the amplitude fails, the count each family of the
+  ! pool needs on steps of one length follows from its amplification
+  ! alone (uniform_count); the family of least work, the count times its
+  ! stages, is taken at that count.
+  ! Where the accuracy fails, the instants are placed by equidistributing
+  ! the energy norms of the steps' local errors, eta_k ~ C_k h_k^(p+1):
+  ! the density of the steps is proportional to C^(1/(p+1)), and the
+  ! count is the present one times the accuracy's ratio to the power
+  ! 1/p.
+  ! p is the family's order until two rounds of the family give the
+  ! order observed between them, log(A_1 / A_2) / log(N_2 / N_1), A the
+  ! accuracy's ratio and N the count.
+  ! Where the observed order is not positive, refining does not help,
+  ! and the family of next least work is taken.
+  ! Where the march does not converge, the solve law fails for that
+  ! design, and the family of next least work is taken.
+  !
+  ! With count given, the count is fixed: the instants are placed once
+  ! by equidistribution, and the laws of that design are read.
+  !
+  ! The selection ends where every law is met, where a round would
+  ! measure a design measured before, or where no family of the pool is
+  ! left; laws % failed() then names the law that fails.
+  ! The march's minimizer by must report a singular block rather than
+  ! stop (dense_direct, singular_reported), for a design that fails to
+  ! end its round.
+  ! Invalid input: as march_laws; an empty pool, or one with a family of
+  ! several steps.
+  !===================================================================!
+
+  subroutine select_march(L_h, estimate, solution, laws, tolerance, pool, count, by)
+
+    type(discrete_lagrangian), intent(inout) :: L_h
+    type(discrete_field)     , intent(in)    :: estimate
+    type(discrete_field)     , intent(out)   :: solution
+    type(march_laws)         , intent(out)   :: laws
+    real(dp)                 , intent(in)    :: tolerance
+    type(family)             , intent(in)    :: pool(:)
+    integer                  , intent(in), optional :: count
+    type(discrete_minimizer) , intent(in), optional :: by
+
+    type(discrete_field) :: placed
+    type(march_laws) :: unsolved
+    real(dp), allocatable :: t(:), energies(:), local(:,:,:), norm(:,:), eta(:), t_measured(:), eta_measured(:)
+    integer , allocatable :: tried(:,:)
+    real(dp) :: frequency, highest, energy, f, hi, accuracy_before, p, longest
+    integer :: n, n_before, g, g_before, g_measured, round, k, level
+    logical :: met
+
+    if (size(pool) == 0) error stop 'operation_march_laws: a selection reads a pool of one family at least'
+    if (any([(pool(k) % history_depth(2) > 1, k = 1, size(pool))])) then
+       error stop 'operation_march_laws: a selection gives every step one family, so its pool is of families of &
+            &one step; a family of several steps would read history before the first instant'
+    end if
+    t = L_h % points % instant
+    g = 1
+    frequency  = 0.0_dp
+    highest    = 0.0_dp
+    energy     = 0.0_dp
+    n_before   = 0
+    g_before   = 0
+    g_measured = 0
+    accuracy_before = 0.0_dp
+    allocate(tried(2, 0))
+    level = verbosity
+    call set_verbosity(0)
+    round = 0
+    do
+       round = round + 1
+       if (any(tried(1, :) == size(t) .and. tried(2, :) == g)) exit
+       tried = reshape([tried, size(t), g], [2, size(tried, 2) + 1])
+       call design_set(L_h, t, pool(g))
+       placed = initial_estimate(L_h, estimate)
+       call L_h % minimize(placed, solution, continued=.true., by=by, converged=met)
+       if (.not. met) then
+          ! the solve law fails at this design
+          laws = unsolved
+          laws % tolerance = tolerance
+          laws % solve     = huge(1.0_dp)
+          if (level >= 1) print '(a, i0, a, i0, a, i0, a)', 'selection round ', round, ': family ', g, &
+               & '  instants ', size(t), '  the march does not converge'
+          g = next_family(g)
+          if (g == 0) exit
+          cycle
+       end if
+       call L_h % measure_free_motion(solution, frequency=f, highest=hi, energy=energies)
+       frequency = max(frequency, f)
+       highest   = max(highest, hi)
+       energy    = max(energy, maxval(energies))
+       laws = march_laws(L_h, solution, tolerance, frequency=frequency, highest=highest, energy=energy)
+       if (level >= 1) print '(a, i0, a, i0, a, i0, a, 5es10.2, a, a)', 'selection round ', round, ': family ', g, &
+            & '  instants ', size(t), '  phase, amplitude, stability, ratio, accuracy ', laws % phase, &
+            & laws % amplitude, laws % stability, laws % ratio, laws % accuracy, '  failed ', laws % failed()
+       if (len(laws % failed()) == 0) exit
+       if (present(count) .and. round > 1) exit
+       if (laws % accuracy < 0.0_dp .or. laws % stability > 1.0_dp .or. laws % ratio > 1.0_dp) then
+          ! the phase, the amplitude or the stability: the family of
+          ! least work at the step their bound allows, its instants
+          ! placed again where its accuracy was measured, else of one
+          ! length
+          g = least_work()
+          if (g == 0) exit
+          longest = longest_step(pool(g))
+          if (g == g_measured) then
+             t = equidistributed(t_measured, eta_measured, real(pool(g) % accuracy(), dp), size(t_measured), &
+                  & longest, count)
+          else
+             n = uniform_count(pool(g), frequency, highest, t(1), t(size(t)), tolerance)
+             if (present(count)) n = count
+             t = [(t(1) + (t(size(t)) - t(1)) * real(k - 1, dp) / real(n - 1, dp), k = 1, n)]
+          end if
+          cycle
+       end if
+       ! the accuracy: the order observed between two rounds of the
+       ! family, the count to meet it, and the instants equidistributed,
+       ! no step longer than the phase, the amplitude and the stability
+       ! allow
+       p = real(pool(g) % accuracy(), dp)
+       if (g == g_before .and. n_before > 0 .and. n_before /= size(t)) then
+          p = log(accuracy_before / laws % accuracy) / log(real(size(t) - 1, dp) / real(n_before - 1, dp))
+          if (p <= 0.0_dp) then
+             g = next_family(g)
+             if (g == 0) exit
+             cycle
+          end if
+       end if
+       g_before        = g
+       n_before        = size(t)
+       accuracy_before = laws % accuracy
+       local = L_h % local_errors(solution)
+       norm  = L_h % energy_norms(solution, local, highest=frequency)
+       eta   = maxval(norm, dim=1)
+       g_measured   = g
+       t_measured   = t
+       eta_measured = eta
+       n = ceiling((size(t) - 1) * laws % accuracy**(1.0_dp / p)) + 1
+       t = equidistributed(t, eta, p, n, longest_step(pool(g)), count)
+    end do
+    call set_verbosity(level)
+
+  contains
+
+    ! the longest step of the family on which the phase, the amplitude
+    ! and the stability laws are met on steps of one length
+    real(dp) function longest_step(f)
+      type(family), intent(in) :: f
+      longest_step = (t(size(t)) - t(1)) / real(uniform_count(f, frequency, highest, t(1), t(size(t)), tolerance) &
+           & - 1, dp)
+    end function longest_step
+
+    ! the next family of the pool not tried, after g; zero where none is
+    ! left
+    integer function next_family(g) result(next)
+      integer, intent(in) :: g
+      integer :: i
+      next = 0
+      do i = 1, size(pool)
+         if (i == g) cycle
+         if (any(tried(2, :) == i)) cycle
+         next = i
+         return
+      end do
+    end function next_family
+
+    ! the family of least work, the count its amplification requires times its
+    ! stages; zero where every family has been tried at that count
+    integer function least_work() result(chosen)
+      integer :: i, m
+      real(dp) :: w, least
+      chosen = 0
+      least  = huge(1.0_dp)
+      do i = 1, size(pool)
+         m = uniform_count(pool(i), frequency, highest, t(1), t(size(t)), tolerance)
+         if (i /= g_measured .and. any(tried(1, :) == m .and. tried(2, :) == i)) cycle
+         w = real(m - 1, dp) * pool(i) % num_stages()
+         if (w < least) then
+            least  = w
+            chosen = i
+         end if
+      end do
+    end function least_work
+
+  end subroutine select_march
+
+  !===================================================================!
+  ! THE COUNT OF INSTANTS a family needs on steps of one length over
+  ! [a, b] for the phase, the amplitude and the stability laws at the
+  ! frequency w and the highest frequency: the least n at which the
+  ! sums over the n - 1 steps of |arg R(i w h) - w h|, of -ln|R(i w h)|
+  ! and of ln|R(i w h)| at w and at the highest are at most the
+  ! tolerance. The count doubles until they are, then is bisected.
+  !===================================================================!
+
+  integer function uniform_count(f, w, top, a, b, tolerance) result(n)
+    type(family), intent(in) :: f
+    real(dp)    , intent(in) :: w, top, a, b, tolerance
+    integer :: low, high, middle
+    high = 2
+    do while (.not. met_at(high))
+       high = 2 * high
+    end do
+    low = max(2, high / 2)
+    do while (high - low > 1)
+       middle = (low + high) / 2
+       if (met_at(middle)) then
+          high = middle
+       else
+          low = middle
+       end if
+    end do
+    n = high
+  contains
+    logical function met_at(m)
+      integer, intent(in) :: m
+      real(dp) :: h
+      complex(dp) :: r, r_top
+      h = (b - a) / real(m - 1, dp)
+      r     = f % amplification(cmplx(0.0_dp, w * h, dp))
+      r_top = f % amplification(cmplx(0.0_dp, top * h, dp))
+      met_at = (m - 1) * abs(atan2(aimag(r), real(r)) - w * h) <= tolerance .and. &
+           &   (m - 1) * (-log(abs(r))) <= tolerance .and. &
+           &   (m - 1) * max(log(abs(r)), log(abs(r_top))) <= tolerance
+    end function met_at
+  end function uniform_count
+
+  ! the design: the instants t, the family f at every step
+  subroutine design_set(L_h, t, f)
+    type(discrete_lagrangian), intent(inout) :: L_h
+    real(dp)                 , intent(in)    :: t(:)
+    type(family)             , intent(in)    :: f
+    integer :: k
+    L_h % points % instant = t
+    L_h % schemes = chain([(f, k = 1, size(t))], from=[(k, k = 1, size(t))])
+  end subroutine design_set
+
+  ! the estimate on the instants of L_h: the estimate's first instant at
+  ! every instant, which a march continued from instant to instant reads
+  ! alone
+  function initial_estimate(L_h, estimate) result(placed)
+    type(discrete_lagrangian), intent(in) :: L_h
+    type(discrete_field)     , intent(in) :: estimate
+    type(discrete_field) :: placed
+    real(dp), allocatable :: values(:,:)
+    integer :: k, c, ncells
+    ncells = L_h % points % num_cells()
+    allocate(values(L_h % points % num_points(), size(estimate % value, 2)))
+    do k = 1, L_h % points % num_instants()
+       do c = 1, ncells
+          values((k - 1) * ncells + c, :) = estimate % value(c, :)
+       end do
+    end do
+    placed = discrete_field(L_h % points, values, estimate % name)
+  end function initial_estimate
+
+  !===================================================================!
+  ! THE INSTANTS EQUIDISTRIBUTED over [t_1, t_N]: their density on step
+  ! k is proportional to C_k^(1/(p+1)), C_k = eta_k / h_k^(p+1) the
+  ! error density of the step whose local error is eta_k at its instant
+  ! k, scaled to n instants, and at least 1 / longest: no step is longer
+  ! than longest. A step whose local error is zero takes the least
+  ! positive density of the others. The instants are the quantiles of
+  ! the integral of the density, linear within each step, and their
+  ! count is that integral's, at least n; count given, it is count.
+  !===================================================================!
+
+  function equidistributed(t, eta, p, n, longest, count) result(placed)
+    real(dp), intent(in) :: t(:), eta(:), p, longest
+    integer , intent(in) :: n
+    integer , intent(in), optional :: count
+    real(dp), allocatable :: placed(:)
+    real(dp), allocatable :: density(:), integral(:)
+    real(dp) :: target, least_density
+    integer :: k, j, m, total
+    m = size(t)
+    allocate(density(m), source=0.0_dp)
+    do k = 2, m
+       density(k) = (eta(k) / (t(k) - t(k - 1))**(p + 1.0_dp))**(1.0_dp / (p + 1.0_dp))
+    end do
+    if (any(density(2:) > 0.0_dp)) then
+       least_density = minval(density(2:), mask=density(2:) > 0.0_dp)
+    else
+       least_density = 1.0_dp
+    end if
+    where (density(2:) <= 0.0_dp) density(2:) = least_density
+    density(2:) = density(2:) * real(n - 1, dp) / sum(density(2:) * (t(2:) - t(:m - 1)))
+    density(2:) = max(density(2:), 1.0_dp / longest)
+    allocate(integral(m), source=0.0_dp)
+    do k = 2, m
+       integral(k) = integral(k - 1) + density(k) * (t(k) - t(k - 1))
+    end do
+    total = max(n, ceiling(integral(m)) + 1)
+    if (present(count)) total = count
+    allocate(placed(total))
+    placed(1)     = t(1)
+    placed(total) = t(m)
+    k = 2
+    do j = 2, total - 1
+       target = integral(m) * real(j - 1, dp) / real(total - 1, dp)
+       do while (integral(k) < target)
+          k = k + 1
+       end do
+       placed(j) = t(k - 1) + (target - integral(k - 1)) / density(k)
+    end do
+  end function equidistributed
 
 end module operation_march_laws

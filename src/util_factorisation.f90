@@ -27,6 +27,21 @@
 ! D_c b. A system of rows of different units - positions, rotations
 ! and reactions - is solved to the digits its scaled matrix allows.
 !
+! BLOCK TRIANGULAR, the matrix is permuted, rows and columns alike, to
+! the block lower triangular form its zero pattern allows, and only
+! its diagonal blocks are factorised. The blocks are the strongly
+! connected components of the graph of the pattern, an edge from i to
+! j where a_ij is not zero, found by Tarjan's algorithm. It emits a
+! component after every component it reads, which is the order of a
+! forward substitution: x_b = A_bb^-1 (b_b - sum over c before b of
+! A_bc x_c). Against the transpose the blocks are solved in reverse.
+! The matrix is nonsingular exactly where every diagonal block is.
+! The step of a family of s stages is such a matrix, each stage
+! reading the stages before it: its factorisation costs s blocks of
+! one stage, about s^2 times less than the whole. A row is the law of
+! the unknown of the same index, so the permutation is the same on
+! both sides.
+!
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 
@@ -46,6 +61,11 @@ module util_factorisation
      integer , allocatable, private :: pivot_rows(:)
      integer , private :: n = 0
      logical , private :: is_singular = .false.
+     ! block triangular: the unknowns in the order of the blocks, the
+     ! first of each block in that order, the permuted matrix, and the
+     ! factorisation of each diagonal block
+     integer , allocatable, private :: permutation(:), block_first(:)
+     type(dense_factorisation), allocatable, private :: diagonal(:)
 
    contains
 
@@ -67,17 +87,17 @@ contains
   ! scale, which equilibrated is one.
   !===================================================================!
 
-  subroutine factorise(this, a, threshold, scales, equilibrated)
+  recursive subroutine factorise(this, a, threshold, scales, equilibrated, block_triangular)
 
     class(dense_factorisation), intent(inout) :: this
     real(dp)                  , intent(in)    :: a(:,:)
     real(dp)                  , intent(in)    :: threshold
     real(dp)                  , intent(in), optional :: scales(:)
-    logical                   , intent(in), optional :: equilibrated
+    logical                   , intent(in), optional :: equilibrated, block_triangular
 
     real(dp), allocatable :: row(:)
     real(dp) :: factor
-    integer  :: n, k, p, j
+    integer  :: n, k, p, j, b
     character(len=150) :: message
 
     n = size(a, 1)
@@ -101,6 +121,29 @@ contains
           do k = 1, n
              this % lu(:, k) = this % lu(:, k) * this % column_scale(k)
           end do
+       end if
+    end if
+    if (allocated(this % permutation)) deallocate(this % permutation, this % block_first, this % diagonal)
+    if (present(block_triangular)) then
+       if (block_triangular) then
+          call strong_components(this % lu, this % permutation, this % block_first)
+          this % lu = this % lu(this % permutation, this % permutation)
+          allocate(this % diagonal(size(this % block_first) - 1))
+          do b = 1, size(this % diagonal)
+             associate (first => this % block_first(b), last => this % block_first(b + 1) - 1)
+               if (allocated(this % row_scale) .or. .not. present(scales)) then
+                  call this % diagonal(b) % factorise(this % lu(first:last, first:last), threshold)
+               else
+                  call this % diagonal(b) % factorise(this % lu(first:last, first:last), threshold, &
+                       & scales(this % permutation(first:last)))
+               end if
+               if (this % diagonal(b) % is_singular) then
+                  this % is_singular = .true.
+                  return
+               end if
+             end associate
+          end do
+          return
        end if
     end if
     if (allocated(this % pivot_rows)) deallocate(this % pivot_rows)
@@ -172,15 +215,16 @@ contains
   ! times allocates nothing per solve.
   !===================================================================!
 
-  subroutine substituted(this, b, x, transposed)
+  recursive subroutine substituted(this, b, x, transposed)
 
     class(dense_factorisation), intent(in)  :: this
     real(dp)                  , intent(in)  :: b(:)
     real(dp)                  , intent(out) :: x(:)
     logical                   , intent(in)  :: transposed
 
+    real(dp), allocatable :: y(:), part(:)
     real(dp) :: stored
-    integer  :: n, i, j, k
+    integer  :: n, i, j, k, nb
     character(len=150) :: message
 
     n = this % n
@@ -200,6 +244,28 @@ contains
 
     x = b
     if (allocated(this % row_scale)) x = b * merge(this % column_scale, this % row_scale, transposed)
+
+    if (allocated(this % permutation)) then
+       ! the blocks in order, or in reverse against the transpose, each
+       ! right side less the blocks already solved
+       nb = size(this % diagonal)
+       y  = x(this % permutation)
+       allocate(part(n))
+       do k = merge(nb, 1, transposed), merge(1, nb, transposed), merge(-1, 1, transposed)
+          associate (first => this % block_first(k), last => this % block_first(k + 1) - 1)
+            if (transposed) then
+               if (last < n) y(first:last) = y(first:last) - matmul(y(last + 1:n), this % lu(last + 1:n, first:last))
+            else
+               if (first > 1) y(first:last) = y(first:last) - matmul(this % lu(first:last, 1:first - 1), y(1:first - 1))
+            end if
+            call this % diagonal(k) % substituted(y(first:last), part(first:last), transposed)
+            y(first:last) = part(first:last)
+          end associate
+       end do
+       x(this % permutation) = y
+       if (allocated(this % row_scale)) x = x * merge(this % row_scale, this % column_scale, transposed)
+       return
+    end if
 
     if (.not. transposed) then
 
@@ -246,6 +312,110 @@ contains
     if (allocated(this % row_scale)) x = x * merge(this % row_scale, this % column_scale, transposed)
 
   end subroutine substituted
+
+  !===================================================================!
+  ! THE STRONGLY CONNECTED COMPONENTS of the graph of the pattern of a,
+  ! an edge from i to j where a_ij is not zero and i /= j, by Tarjan's
+  ! algorithm, its recursion on a stack of its own. The vertices
+  ! in the order the components are emitted, each component after
+  ! every component it reaches, and the first of each component in
+  ! that order, with n + 1 after the last.
+  !===================================================================!
+
+  subroutine strong_components(a, permutation, block_first)
+
+    real(dp)            , intent(in)  :: a(:,:)
+    integer, allocatable, intent(out) :: permutation(:), block_first(:)
+
+    integer, allocatable :: count(:), start(:), edge(:), index(:), low(:), path(:), next(:), visit(:)
+    logical, allocatable :: on_path(:)
+    integer :: n, i, j, v, w, top, depth, number, filled, root
+
+    n = size(a, 1)
+    ! the edges of each vertex, in compressed rows, from a sweep of the
+    ! columns
+    allocate(count(n), source=0)
+    do j = 1, n
+       do i = 1, n
+          if (i /= j .and. a(i, j) /= 0.0_dp) count(i) = count(i) + 1
+       end do
+    end do
+    allocate(start(n + 1))
+    start(1) = 1
+    do i = 1, n
+       start(i + 1) = start(i) + count(i)
+    end do
+    allocate(edge(start(n + 1) - 1))
+    count = 0
+    do j = 1, n
+       do i = 1, n
+          if (i /= j .and. a(i, j) /= 0.0_dp) then
+             edge(start(i) + count(i)) = j
+             count(i) = count(i) + 1
+          end if
+       end do
+    end do
+
+    allocate(index(n), low(n), source=0)
+    allocate(on_path(n), source=.false.)
+    allocate(path(n), visit(n), next(n))
+    allocate(permutation(n), block_first(0))
+    top    = 0
+    depth  = 0
+    number = 0
+    filled = 0
+    do root = 1, n
+       if (index(root) /= 0) cycle
+       v     = root
+       depth = 1
+       visit(depth) = v
+       next(depth)  = start(v)
+       number   = number + 1
+       index(v) = number
+       low(v)   = number
+       top      = top + 1
+       path(top)  = v
+       on_path(v) = .true.
+       do while (depth > 0)
+          v = visit(depth)
+          if (next(depth) < start(v + 1)) then
+             w = edge(next(depth))
+             next(depth) = next(depth) + 1
+             if (index(w) == 0) then
+                depth = depth + 1
+                visit(depth) = w
+                next(depth)  = start(w)
+                number   = number + 1
+                index(w) = number
+                low(w)   = number
+                top      = top + 1
+                path(top)  = w
+                on_path(w) = .true.
+             else if (on_path(w)) then
+                low(v) = min(low(v), index(w))
+             end if
+             cycle
+          end if
+          ! every edge of v visited: v closes a component where it is
+          ! its own root
+          if (low(v) == index(v)) then
+             block_first = [block_first, filled + 1]
+             do
+                w = path(top)
+                top = top - 1
+                on_path(w) = .false.
+                filled = filled + 1
+                permutation(filled) = w
+                if (w == v) exit
+             end do
+          end if
+          depth = depth - 1
+          if (depth > 0) low(visit(depth)) = min(low(visit(depth)), low(v))
+       end do
+    end do
+    block_first = [block_first, n + 1]
+
+  end subroutine strong_components
 
   pure integer function order(this) result(n)
 

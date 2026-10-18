@@ -900,6 +900,7 @@ contains
        else
           text = text // indent // '(dense direct)'
        end if
+       if (M_b % block_triangular) text = text // ', the diagonal blocks of its block triangular form factorised'
     class default
        text = text // indent // '(' // M_b % name() // ')'
     end select

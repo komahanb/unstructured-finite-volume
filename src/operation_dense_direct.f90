@@ -63,6 +63,12 @@ module operation_dense_direct
      ! util_factorisation): rows of different units
      logical  :: equilibrated = .false.
 
+     ! Whether the matrix is permuted to its block triangular form and
+     ! its diagonal blocks alone are factorised (see util_factorisation):
+     ! the step of a family of several stages, each reading the stages
+     ! before it
+     logical  :: block_triangular = .false.
+
      ! The factors retained, and the version of the statement they
      ! belong to. A statement with the same version is not formed or
      ! factorised again; one with version zero always is. A statement
@@ -198,7 +204,7 @@ contains
             & this % num_unknowns, n, this % num_components, a, constant, stored=this % stored)
        call this % record_event(factorisations)
        call this % factor % factorise(a, this % singular_tolerance, maxval(abs(a), dim=1), &
-            & equilibrated=this % equilibrated)
+            & equilibrated=this % equilibrated, block_triangular=this % block_triangular)
        this % retained_version  = this % action % version()
        this % retained_transposed = this % action % transpose_version()
     end if
@@ -238,13 +244,15 @@ contains
 
   !===================================================================!
   ! A DENSE DIRECT SOLVE STATED: with equilibrated, its rows and columns
-  ! scaled to unit largest entry before the factorisation.
+  ! scaled to unit largest entry before the factorisation; with
+  ! block_triangular, its diagonal blocks alone factorised.
   !===================================================================!
 
-  function dense_direct_of(equilibrated) result(this)
-    logical, intent(in), optional :: equilibrated
+  function dense_direct_of(equilibrated, block_triangular) result(this)
+    logical, intent(in), optional :: equilibrated, block_triangular
     type(dense_direct) :: this
     if (present(equilibrated)) this % equilibrated = equilibrated
+    if (present(block_triangular)) this % block_triangular = block_triangular
   end function dense_direct_of
 
 end module operation_dense_direct

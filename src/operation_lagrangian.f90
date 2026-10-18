@@ -8945,6 +8945,9 @@ contains
   ! that the estimate costs one solve of each reference; given
   ! unallocated, they are returned.
   ! A step in residual form then solves its truncation error as well.
+  ! The references are solved first, each from the solution's history
+  ! alone; over several images each solves its share of the steps, and
+  ! the transport, linear and step after step, follows on every image.
   !
   ! Invalid input: as local_errors, and local errors of another shape.
   !===================================================================!
@@ -9029,13 +9032,44 @@ contains
 
     level = verbosity
     call set_verbosity(0)
+    ! THE REFERENCES, each solved from the solution's history alone, so
+    ! that the steps are independent: over several images each solves
+    ! the steps whose number it owns, one after another of every
+    ! num_images(), and their stages and local errors are summed over
+    ! the images
+    do b = 1, nb
+       if (mod(b - 1, num_images()) + 1 /= this_image()) cycle
+       call base % block_extent(b, first, last, depth)
+       if (depth == 0) cycle
+       if (residual_form(b)) then
+          if (returned) ell(:, :, last) = truncation_error(base, plus, b, rows_along, coarse(:, :, :, 0), &
+               & stages(:, :, :, :, 0), level, by)
+          cycle
+       end if
+       own = plus % schemes % scheme(b)
+       call plus % block_extent(b, first, last, depth)
+       if (marches_by_stages(own, nd) .or. measuring) then
+          call plus % solve_block(own, first, last, depth, rows_along, origin, tuple, stages, expand=.false., &
+               & converged=met, by=by)
+          if (.not. met) then
+             call set_verbosity(level)
+             error stop 'operation_lagrangian: a step''s reference solved again from the solution''s history does not &
+                  &converge'
+          end if
+          if (measuring) ell(:, :, last) = scale(b) * (tuple(:, :, last, 0) - coarse(:, :, last, 0))
+          tuple(:, :, first + depth:last, :) = coarse(:, :, first + depth:last, :)
+       end if
+    end do
+    if (num_images() > 1) then
+       call co_sum(stages(:, :, :, :, 0))
+       if (measuring .or. returned) call co_sum(ell)
+    end if
+    ! THE TRANSPORT, step after step, on every image alike
     do b = 1, nb
        call base % block_extent(b, first, last, depth)
        if (depth == 0) cycle
        own = base % schemes % scheme(b)
        if (residual_form(b)) then
-          if (returned) ell(:, :, last) = truncation_error(base, plus, b, rows_along, coarse(:, :, :, 0), &
-               & stages(:, :, :, :, 0), level, by)
           ! the enrichment's rows at the solution, linearized there: the
           ! history's errors in their fixed rows, -R+(Q) at the instant
           call plus % block_extent(b, first, last, depth)
@@ -9070,21 +9104,9 @@ contains
           deallocate(rhs, x)
           cycle
        end if
-       ! the reference's stages at the solution, and its rows there; the
-       ! step's local error from the same solve where it is measured
+       ! the reference's rows at the solution and its stages
        own = plus % schemes % scheme(b)
        call plus % block_extent(b, first, last, depth)
-       if (marches_by_stages(own, nd) .or. measuring) then
-          call plus % solve_block(own, first, last, depth, rows_along, origin, tuple, stages, expand=.false., &
-               & converged=met, by=by)
-          if (.not. met) then
-             call set_verbosity(level)
-             error stop 'operation_lagrangian: a step''s reference solved again from the solution''s history does not &
-                  &converge'
-          end if
-          if (measuring) ell(:, :, last) = scale(b) * (tuple(:, :, last, 0) - coarse(:, :, last, 0))
-          tuple(:, :, first + depth:last, :) = coarse(:, :, first + depth:last, :)
-       end if
        call plus % block_rows(own, first, last, depth, rows_along, origin, coarse(:, :, :, 0), stages(:, :, :, :, 0), &
             & .true., blk)
        call plus % block_inputs(blk)

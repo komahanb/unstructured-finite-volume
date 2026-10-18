@@ -8710,14 +8710,10 @@ contains
     real(dp), allocatable :: error(:,:,:)
 
     type(discrete_lagrangian) :: base, plus
-    type(chain_block) :: blk, reference_blk
-    type(residual_operator) :: lin
-    type(stored_field), allocatable :: inputs(:)
-    class(minimizer), allocatable :: M_b
     type(stencil), allocatable :: rows_along(:,:)
-    real(dp), allocatable :: coarse(:,:,:,:), tuple(:,:,:,:), stages(:,:,:,:,:), scale(:), y(:), rhs(:), x(:)
+    real(dp), allocatable :: coarse(:,:,:,:), tuple(:,:,:,:), stages(:,:,:,:,:), scale(:)
     logical , allocatable :: residual_form(:)
-    integer :: stride, ncells, ninst, ncol, nb, b, first, last, depth, k, c, most, level, m, mr
+    integer :: stride, ncells, ninst, ncol, nb, b, first, last, depth, k, c, most, level
     logical :: met
 
     if (.not. this % with_chain) then
@@ -8775,36 +8771,8 @@ contains
        call base % block_extent(b, first, last, depth)
        if (depth == 0) cycle
        if (residual_form(b)) then
-          ! the enrichment's rows at the solution, at the step's own
-          ! instant, solved with the jacobian of the step's own rows
-          call base % block_rows(base % schemes % scheme(b), first, last, depth, rows_along, origin, &
-               & coarse(:, :, :, 0), stages(:, :, :, :, 0), .true., blk)
-          call base % block_inputs(blk)
-          call plus % block_extent(b, first, last, depth)
-          call plus % block_rows(plus % schemes % scheme(b), first, last, depth, rows_along, origin, &
-               & coarse(:, :, :, 0), stages(:, :, :, :, 0), .true., reference_blk)
-          call rows_evaluated(reference_blk % rows, plus % rows_design(reference_blk % rows), reference_blk % q, y, &
-               & inputs)
-          allocate(rhs(size(blk % q)), source=0.0_dp)
-          m  = blk % instant_moment(size(blk % instant_moment))
-          mr = reference_blk % instant_moment(size(reference_blk % instant_moment))
-          do c = 1, ncells
-             rhs(blk % tuple_at(m, c) + 1:blk % tuple_at(m, c) + stride) = &
-                  & -y(reference_blk % tuple_at(mr, c) + 1:reference_blk % tuple_at(mr, c) + stride)
-          end do
-          lin = blk % rows % linearize(blk % rows % unknown_graph(), blk % rows % bind(blk % inputs), rhs, .false., &
-               & blk % rows % version())
-          call minimizer_of(lin, base % facts(), M_b, by)
-          allocate(x(size(rhs)), source=0.0_dp)
-          call system_solution(M_b, lin, base % rows_design(blk % rows), x, met)
-          if (.not. met) then
-             call set_verbosity(level)
-             error stop 'operation_lagrangian: the linear system of a step''s truncation error is not solved'
-          end if
-          do c = 1, ncells
-             error(:, c, last) = x(blk % tuple_at(m, c) + 1:blk % tuple_at(m, c) + stride)
-          end do
-          deallocate(rhs, x)
+          error(:, :, last) = truncation_error(base, plus, b, rows_along, coarse(:, :, :, 0), stages(:, :, :, :, 0), &
+               & level, by)
           cycle
        end if
        ! the reference solved from the solution's history, its instant
@@ -8823,6 +8791,65 @@ contains
     call set_verbosity(level)
 
   end function local_errors
+
+  !===================================================================!
+  ! THE TRUNCATION ERROR IN RESIDUAL FORM of step b, a step of a family
+  ! of several steps measured against its enrichment (local_errors):
+  ! l = -J^-1 R+(Q), the enrichment's rows at the solution's tuples
+  ! coarse solved with the jacobian of the step's own rows there, at
+  ! the instant ending the step, one tuple per cell.
+  ! Invalid input: a linear system that is not solved.
+  !===================================================================!
+
+  function truncation_error(base, plus, b, rows_along, coarse, stages, level, by) result(error)
+
+    type(discrete_lagrangian), intent(in) :: base, plus
+    integer                  , intent(in) :: b, level
+    type(stencil)            , intent(in) :: rows_along(:,:)
+    real(dp)                 , intent(in) :: coarse(:,:,:), stages(:,:,:,:)
+    type(discrete_minimizer) , intent(in), optional :: by
+    real(dp), allocatable :: error(:,:)
+
+    type(chain_block) :: blk, reference_blk
+    type(residual_operator) :: lin
+    type(stored_field), allocatable :: inputs(:)
+    class(minimizer), allocatable :: M_b
+    real(dp), allocatable :: y(:), rhs(:), x(:)
+    integer :: stride, ncells, first, last, depth, c, m, mr
+    logical :: met
+
+    stride = base % rule % num_components()
+    ncells = base % points % num_cells()
+    call base % block_extent(b, first, last, depth)
+    call base % block_rows(base % schemes % scheme(b), first, last, depth, rows_along, origin, coarse, stages, &
+         & .true., blk)
+    call base % block_inputs(blk)
+    call plus % block_extent(b, first, last, depth)
+    call plus % block_rows(plus % schemes % scheme(b), first, last, depth, rows_along, origin, coarse, stages, &
+         & .true., reference_blk)
+    call rows_evaluated(reference_blk % rows, plus % rows_design(reference_blk % rows), reference_blk % q, y, inputs)
+    allocate(rhs(size(blk % q)), source=0.0_dp)
+    m  = blk % instant_moment(size(blk % instant_moment))
+    mr = reference_blk % instant_moment(size(reference_blk % instant_moment))
+    do c = 1, ncells
+       rhs(blk % tuple_at(m, c) + 1:blk % tuple_at(m, c) + stride) = &
+            & -y(reference_blk % tuple_at(mr, c) + 1:reference_blk % tuple_at(mr, c) + stride)
+    end do
+    lin = blk % rows % linearize(blk % rows % unknown_graph(), blk % rows % bind(blk % inputs), rhs, .false., &
+         & blk % rows % version())
+    call minimizer_of(lin, base % facts(), M_b, by)
+    allocate(x(size(rhs)), source=0.0_dp)
+    call system_solution(M_b, lin, base % rows_design(blk % rows), x, met)
+    if (.not. met) then
+       call set_verbosity(level)
+       error stop 'operation_lagrangian: the linear system of a step''s truncation error is not solved'
+    end if
+    allocate(error(stride, ncells))
+    do c = 1, ncells
+       error(:, c) = x(blk % tuple_at(m, c) + 1:blk % tuple_at(m, c) + stride)
+    end do
+
+  end function truncation_error
 
   !===================================================================!
   ! THE REFERENCE OF EACH STEP of a chain of one block per instant, as
@@ -8913,6 +8940,12 @@ contains
   ! Where the local errors are not valid, their transport is not either
   ! (local_errors).
   !
+  ! The local errors may be given. Otherwise each step's is read from
+  ! the same solve of its reference that gives the tangent's stages, so
+  ! that the estimate costs one solve of each reference; given
+  ! unallocated, they are returned.
+  ! A step in residual form then solves its truncation error as well.
+  !
   ! Invalid input: as local_errors, and local errors of another shape.
   !===================================================================!
 
@@ -8920,7 +8953,7 @@ contains
 
     class(discrete_lagrangian), intent(in) :: this
     type(discrete_field)      , intent(in) :: solution
-    real(dp)                  , intent(in) :: local(:,:,:)
+    real(dp), allocatable     , intent(inout), optional :: local(:,:,:)
     type(discrete_minimizer)  , intent(in), optional :: by
     real(dp), allocatable :: global(:,:,:)
 
@@ -8932,9 +8965,10 @@ contains
     class(minimizer), allocatable :: M_b
     type(stencil), allocatable :: rows_along(:,:)
     real(dp), allocatable :: coarse(:,:,:,:), tuple(:,:,:,:), stages(:,:,:,:,:), rhs(:), x(:), y(:), scale(:)
+    real(dp), allocatable :: ell(:,:,:)
     logical , allocatable :: residual_form(:)
     integer :: stride, nf, ncells, ninst, ncol, nb, b, first, last, depth, k, c, i, m, most, level, nd
-    logical :: met
+    logical :: met, measuring, returned
 
     stride = this % rule % num_components()
     nf     = this % manifold % num_unknowns
@@ -8959,9 +8993,22 @@ contains
        error stop 'operation_lagrangian: the errors are transported step by step, along a chain of one block per &
             &instant'
     end if
-    if (size(local, 1) /= stride .or. size(local, 2) /= ncells .or. size(local, 3) /= ninst) then
-       error stop 'operation_lagrangian: the local errors are one tuple per cell and instant of the solution'
+    ! the local errors given, or measured here from the references'
+    ! solves and returned where local is given unallocated
+    measuring = .true.
+    returned  = .false.
+    if (present(local)) then
+       if (allocated(local)) then
+          if (size(local, 1) /= stride .or. size(local, 2) /= ncells .or. size(local, 3) /= ninst) then
+             error stop 'operation_lagrangian: the local errors are one tuple per cell and instant of the solution'
+          end if
+          measuring = .false.
+          ell = local
+       else
+          returned = .true.
+       end if
     end if
+    if (measuring) allocate(ell(stride, ncells, ninst), source=0.0_dp)
     nd = top_degree(base % rule, nf) + 1
     call step_references(base, plus, scale, residual_form)
 
@@ -8987,6 +9034,8 @@ contains
        if (depth == 0) cycle
        own = base % schemes % scheme(b)
        if (residual_form(b)) then
+          if (returned) ell(:, :, last) = truncation_error(base, plus, b, rows_along, coarse(:, :, :, 0), &
+               & stages(:, :, :, :, 0), level, by)
           ! the enrichment's rows at the solution, linearized there: the
           ! history's errors in their fixed rows, -R+(Q) at the instant
           call plus % block_extent(b, first, last, depth)
@@ -9021,10 +9070,11 @@ contains
           deallocate(rhs, x)
           cycle
        end if
-       ! the reference's stages at the solution, and its rows there
+       ! the reference's stages at the solution, and its rows there; the
+       ! step's local error from the same solve where it is measured
        own = plus % schemes % scheme(b)
        call plus % block_extent(b, first, last, depth)
-       if (marches_by_stages(own, nd)) then
+       if (marches_by_stages(own, nd) .or. measuring) then
           call plus % solve_block(own, first, last, depth, rows_along, origin, tuple, stages, expand=.false., &
                & converged=met, by=by)
           if (.not. met) then
@@ -9032,6 +9082,7 @@ contains
              error stop 'operation_lagrangian: a step''s reference solved again from the solution''s history does not &
                   &converge'
           end if
+          if (measuring) ell(:, :, last) = scale(b) * (tuple(:, :, last, 0) - coarse(:, :, last, 0))
           tuple(:, :, first + depth:last, :) = coarse(:, :, first + depth:last, :)
        end if
        call plus % block_rows(own, first, last, depth, rows_along, origin, coarse(:, :, :, 0), stages(:, :, :, :, 0), &
@@ -9056,11 +9107,12 @@ contains
        end if
        m = blk % instant_moment(size(blk % instant_moment))
        do c = 1, ncells
-          global(:, c, last) = x(blk % tuple_at(m, c) + 1:blk % tuple_at(m, c) + stride) + local(:, c, last)
+          global(:, c, last) = x(blk % tuple_at(m, c) + 1:blk % tuple_at(m, c) + stride) + ell(:, c, last)
        end do
        deallocate(rhs, x)
     end do
     call set_verbosity(level)
+    if (returned) call move_alloc(ell, local)
 
   end function transported_errors
 

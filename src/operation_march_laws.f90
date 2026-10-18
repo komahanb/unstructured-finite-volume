@@ -79,6 +79,9 @@ module operation_march_laws
      ! the largest energy of the free motion, and the work
      real(dp) :: frequency = 0.0_dp, highest = 0.0_dp, energy = 0.0_dp
      integer  :: work = 0
+     ! the largest over the cells of the energy norm of each step's
+     ! local error, at the instant ending it, where the accuracy is read
+     real(dp), allocatable :: local_norm(:)
    contains
      procedure :: failed
      procedure :: lines
@@ -180,9 +183,9 @@ contains
        this % accuracy = -1.0_dp
        return
     end if
-    local  = L_h % local_errors(solution)
     global = L_h % transported_errors(solution, local)
     norm   = L_h % energy_norms(solution, global, highest=this % frequency)
+    this % local_norm = maxval(L_h % energy_norms(solution, local, highest=this % frequency), dim=1)
     measure = cell_measures(L_h, points, size(norm, 1))
     region  = sum(measure)
     if (this % energy <= 0.0_dp) then
@@ -323,7 +326,7 @@ contains
 
     type(discrete_field) :: placed
     type(march_laws) :: unsolved
-    real(dp), allocatable :: t(:), energies(:), local(:,:,:), norm(:,:), eta(:), t_measured(:), eta_measured(:)
+    real(dp), allocatable :: t(:), energies(:), eta(:), t_measured(:), eta_measured(:)
     integer , allocatable :: tried(:,:)
     real(dp) :: frequency, highest, energy, f, hi, accuracy_before, p, longest
     integer :: n, n_before, g, g_before, g_measured, round, k, level
@@ -409,9 +412,7 @@ contains
        g_before        = g
        n_before        = size(t)
        accuracy_before = laws % accuracy
-       local = L_h % local_errors(solution)
-       norm  = L_h % energy_norms(solution, local, highest=frequency)
-       eta   = maxval(norm, dim=1)
+       eta = laws % local_norm
        g_measured   = g
        t_measured   = t
        eta_measured = eta

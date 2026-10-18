@@ -36,6 +36,8 @@
 ! ratio, accuracy, is named: a frequency the instants cannot hold
 ! fails the phase law before any estimate of the error is read, and
 ! the accuracy is then not evaluated, its ratio -1.
+! The references the error is estimated against are solved by the
+! minimizer by, where given, as the march is.
 ! The frequency, the highest frequency and the energy may be given:
 ! designs compared with each other are measured by the same ones, the
 ! largest measured over them, so that a family that damps the
@@ -93,12 +95,13 @@ module operation_march_laws
 
 contains
 
-  function create(L_h, solution, tolerance, frequency, highest, energy) result(this)
+  function create(L_h, solution, tolerance, frequency, highest, energy, by) result(this)
 
     type(discrete_lagrangian), intent(in) :: L_h
     type(discrete_field)     , intent(in) :: solution
     real(dp)                 , intent(in) :: tolerance
     real(dp)                 , intent(in), optional :: frequency, highest, energy
+    type(discrete_minimizer) , intent(in), optional :: by
     type(march_laws) :: this
 
     type(discrete_manifold) :: points
@@ -183,7 +186,7 @@ contains
        this % accuracy = -1.0_dp
        return
     end if
-    global = L_h % transported_errors(solution, local)
+    global = L_h % transported_errors(solution, local, by=by)
     norm   = L_h % energy_norms(solution, global, highest=this % frequency)
     this % local_norm = maxval(L_h % energy_norms(solution, local, highest=this % frequency), dim=1)
     measure = cell_measures(L_h, points, size(norm, 1))
@@ -372,7 +375,7 @@ contains
        frequency = max(frequency, f)
        highest   = max(highest, hi)
        energy    = max(energy, maxval(energies))
-       laws = march_laws(L_h, solution, tolerance, frequency=frequency, highest=highest, energy=energy)
+       laws = march_laws(L_h, solution, tolerance, frequency=frequency, highest=highest, energy=energy, by=by)
        if (level >= 1) print '(a, i0, a, i0, a, i0, a, 5es10.2, a, a)', 'selection round ', round, ': family ', g, &
             & '  instants ', size(t), '  phase, amplitude, stability, ratio, accuracy ', laws % phase, &
             & laws % amplitude, laws % stability, laws % ratio, laws % accuracy, '  failed ', laws % failed()

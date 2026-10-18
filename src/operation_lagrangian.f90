@@ -8711,8 +8711,8 @@ contains
 
     type(discrete_lagrangian) :: base, plus
     type(stencil), allocatable :: rows_along(:,:)
-    real(dp), allocatable :: coarse(:,:,:,:), tuple(:,:,:,:), stages(:,:,:,:,:), scale(:)
-    logical , allocatable :: residual_form(:)
+    real(dp), allocatable :: coarse(:,:,:,:), tuple(:,:,:,:), stages(:,:,:,:,:), scale(:), ending(:,:), staged(:,:,:)
+    logical , allocatable :: residual_form(:), halved(:)
     integer :: stride, ncells, ninst, ncol, nb, b, first, last, depth, k, c, most, level
     logical :: met
 
@@ -8747,7 +8747,7 @@ contains
             &instant'
     end if
 
-    call step_references(base, plus, scale, residual_form)
+    call step_references(base, plus, scale, residual_form, halved)
 
     ! the solution's tuple at every instant and cell
     allocate(coarse(stride, ncells, ninst, 0:ncol - 1))
@@ -8778,6 +8778,11 @@ contains
        ! the reference solved from the solution's history, its instant
        ! returned to the solution's before the next step
        call plus % block_extent(b, first, last, depth)
+       if (halved(b)) then
+          call half_steps_solved(base, base % schemes % scheme(b), last, coarse, rows_along, level, by, ending, staged)
+          error(:, :, last) = scale(b) * (ending - coarse(:, :, last, 0))
+          cycle
+       end if
        call plus % solve_block(plus % schemes % scheme(b), first, last, depth, rows_along, origin, tuple, stages, &
             & expand=.false., converged=met, by=by)
        if (.not. met) then
@@ -8852,20 +8857,89 @@ contains
   end function truncation_error
 
   !===================================================================!
+  ! THE TWO HALF STEPS of a family of one step, from instant k - 1 of
+  ! the solution to instant k, solved one after the other: each is a
+  ! step of the family at h/2, started as the march starts a step from
+  ! the instant before it, on a copy of the residual whose instants are
+  ! t_(k-1), t_(k-1) + h/2 and t_k.
+  ! The first half step's stages and then the second's are the stages of
+  ! the family's half steps (half_steps), and the tuple the second ends
+  ! at is theirs, one for each cell.
+  ! The half steps solved at once, as one block of twice the stages from
+  ! the tuple at t_(k-1), stagnate where each half step converges: on
+  ! the rotor's jolted start at 12 steps a revolution, Newton's
+  ! iteration of the block of ten stages of dirk(4, stages=5) was
+  ! damped to steps of 0.0039 and had removed a fifth of its residual
+  ! after 113 iterations.
+  ! Invalid input: a half step that does not converge.
+  !===================================================================!
+
+  subroutine half_steps_solved(base, own, k, coarse, rows_along, level, by, ending, staged)
+
+    type(discrete_lagrangian), intent(in)  :: base
+    type(family)             , intent(in)  :: own
+    integer                  , intent(in)  :: k, level
+    real(dp)                 , intent(in)  :: coarse(:,:,:,0:)
+    type(stencil)            , intent(in)  :: rows_along(:,:)
+    type(discrete_minimizer) , intent(in), optional :: by
+    real(dp), allocatable    , intent(out) :: ending(:,:), staged(:,:,:)
+
+    type(discrete_lagrangian) :: halves
+    real(dp), allocatable :: tuple(:,:,:,:), stages(:,:,:,:,:)
+    integer :: s, j, first, last, depth
+    logical :: met
+
+    halves = base
+    ! the conditions on faces of time are at instants the copy does not
+    ! hold, and its first instant is fixed from the solution
+    if (allocated(halves % condition)) then
+       halves % condition = pack(halves % condition, &
+            & [(.not. halves % condition(j) % manifold % is_time_face(), j = 1, size(halves % condition))])
+    end if
+    halves % points % instant = [base % points % instant(k - 1), &
+         & (base % points % instant(k - 1) + base % points % instant(k)) / 2.0_dp, base % points % instant(k)]
+    halves % schemes   = chain([own, own, own], from=[1, 2, 3])
+    halves % continued = .true.
+    s = own % num_stages()
+    allocate(tuple(size(coarse, 1), size(coarse, 2), 3, 0:ubound(coarse, 4)))
+    tuple(:, :, 1, :) = coarse(:, :, k - 1, :)
+    tuple(:, :, 2, :) = coarse(:, :, k - 1, :)
+    tuple(:, :, 3, :) = coarse(:, :, k, :)
+    allocate(stages(size(coarse, 1), size(coarse, 2), s, 3, 0:ubound(coarse, 4)), source=0.0_dp)
+    do j = 2, 3
+       call halves % block_extent(j, first, last, depth)
+       call halves % solve_block(own, first, last, depth, rows_along, origin, tuple, stages, expand=.false., &
+            & converged=met, by=by)
+       if (.not. met) then
+          call set_verbosity(level)
+          error stop 'operation_lagrangian: a half step of a step''s reference, solved from the solution''s history, &
+               &does not converge'
+       end if
+    end do
+    ending = tuple(:, :, 3, 0)
+    allocate(staged(size(coarse, 1), size(coarse, 2), 2 * s))
+    staged(:, :, 1:s)         = stages(:, :, :, 2, 0)
+    staged(:, :, s + 1:2 * s) = stages(:, :, :, 3, 0)
+
+  end subroutine half_steps_solved
+
+  !===================================================================!
   ! THE REFERENCE OF EACH STEP of a chain of one block per instant, as
   ! local_errors states it.
   ! plus is the residual with each step's reference in its block.
   ! scale is the factor of each step's difference.
   ! residual_form is whether the step is measured in residual form: a
   ! family of several steps against its enrichment.
+  ! halved is whether the step's reference is the family's two half
+  ! steps, solved one after the other (half_steps_solved).
   !===================================================================!
 
-  subroutine step_references(base, plus, scale, residual_form)
+  subroutine step_references(base, plus, scale, residual_form, halved)
 
     type(discrete_lagrangian), intent(in)  :: base
     type(discrete_lagrangian), intent(out) :: plus
     real(dp), allocatable    , intent(out) :: scale(:)
-    logical , allocatable    , intent(out) :: residual_form(:)
+    logical , allocatable    , intent(out) :: residual_form(:), halved(:)
 
     type(family) :: own
     integer :: nb, b, p, first, last, depth, degree
@@ -8874,7 +8948,7 @@ contains
     degree = top_degree(base % rule, base % manifold % num_unknowns)
     plus   = base
     allocate(scale(nb), source=1.0_dp)
-    allocate(residual_form(nb), source=.false.)
+    allocate(residual_form(nb), halved(nb), source=.false.)
     do b = 1, nb
        own = base % schemes % scheme(b)
        p   = own % accuracy()
@@ -8889,7 +8963,8 @@ contains
        end if
        if (own % history_depth(degree) == 1 .and. own % with_half_steps()) then
           plus % schemes % scheme(b) = own % half_steps()
-          scale(b) = 2.0_dp**p / (2.0_dp**p - 1.0_dp)
+          scale(b)  = 2.0_dp**p / (2.0_dp**p - 1.0_dp)
+          halved(b) = .true.
        else
           if (p + 1 > 4) then
              error stop 'operation_lagrangian: a step of a family of several steps whose enrichment reads history &
@@ -8968,10 +9043,11 @@ contains
     class(minimizer), allocatable :: M_b
     type(stencil), allocatable :: rows_along(:,:)
     real(dp), allocatable :: coarse(:,:,:,:), tuple(:,:,:,:), stages(:,:,:,:,:), rhs(:), x(:), y(:), scale(:)
-    real(dp), allocatable :: ell(:,:,:)
-    logical , allocatable :: residual_form(:)
+    real(dp), allocatable :: ell(:,:,:), ending(:,:), staged(:,:,:)
+    logical , allocatable :: residual_form(:), halved(:)
     integer :: stride, nf, ncells, ninst, ncol, nb, b, first, last, depth, k, c, i, m, most, level, nd
     logical :: met, measuring, returned
+    integer(8) :: tick, tock, tack, rate
 
     stride = this % rule % num_components()
     nf     = this % manifold % num_unknowns
@@ -9013,7 +9089,7 @@ contains
     end if
     if (measuring) allocate(ell(stride, ncells, ninst), source=0.0_dp)
     nd = top_degree(base % rule, nf) + 1
-    call step_references(base, plus, scale, residual_form)
+    call step_references(base, plus, scale, residual_form, halved)
 
     allocate(coarse(stride, ncells, ninst, 0:ncol - 1))
     do k = 1, ninst
@@ -9030,8 +9106,11 @@ contains
     allocate(global(stride, ncells, ninst), source=0.0_dp)
     tuple = coarse
 
+    ! the solves print their convergence one level below the caller's,
+    ! from the caller's second
     level = verbosity
-    call set_verbosity(0)
+    call set_verbosity(max(0, level - 1) * merge(1, 0, level >= 2))
+    call system_clock(tick, rate)
     ! THE REFERENCES, each solved from the solution's history alone, so
     ! that the steps are independent: over several images each solves
     ! the steps whose number it owns, one after another of every
@@ -9048,6 +9127,14 @@ contains
        end if
        own = plus % schemes % scheme(b)
        call plus % block_extent(b, first, last, depth)
+       if (halved(b)) then
+          ! the two half steps one after the other: their stages are the
+          ! half steps' stages
+          call half_steps_solved(base, base % schemes % scheme(b), last, coarse, rows_along, level, by, ending, staged)
+          stages(:, :, 1:size(staged, 3), last, 0) = staged
+          if (measuring) ell(:, :, last) = scale(b) * (ending - coarse(:, :, last, 0))
+          cycle
+       end if
        if (marches_by_stages(own, nd) .or. measuring) then
           call plus % solve_block(own, first, last, depth, rows_along, origin, tuple, stages, expand=.false., &
                & converged=met, by=by)
@@ -9064,6 +9151,7 @@ contains
        call co_sum(stages(:, :, :, :, 0))
        if (measuring .or. returned) call co_sum(ell)
     end if
+    call system_clock(tock)
     ! THE TRANSPORT, step after step, on every image alike
     do b = 1, nb
        call base % block_extent(b, first, last, depth)
@@ -9134,6 +9222,10 @@ contains
        deallocate(rhs, x)
     end do
     call set_verbosity(level)
+    call system_clock(tack)
+    if (level >= 1 .and. this_image() == 1) print '(a, i0, a, f10.3, a, f10.3, a)', 'the estimate over ', &
+         & num_images(), ' images: the references ', real(tock - tick, dp) / real(rate, dp), ' s, the transport ', &
+         & real(tack - tock, dp) / real(rate, dp), ' s'
     if (returned) call move_alloc(ell, local)
 
   end function transported_errors

@@ -8844,7 +8844,7 @@ contains
          & blk % rows % version())
     call minimizer_of(lin, base % facts(), M_b, by)
     allocate(x(size(rhs)), source=0.0_dp)
-    call system_solution(M_b, lin, base % rows_design(blk % rows), x, met)
+    call system_solution(M_b, lin, base % rows_design(lin), x, met)
     if (.not. met) then
        call set_verbosity(level)
        error stop 'operation_lagrangian: the linear system of a step''s truncation error is not solved'
@@ -9181,7 +9181,7 @@ contains
                & blk % rows % version())
           call minimizer_of(lin, plus % facts(), M_b, by)
           allocate(x(size(rhs)), source=0.0_dp)
-          call system_solution(M_b, lin, plus % rows_design(blk % rows), x, met)
+          call system_solution(M_b, lin, plus % rows_design(lin), x, met)
           if (.not. met) then
              call set_verbosity(level)
              error stop 'operation_lagrangian: the tangent of a step''s enrichment is not solved'
@@ -9210,7 +9210,7 @@ contains
             & blk % rows % version())
        call minimizer_of(lin, plus % facts(), M_b, by)
        allocate(x(size(rhs)), source=0.0_dp)
-       call system_solution(M_b, lin, plus % rows_design(blk % rows), x, met)
+       call system_solution(M_b, lin, plus % rows_design(lin), x, met)
        if (.not. met) then
           call set_verbosity(level)
           error stop 'operation_lagrangian: the tangent of a step''s reference is not solved'

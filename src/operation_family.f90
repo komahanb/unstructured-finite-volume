@@ -122,7 +122,6 @@ module operation_family
      procedure :: history_depth    => family_history_depth
      procedure :: accuracy         => family_accuracy
      procedure :: step_ratio_bound => family_step_ratio_bound
-     procedure :: amplification    => family_amplification
      procedure :: num_stages       => family_num_stages
      procedure :: stage_weight     => family_stage_weight
      procedure :: stage_abscissa   => family_stage_abscissa
@@ -132,9 +131,6 @@ module operation_family
      procedure :: block_connectivity => family_block_connectivity
      procedure :: stage_connectivity => family_stage_connectivity
      procedure :: edge_coefficient => family_edge_coefficient
-     procedure :: with_enrichment  => family_with_enrichment
-     procedure :: half_steps       => family_half_steps
-     procedure :: with_half_steps  => family_with_half_steps
 
   end type family
 
@@ -307,78 +303,6 @@ contains
     if (this % geometry == FAMILY_BDF .and. this % order == 2) family_step_ratio_bound = 1.0_dp + sqrt(2.0_dp)
 
   end function family_step_ratio_bound
-
-  !===================================================================!
-  ! THE AMPLIFICATION OF A STEP on y' = lambda y, R(z) at z = lambda h:
-  ! the factor by which one step of the family multiplies y.
-  ! A tableau (a, b): R(z) = 1 + z b^T (I - z a)^-1 1, the stages solved
-  ! one after another, since a is lower triangular.
-  ! bdf(k) on steps of one length: the root zeta of
-  !
-  !    sum_j alpha_j zeta^(k - j) = z zeta^k,
-  !
-  ! that tends to e^z as z tends to zero, found by Newton's method from
-  ! e^z. alpha_j is the derivative at zero of the Lagrange basis
-  ! function of the node -j on the nodes 0, -1, .., -k: 3/2, -2 and 1/2
-  ! for bdf(2).
-  ! A law of degree two in time marched by the family is the system of
-  ! the first order in its values and rates, so a mode of frequency w
-  ! has z = i w h.
-  ! Invalid input: adams and Newmark, whose amplification is not stated
-  ! here.
-  !===================================================================!
-
-  pure complex(dp) function family_amplification(this, z) result(r)
-
-    class(family), intent(in) :: this
-    complex(dp)  , intent(in) :: z
-
-    complex(dp), allocatable :: y(:)
-    real(dp)   , allocatable :: alpha(:)
-    complex(dp) :: residual, slope
-    integer :: s, i, j, k, m, iteration
-
-    select case (this % geometry)
-    case (FAMILY_DIRK)
-       s = size(this % b)
-       allocate(y(s))
-       do i = 1, s
-          y(i) = 1.0_dp
-          do j = 1, i - 1
-             y(i) = y(i) + z * this % a(i, j) * y(j)
-          end do
-          y(i) = y(i) / (1.0_dp - z * this % a(i, i))
-       end do
-       r = 1.0_dp + z * sum(this % b * y)
-    case (FAMILY_BDF)
-       k = this % order
-       ! the derivatives at zero of the basis functions on the nodes
-       ! -i: alpha_0 = sum of 1/m, alpha_j = -(1/j) prod over i /= j of
-       ! i / (i - j)
-       allocate(alpha(0:k))
-       alpha(0) = sum([(1.0_dp / real(m, dp), m = 1, k)])
-       do j = 1, k
-          alpha(j) = -1.0_dp / real(j, dp)
-          do i = 1, k
-             if (i /= j) alpha(j) = alpha(j) * real(i, dp) / real(i - j, dp)
-          end do
-       end do
-       r = exp(z)
-       do iteration = 1, digits(1.0_dp)
-          residual = -z * r**k
-          slope    = -z * k * r**(k - 1)
-          do j = 0, k
-             residual = residual + alpha(j) * r**(k - j)
-             if (k - j > 0) slope = slope + alpha(j) * (k - j) * r**(k - j - 1)
-          end do
-          if (abs(residual) <= epsilon(1.0_dp) * max(abs(r)**k, 1.0_dp) * (1.0_dp + abs(z))) exit
-          r = r - residual / slope
-       end do
-    case default
-       error stop 'operation_family: the amplification of a step is stated for a tableau and for bdf'
-    end select
-
-  end function family_amplification
 
   pure integer function family_primary_degree(this, equation_degree)
 
@@ -1105,22 +1029,6 @@ contains
   ! a tableau of order four, above the tabulated ones.
   !===================================================================!
 
-  ! whether the family has an enrichment: adams of every order, bdf
-  ! below six, a tableau of order below four
-  pure logical function family_with_enrichment(this)
-    class(family), intent(in) :: this
-    select case (this % geometry)
-    case (FAMILY_ADAMS)
-       family_with_enrichment = .true.
-    case (FAMILY_BDF)
-       family_with_enrichment = this % order < 6
-    case (FAMILY_DIRK)
-       family_with_enrichment = tableau_order(this) < 4
-    case default
-       family_with_enrichment = .false.
-    end select
-  end function family_with_enrichment
-
   function family_enrichment(this) result(enriched)
 
     class(family), intent(in) :: this
@@ -1141,68 +1049,6 @@ contains
     end select
 
   end function family_enrichment
-
-  !===================================================================!
-  ! TWO HALF STEPS of a family of one step, as one step of a DIRK
-  ! family of twice the stages. The tableau (a, b) at h/2, twice:
-  !
-  !      | a/2      0  |
-  !      | 1 b^T/2  a/2|,     (b/2, b/2),
-  !
-  ! of the same order p, its error at leading order 2^-p times the
-  ! family's. It is the reference a step's error is estimated against
-  ! where the family has no enrichment (Richardson). bdf(1) and
-  ! adams(1) are the tableau a = b = [1]. Invalid input: a family of
-  ! several steps, adams(2) and Newmark.
-  !===================================================================!
-
-  ! whether two half steps of the family are stated: a tableau, or
-  ! bdf(1) and adams(1)
-  pure logical function family_with_half_steps(this)
-    class(family), intent(in) :: this
-    select case (this % geometry)
-    case (FAMILY_DIRK)
-       family_with_half_steps = .true.
-    case (FAMILY_BDF, FAMILY_ADAMS)
-       family_with_half_steps = this % order == 1
-    case default
-       family_with_half_steps = .false.
-    end select
-  end function family_with_half_steps
-
-  function family_half_steps(this) result(halves)
-
-    class(family), intent(in) :: this
-    type(family) :: halves
-
-    real(dp), allocatable :: a(:,:), b(:), a2(:,:)
-    integer :: s, i
-
-    select case (this % geometry)
-    case (FAMILY_DIRK)
-       a = this % a
-       b = this % b
-    case (FAMILY_BDF, FAMILY_ADAMS)
-       if (this % order /= 1) then
-          error stop 'operation_family: two half steps are stated for a family of one step with a tableau; a &
-               &multistep family, and adams(2), have none'
-       end if
-       a = reshape([1.0_dp], [1, 1])
-       b = [1.0_dp]
-    case default
-       error stop 'operation_family: two half steps are stated for a family of one step with a tableau; Newmark &
-            &has none'
-    end select
-    s = size(b)
-    allocate(a2(2 * s, 2 * s), source=0.0_dp)
-    a2(1:s, 1:s) = a / 2.0_dp
-    do i = 1, s
-       a2(s + i, 1:s) = b / 2.0_dp
-    end do
-    a2(s + 1:2 * s, s + 1:2 * s) = a / 2.0_dp
-    halves = dirk_family(a2, [b / 2.0_dp, b / 2.0_dp])
-
-  end function family_half_steps
 
   ! the chain of the enrichments, block by block, on the same instants
   function chain_enrichment(this) result(enriched)

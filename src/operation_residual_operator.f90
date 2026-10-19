@@ -228,7 +228,6 @@ module operation_residual_operator
      procedure, private :: projected_columns
      procedure, private :: projected_triples
      procedure, private :: instance_owned
-     procedure :: projected_instance
      procedure, private :: projected_edges
      procedure, private :: projected_part
      procedure :: law_at
@@ -2146,113 +2145,6 @@ contains
     end subroutine instance_matrix
 
   end subroutine projected_triples
-
-  !===================================================================!
-  ! THE MATRIX OF AN INSTANCE of a law projected on the cells, an
-  ! element at a moment, at the state x.
-  ! Its entries are the derivatives of the rows the instance states in
-  ! the components of its nodes' tuples, through the components of the
-  ! sites' tuples marked in reading alone.
-  ! The rows are those of every node's coefficients of every field a
-  ! law tests; the columns those of every node's components that a
-  ! marked component is formed from.
-  ! row and column are the rows and columns of the block. A node that
-  ! is also the moment's first point gives its rows twice: their
-  ! entries add.
-  ! It is the loop of projected_triples for one instance, with the
-  ! components read restricted.
-  !===================================================================!
-
-  subroutine projected_instance(this, x, nu, n, reading, matrix, row, column)
-
-    class(residual_operator), intent(in)  :: this
-    real(dp)                , intent(in)  :: x(:), nu(:)
-    integer                 , intent(in)  :: n
-    logical                 , intent(in)  :: reading(:)
-    real(dp), allocatable   , intent(out) :: matrix(:,:)
-    integer , allocatable   , intent(out) :: row(:), column(:)
-
-    real(dp), allocatable :: xs(:), ns(:), g(:)
-    integer , allocatable :: reads(:), row_place(:,:,:), column_place(:,:)
-    integer :: width, nd, nq, nodes, nk, nf, j, f, d, e, q, s, i, k, m, comp, dd, i2, k2, offset, p
-    real(dp) :: value, tau
-
-    width = size(this % projected % formed, 2)
-    nd    = this % designs
-    xs    = this % formed_at_sites(x)
-    ns    = this % design_at_sites(nu)
-    allocate(g(0:width - 1))
-    associate (pr => this % projected, el => this % projected % elements)
-      nq    = el % num_quadrature_points()
-      nodes = size(pr % element_point, 1)
-      nk    = el % num_coefficients()
-      nf    = size(pr % coefficient_row, 2)
-      e     = pr % element_cell(n)
-      ! the rows, of each node, coefficient and field
-      allocate(row_place(nodes, 0:nk - 1, nf), source=0)
-      allocate(row(0))
-      do f = 1, nf
-         do i = 1, nodes
-            p = pr % element_point(i, n)
-            if (p < 1) cycle
-            do k = 0, nk - 1
-               row = [row, this % at(p) + pr % coefficient_row(k, f) + 1]
-               row_place(i, k, f) = size(row)
-            end do
-         end do
-      end do
-      ! the columns, of each node and each component of its tuple a
-      ! marked component is formed from
-      allocate(column_place(nodes, 0:max(0, maxval(pr % formed(1:, :)))), source=0)
-      allocate(column(0))
-      do comp = 1, width
-         if (.not. reading(comp)) cycle
-         do k2 = 0, nk - 1
-            offset = pr % formed(k2 + 1, comp)
-            if (offset < 0) cycle
-            do i2 = 1, nodes
-               if (column_place(i2, offset) /= 0) cycle
-               column = [column, this % at(abs(pr % element_point(i2, n))) + offset + 1]
-               column_place(i2, offset) = size(column)
-            end do
-         end do
-      end do
-      allocate(matrix(size(row), size(column)), source=0.0_dp)
-      do q = 1, nq
-         s = (n - 1) * nq + q
-         do j = 1, this % laws
-            f = pr % tested(1, j)
-            d = pr % tested(2, j)
-            if (.not. tested_at(el, d, q, e)) cycle
-            call this % rules(this % law_at(j, s)) % read_components(reads)
-            call this % rules(this % law_at(j, s)) % gradient_at(xs((s - 1) * width + 1:s * width), &
-                 & ns((s - 1) * nd + 1:s * nd), value, g, this % site_positions(:, s))
-            do m = 1, size(reads)
-               comp = reads(m)
-               if (.not. reading(comp + 1)) cycle
-               dd = pr % formed(0, comp + 1)
-               do i = 1, nodes
-                  do k = 0, nk - 1
-                     if (row_place(i, k, f) == 0) cycle
-                     tau = el % test(d, k, i, q, e)
-                     if (tau == 0.0_dp) cycle
-                     do i2 = 1, nodes
-                        do k2 = 0, nk - 1
-                           offset = pr % formed(k2 + 1, comp + 1)
-                           if (offset < 0) cycle
-                           matrix(row_place(i, k, f), column_place(i2, offset)) = &
-                                & matrix(row_place(i, k, f), column_place(i2, offset)) &
-                                & + tau * g(comp) * el % basis(dd, k2, i2, q, e)
-                        end do
-                     end do
-                  end do
-               end do
-            end do
-         end do
-      end do
-    end associate
-
-  end subroutine projected_instance
 
   !===================================================================!
   ! The edges a projected law adds to the coupling: from every

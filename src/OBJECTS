@@ -6,7 +6,6 @@ util_norm.o \
 util_derivative_terms.o \
 util_tally.o \
 util_factorisation.o \
-util_eigensystem.o \
 token_identity.o \
 map_token_rows.o \
 util_string.o \
@@ -93,6 +92,5 @@ operation_residual_operator.o \
 operation_temporal_minimization.o \
 operation_minimization.o \
 operation_lagrangian.o \
-operation_march_laws.o \
 view_residual.o \
 view_paraview_writer.o

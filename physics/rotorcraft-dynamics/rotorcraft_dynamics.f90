@@ -85,6 +85,9 @@
 !      smoothness   the largest difference of adjacent strips, 1e-3
 !      order        of the backward differences of the march, 1 or 2
 !                   (2), from one step of bdf(1)
+!      lagrangian   the Lagrangian of each scenario written as a
+!                   formula, one equation a line, to
+!                   rotor_lagrangian.txt (.true.), or not (.false.)
 !
 ! THE FUNCTIONS, of the blades as beams: the blades' mass over the
 ! revolutions, and the smooth maximum (operation_field, maximum) of
@@ -135,6 +138,14 @@
 ! thicknesses found, rotor_optimized. README.md states how to run and
 ! draw.
 !
+! THE LAGRANGIAN (lagrangian): L written as a formula before its
+! march, one equation a line: the rigid rotor's 356 laws, the
+! stationarity of the density in each unknown, and the 364 initial
+! data of its 26 bodies, without multipliers, 720 lines of 876 kB;
+! the blades as beams with eight strips, the smooth maximum and every
+! law times its multiplier, 689 lines of 2.0 MB. Its tree is not
+! written: that of the density alone is 13 921 lines of 10 MB.
+!
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 
@@ -146,13 +157,18 @@ program rotorcraft_dynamics
   use operation_expansion, only : expansion
   use operation_field   , only : continuous_field, discrete_field, integral, maximum, heaviside, &
        &                         operator(+), operator(-), operator(*)
-  use operation_residual, only : continuous_residual, discrete_residual, operator(+), operator(*), &
-       &                         minimize_together
-  use operation_family  , only : dirk, bdf, chain
+  use operation_lagrangian, only : continuous_lagrangian, discrete_lagrangian, operator(+), operator(*), &
+       &                           minimize_together
+  use operation_family  , only : family, dirk, bdf, chain
   use operation_finite_element, only : finite_element
   use multibody_dynamics, only : rigid_body, beam_blade, mechanism, body_table, surface, spherical, revolute, &
        &                         cylindrical, fixed, rigid_link, revolute_driver, motion_driver, scissors
   use view_bdf_loader   , only : bdf_surface
+  use view_residual     , only : formula, tree
+  use operation_newton      , only : newton
+  use operation_elimination , only : elimination
+  use operation_dense_direct, only : dense_direct
+  use operation_minimization, only : discrete_minimizer
 
   implicit none
 
@@ -168,17 +184,18 @@ program rotorcraft_dynamics
   real(dp)           :: thickness(48) = 0.02_dp, yield = 350.0e6_dp, ks_weight = 100.0_dp
   real(dp)           :: ks_bound = 0.25_dp, bounds(2) = [0.01_dp, 0.02_dp], smoothness = 1.0e-3_dp
   integer            :: revolutions = 1, steps = 360, every = 10, span_points = 9, strips = 0, order = 2
-  logical            :: sensitivities = .true., optimize = .false.
+  logical            :: sensitivities = .true., optimize = .false., lagrangian = .false.
   namelist /setup/ blade, scenario, thickness, revolutions, steps, meshes, every, span_points, strips, yield, &
-       & ks_weight, sensitivities, optimize, ks_bound, bounds, smoothness, order
+       & ks_weight, sensitivities, optimize, ks_bound, bounds, smoothness, order, lagrangian
 
   type(discrete_manifold) :: omega_h
-  type(discrete_residual) :: L_h(size(scenario))
+  type(discrete_lagrangian) :: L_h(size(scenario))
   type(discrete_field)    :: estimates(size(scenario)), solutions(size(scenario))
   type(mechanism)         :: rotors(size(scenario))
   type(continuous_field)  :: masses(size(scenario)), kss(size(scenario))
   integer :: unit, j, ns, num_instants, np
   logical :: optimizing
+  type(discrete_minimizer) :: M_h
 
   open(newunit=unit, file='rotorcraft.nml', status='old', action='read')
   read(unit, nml=setup)
@@ -196,6 +213,20 @@ program rotorcraft_dynamics
   ! printed by image 1
   if (this_image() == 1) call set_verbosity(1)
 
+  ! THE MINIMIZER M_h, paired with each L_h once L_h is stated
+  ! (operation_minimization).
+  ! Each block of instants is solved by Newton's method to 1e-13.
+  ! The chord method reuses the LU factors of the first jacobian of a
+  ! block for every Newton step of that block.
+  ! A Newton step first eliminates the tying rows.
+  ! A tying row fixes one unknown from unknowns before it: by the
+  ! history, by the relations of the time scheme, or as a copy.
+  ! A dense LU solve gives the remaining unknowns.
+  ! For blades on cells, the rows mix positions, rotations and
+  ! reactions, of different units.
+  ! The LU solve then scales the rows, then the columns, to a largest
+  ! entry of one (equilibrated).
+
   ! to optimize with the bodies drawn, the initial design marched,
   ! reported and drawn first, beside the design found
   if (optimizing .and. len_trim(meshes) > 0) then
@@ -203,7 +234,9 @@ program rotorcraft_dynamics
         call stated(scenario(j), j == 1, L_h(j), estimates(j), rotors(j), masses(j), kss(j), omega_h, initial=.true.)
         if (this_image() == 1) print '(a, a, a, a, a)', 'the march of the rotor, ', trim(blade), ' blades, ', &
              & trim(scenario(j)), ', the initial design'
-        call L_h(j) % minimize(estimates(j), solutions(j), continued=.true.)
+        M_h = discrete_minimizer(L_h(j), newton(elimination(dense_direct(equilibrated=trim(blade) /= 'rigid')), &
+             &                                  tolerance=1.0e-13_dp, chord=.true.))
+        call L_h(j) % minimize(estimates(j), solutions(j), continued=.true., by=M_h)
         call reported(scenario(j), ns == 1, rotors(j), masses(j), kss(j), solutions(j), 'initial')
      end do
   end if
@@ -211,11 +244,17 @@ program rotorcraft_dynamics
      call stated(scenario(j), j == 1, L_h(j), estimates(j), rotors(j), masses(j), kss(j), omega_h)
   end do
 
+  ! the minimizer of every block: the march over the blocks, and the
+  ! minimizer of a block
+  M_h = discrete_minimizer(L_h(1), newton(elimination(dense_direct(equilibrated=trim(blade) /= 'rigid')), &
+       &                               tolerance=1.0e-13_dp, chord=.true.))
+  if (this_image() == 1) print '(a)', tree(M_h)
+
   ! each marched in turn; to optimize, the one design of them all
   if (optimizing) then
      if (this_image() == 1) print '(*(a))', 'the design of the rotor, ', trim(blade), ' blades, of the scenarios', &
           & (' ' // trim(scenario(j)), j = 1, ns)
-     call minimize_together(L_h(1:ns), estimates(1:ns), solutions(1:ns), continued=.true.)
+     call minimize_together(L_h(1:ns), estimates(1:ns), solutions(1:ns), continued=.true., by=M_h)
      do j = 1, ns
         call reported(scenario(j), ns == 1, rotors(j), masses(j), kss(j), solutions(j), 'optimized')
      end do
@@ -223,7 +262,7 @@ program rotorcraft_dynamics
      do j = 1, ns
         if (this_image() == 1) print '(a, a, a, a)', 'the march of the rotor, ', trim(blade), ' blades, ', &
              & trim(scenario(j))
-        call L_h(j) % minimize(estimates(j), solutions(j), continued=.true.)
+        call L_h(j) % minimize(estimates(j), solutions(j), continued=.true., by=M_h)
      end do
      do j = 1, ns
         call reported(scenario(j), ns == 1, rotors(j), masses(j), kss(j), solutions(j))
@@ -245,7 +284,7 @@ contains
 
     character(len=*)       , intent(in)  :: name
     logical                , intent(in)  :: first
-    type(discrete_residual), intent(out) :: L_h
+    type(discrete_lagrangian), intent(out) :: L_h
     type(discrete_field)   , intent(out) :: estimate
     type(mechanism)        , intent(out) :: rotor
     type(continuous_field) , intent(out) :: mass, ks
@@ -255,14 +294,16 @@ contains
     type(continuous_manifold) :: omega, domega, left
     type(continuous_field)    :: t, x, motion, h, adjoint, lambda, nu, kappa, mu_ks, mu_bounds, mu_smooth, bounded
     type(continuous_field), allocatable :: stresses(:), thicknesses(:), limits(:)
-    type(continuous_residual) :: r, g, b, d, L, stressed, within, smooth
+    type(continuous_lagrangian) :: r, g, b, d, L, stressed, within, smooth
     type(chain)               :: march
     type(body_table)          :: table
     type(rigid_body), allocatable :: part(:)
     type(rigid_body)          :: blades(4)
     type(beam_blade)          :: beams(4)
     real(dp)                  :: amplitude(3)
-    integer :: k, lower, upper, cap, rod
+    type(points)              :: instants
+    character(len=:), allocatable :: file
+    integer :: k, lower, upper, cap, rod, unit
     logical :: marched
 
     marched = .false.
@@ -278,10 +319,12 @@ contains
 
     ! the revolutions of the hub, a manifold of time alone; with the
     ! blades as beams, of time and of the span from the root to the tip
+    instants = points(num_instants)
+
     select case (trim(blade))
     case ('rigid')
        omega   = continuous_manifold(time=interval(0.0_dp, revolutions * 2.0_dp * pi / speed))
-       omega_h = omega % discretize(time=points(num_instants))
+       omega_h = omega % discretize(time=instants)
     case ('beam')
        if (strips > 0) then
           omega   = continuous_manifold(time=interval(0.0_dp, revolutions * 2.0_dp * pi / speed), &
@@ -290,16 +333,16 @@ contains
           ! the derivatives by the expansion of order one; to optimize, by
           ! the reverse sweeps alone, the hessian by its BFGS update
           if (sensitivities .and. .not. optimize) then
-             omega_h = omega % discretize(time=points(num_instants), space=points(span_points), &
+             omega_h = omega % discretize(time=instants, space=points(span_points), &
                   &                       design=expansion(order=1))
           else
-             omega_h = omega % discretize(time=points(num_instants), space=points(span_points), &
+             omega_h = omega % discretize(time=instants, space=points(span_points), &
                   &                       design=expansion(order=0))
           end if
        else
           omega   = continuous_manifold(time=interval(0.0_dp, revolutions * 2.0_dp * pi / speed), &
                &                        space=region(interval(0.0_dp, tip - root)))
-          omega_h = omega % discretize(time=points(num_instants), space=points(span_points))
+          omega_h = omega % discretize(time=instants, space=points(span_points))
        end if
        x       = omega % coordinate('x')
        left    = omega % boundary(x, 0.0_dp)
@@ -443,16 +486,16 @@ contains
     ! Mises function is at most ks_bound^2, the thickness of each strip
     ! within the bounds and adjacent strips within the smoothness, no
     ! condition fixing the thicknesses
-    r = continuous_residual(omega,  rotor % laws())
-    g = continuous_residual(domega, rotor % initial)
+    r = continuous_lagrangian(omega,  rotor % laws())
+    g = continuous_lagrangian(domega, rotor % initial)
     if (trim(blade) == 'rigid') then
        L   = r + g
        L_h = L % discretize(omega_h, time=march)
     else
-       b = continuous_residual(left, rotor % root)
+       b = continuous_lagrangian(left, rotor % root)
        if (strips > 0) then
           thicknesses = [(omega % coordinate(numbered('h', k)), k = 1, strips)]
-          d = continuous_residual(omega % design(), [(thicknesses(k) - thickness(k), k = 1, strips)])
+          d = continuous_lagrangian(omega % design(), [(thicknesses(k) - thickness(k), k = 1, strips)])
        end if
        if (strips > 0 .and. optimize .and. .not. marched) then
           allocate(limits(size(stresses)))
@@ -460,20 +503,20 @@ contains
              limits(k) = stresses(k) - ks_bound**2
           end do
           bounded  = maximum(continuous_field(omega, limits), over=omega, weight=ks_weight)
-          stressed = continuous_residual(omega % design(), [bounded], inequality=.true.)
+          stressed = continuous_lagrangian(omega % design(), [bounded], inequality=.true.)
           adjoint  = r % multiplier('adjoint')
           lambda   = g % multiplier('lambda')
           nu       = b % multiplier('nu')
           mu_ks    = stressed % multiplier('mu_ks')
           L = adjoint*r + lambda*g + nu*b + mu_ks*stressed
           if (first) then
-             within    = continuous_residual(omega % design(), [(bounds(1) - thicknesses(k), k = 1, strips), &
-                  &                                           (thicknesses(k) - bounds(2), k = 1, strips)], &
-                  &                          inequality=.true.)
-             smooth    = continuous_residual(omega % design(), [(thicknesses(k) - thicknesses(k + 1) - smoothness, &
-                  &                                            k = 1, strips - 1), (thicknesses(k + 1) &
-                  &                                            - thicknesses(k) - smoothness, k = 1, strips - 1)], &
-                  &                          inequality=.true.)
+             within    = continuous_lagrangian(omega % design(), [(bounds(1) - thicknesses(k), k = 1, strips), &
+                  &                                             (thicknesses(k) - bounds(2), k = 1, strips)], &
+                  &                            inequality=.true.)
+             smooth    = continuous_lagrangian(omega % design(), [(thicknesses(k) - thicknesses(k + 1) - smoothness, &
+                  &                                              k = 1, strips - 1), (thicknesses(k + 1) &
+                  &                                              - thicknesses(k) - smoothness, k = 1, strips - 1)], &
+                  &                            inequality=.true.)
              mu_bounds = within % multiplier('mu_bounds')
              mu_smooth = smooth % multiplier('mu_smooth')
              L = mass + L + mu_bounds*within + mu_smooth*smooth
@@ -490,6 +533,18 @@ contains
           L = r + g + b
        end if
        L_h = L % discretize(omega_h, time=march, space=finite_element(degree=3))
+    end if
+
+    ! THE LAGRANGIAN, with lagrangian: the objective and every law with
+    ! its multiplier where it is paired, one equation a line, written
+    ! by image 1 to rotor_lagrangian.txt, the scenario's name between
+    ! where several are listed
+    if (lagrangian .and. .not. marched .and. this_image() == 1) then
+       file = 'rotor_lagrangian'
+       if (ns > 1) file = file // '_' // trim(name)
+       open(newunit=unit, file=file // '.txt', status='replace', action='write')
+       write(unit, '(a)') formula(L)
+       close(unit)
     end if
 
     motion   = rotor % estimate(omega)

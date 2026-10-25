@@ -76,6 +76,7 @@ results follow the iterations.
 | `yield` | the yield stress | 350e6 |
 | `meshes` | the directory of the bodies' surface meshes; none, no drawing | none |
 | `every` | the stride of the instants drawn | 10 |
+| `lagrangian` | L of each scenario written as a formula, one equation a line, to `rotor_lagrangian.txt` | `.false.` |
 
 ## Setups, and how long they take
 

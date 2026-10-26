@@ -1,26 +1,31 @@
 #!/bin/bash
-# Build and run the program of the van der Pol oscillator, stated once
-# on [0, 2] x {nu}, every law r_l paired with its multiplier lambda_l,
-# and eight problems as Lagrangians of that statement: (a) the physics,
-# without J; (b) the adjoint and (c) the sensitivity, J added, that
-# Lagrangian printed; (d) the design, the pin of nu removed; (e) the
-# design on instants placed by the estimate of its error; (f) the
-# design to a tolerance; (g) J to a tolerance, the instants and each
-# step's family chosen together from a pool; (h) J at a work of
-# solves from the same pool. Two runs:
+# Build and run the oscillator to follow the energy question from
+# motion to sensitivity, design and the accuracy of the computation.
+# We state the motion on [0, 2] x {nu}, pairing each law r_l with its
+# multiplier lambda_l. Starting without J gives the physics (a).
+# Adding J gives the adjoint (b) and sensitivity (c); this Lagrangian
+# is printed. Removing the pin of nu lets us choose the design (d).
+# We then place instants by its estimated error (e), and choose their
+# count to meet a design tolerance (f). Returning to J, we choose
+# instants and families from a pool to meet an energy tolerance (g)
+# or to use a prescribed number of solves (h).
 #
-#   van_der_pol          eleven instants, order 1 along nu: u(2) =
-#                        0.2912 (0.3233 converged), nu = 1.5269 found,
-#                        and the estimate of the error of J at nu_0
-#                        and at the design found
-#   van_der_pol 21 2 0 3 21 instants, order 3: the derivatives of u(T)
-#                        and of J along nu to order 3, each of J by the
-#                        state and by the adjoint
+# The first run shows the motion and design with eleven instants and
+# order 1 along nu. Its recorded u(2) = 0.2912 (0.3233 converged),
+# and nu = 1.5269. It estimates the error of J both at nu_0 and at
+# the design found:
 #
-#     run.sh             on one process
-#     IMAGES=n run.sh    on n coarray images: the library and the
-#                        programs built with COARRAY=lib, each program
-#                        run by mpirun -np n (MPIRUN_FLAGS adds flags)
+#     van_der_pol
+#
+# The second run uses 21 instants and order 3 to obtain derivatives
+# of u(T) and J along nu through order 3. Comparing the derivatives
+# of J from the state and adjoint expansions audits the sensitivity:
+#
+#     van_der_pol 21 2 0 3
+#
+# Use run.sh for one process. With IMAGES=n, the library and programs
+# are built with COARRAY=lib and run by mpirun -np n on n coarray
+# images. MPIRUN_FLAGS supplies any additional launcher flags.
 set -e
 
 dir="$(cd "$(dirname "$0")" && pwd)"
@@ -33,8 +38,8 @@ if [ "$images" -eq 0 ]; then
     make -C "$dir" clean >/dev/null 2>&1 || true
     make -C "$dir" >/dev/null
 else
-    # the coarray library is rebuilt by the Makefile when a source of
-    # src is newer than it
+    # Let the Makefile rebuild the coarray library when a source in
+    # src is newer, so the program uses the current library.
     make -C "$dir" clean >/dev/null 2>&1 || true
     make -C "$dir" COARRAY=lib >/dev/null
 fi

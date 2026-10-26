@@ -1,16 +1,18 @@
 include ../../Makefile.in
 
 #=====================================================================#
-# THE VAN DER POL OSCILLATOR, stated once: the physics, the adjoint,
-# the sensitivity along the design and the design. src/ is the
-# mathematics and the computing; the program here states the fields,
-# the laws with their data, the objective and the Lagrangian, and
-# calls minimize.
-# -Wtarget-lifetime checks pointer target lifetimes at compile time.
+# Build the Van der Pol program with the mathematics and computation
+# supplied by src/. The program states the fields, required relations
+# and data, then the objective and Lagrangian. Calls to minimize use
+# that construction to determine motion, adjoints, sensitivities along
+# the design and the design itself.
+# Use -Wtarget-lifetime to check pointer target lifetimes at compile
+# time.
 #=====================================================================#
 
-# Ufvm (-I../../lib for the .mod files; lib_par for COARRAY=lib,
-# whose link line Makefile.in supplies)
+# Use the modules and library for the chosen build: ../../lib for
+# serial and lib_par for COARRAY=lib. Makefile.in supplies the coarray
+# link flags; -I selects the corresponding .mod files.
 LIB = ../../lib
 VARIANT = serial
 ifeq ($(COARRAY),lib)
@@ -33,10 +35,9 @@ clean:
 .SUFFIXES: .f90 .o
 .PHONY: all clean FORCE
 
-# an object depends on the library too: a rebuilt library may have
-# changed a module interface the program compiled against; and on
-# the build variant, so that a serial build after a coarray one (or
-# the reverse) recompiles rather than relinks the other's objects
+# Recompile when the library changes because its module interfaces
+# may have changed. Record the build variant as well, so switching
+# between serial and coarray builds also recompiles the objects.
 variant.stamp: FORCE
 	@if [ "$$(cat variant.stamp 2>/dev/null)" != "$(VARIANT)" ]; then echo $(VARIANT) > variant.stamp; fi
 
@@ -45,10 +46,9 @@ FORCE:
 %.o: %.f90 $(LIB)/libufvm.a variant.stamp
 	$(F90) $(F90FLAGS) -c $<
 
-# the library depends on the sources of src: a changed source
-# rebuilds and installs the library of this variant before the
-# programs compile against it (COARRAY is read from the environment
-# by src/Makefile through Makefile.in)
+# Rebuild and install this variant's library when its sources change,
+# before compiling the program against it. src/Makefile reads COARRAY
+# from the environment through Makefile.in.
 $(LIB)/libufvm.a: $(wildcard ../../src/*.f90) ../../src/OBJECTS
 	$(MAKE) -C ../../src clean
 	$(MAKE) -C ../../src

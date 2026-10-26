@@ -1,82 +1,92 @@
 !=====================================================================!
-! LEVEL 2 OF THE STRATIFICATION . THE FITTING FAMILY
+! Module that states level 2 of the stratification, the fitting
+! family.
 !
 ! Two abstractions, from the form-and-coefficients principle: an
-! expansion has a FORM - which functions are in the basis - and
-! COEFFICIENTS - the weights computed within that form. The two
-! change at different rates and belong to different types:
+! expansion has a form, which functions are in the basis, and
+! coefficients, the weights computed within that form. The two change
+! at different rates and belong to different types:
 !
 !      fit ·············· the coefficient sector, fast: given a form
-!                         and a set of positions, find the
-!                         weights that reproduce the target exactly
-!                         on the form's span. A fit is an OPERATION
-!                         on the point set, and its solve is a
-!                         minimization solved by the level's own
-!                         solver - never by an explicit formula.
+!                         and a set of positions, find the weights
+!                         that reproduce the target exactly on the
+!                         form's span. A fit is an operation on the
+!                         point set, and its solve is a minimization
+!                         solved by the level's own solver, never by
+!                         an explicit formula.
 !
-!      form_optimizer ··· the form sector, slow: it CONTROLS fits,
-!                         adjusting which basis members are active
-!                         - removing members the points cannot
-!                         resolve, adding members the residual
-!                         requires. A form change is a re-typing
-!                         event; the fit then operates within the
-!                         new form.
+!      form_optimizer ··· the form sector, slow: it controls fits,
+!                         adjusting which basis members are active,
+!                         removing members the points cannot resolve
+!                         and adding members the residual requires. A
+!                         form change is a re-typing event; the fit
+!                         then operates within the new form.
 !
-! The form is defined one level DOWN, as its own type: a fit STORES a
-! form as an operator stores coefficients. Polynomial or wave, the
-! fit is independent of the basis - it evaluates the form it was
-! given and computes the coefficients. One concrete fit; the
-! variation is defined on the form.
+! The form is defined one level down, as its own type: a fit stores a
+! form as an operator stores coefficients. Polynomial or wave, the fit
+! is independent of the basis: it evaluates the form it was given and
+! computes the coefficients. There is one concrete fit; the variation
+! is defined on the form.
 !
 !      B(m,j) = basis_m(x_j)        r(m) = scale * d(basis_m)/dn |at
-!      (B B^T) lambda = r           w = B^T lambda
+!      (B W B^T) lambda = r         w = W B^T lambda
+!
+! with W the diagonal of the point weights, the inverse squared
+! distances of the points from the target:
+!
+!            x_1     x_2
+!               \   /             the positions x_j around the target at,
+!       x_4 ---- at ---- x_3      each weighted 1 / max(|x_j - at|^2,
+!                                 the nearest such distance)
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 
 module operation_fitting
 
-  use util_precision  , only : dp, spacing_at_one
-  use operation_action, only : operation, contract
-  use operation_action, only : binding, bound_real_vector
-  use operation_action, only : emit
-  use view_directed, only : directed_graph
-  use field_calculus, only : field, FIELD_REAL
-  use graph_fractal      , only : graph
-  use field_forms        , only : form
-  use field_stored  , only : stored_field
-  use view_directed_stored, only : stored_directed_graph
-  use operation_stencil, only : stencil
+  use util_precision              , only : dp, spacing_at_one
+  use operation_action            , only : operation, contract
+  use operation_action            , only : binding, bound_real_vector
+  use operation_action            , only : emit
+  use view_directed               , only : directed_graph
+  use field_calculus              , only : field, FIELD_REAL
+  use graph_fractal               , only : graph
+  use field_forms                 , only : form
+  use field_stored                , only : stored_field
+  use view_directed_stored        , only : stored_directed_graph
+  use operation_stencil           , only : stencil
   use operation_conjugate_gradient, only : conjugate_gradient
 
   implicit none
 
   private
+
   public :: fit
   public :: form_optimizer
 
-  !===================================================================!
-  ! The fit: one concrete. The target is stored as components, the shape
-  ! is STORED - a level-1 form whose membership the form sector writes
-  ! and this fit respects: the form IS a support, and its members
-  ! specify which table entries are active.
-  !===================================================================!
+  !-------------------------------------------------------------------!
+  ! Type that models the fit, the one concrete. The target is stored
+  ! as components, and the shape is stored: a level-1 form whose
+  ! membership the form sector writes and this fit respects. The form
+  ! is a support, and its members specify which table entries are
+  ! active.
+  !-------------------------------------------------------------------!
 
   type, extends(operation) :: fit
 
      class(form), allocatable :: shape
 
      real(dp), allocatable :: at(:)
-     real(dp) :: direction(3) = [1.0_dp, 0.0_dp, 0.0_dp]
-     real(dp) :: scale        = 1.0_dp
-     ! the derivative multi-index the fit reads, in place of the
-     ! slope along the direction, when given
-     integer, allocatable :: orders(:)
+     real(dp)              :: direction(3) = [1.0_dp, 0.0_dp, 0.0_dp]
+     real(dp)              :: scale        = 1.0_dp
+     ! the derivative multi-index the fit reads, in place of the slope
+     ! along the direction, when given
+     integer, allocatable  :: orders(:)
 
    contains
 
-     procedure :: name   => fit_name
-     procedure :: apply  => fit_apply
+     procedure :: name    => fit_name
+     procedure :: apply   => fit_apply
      procedure :: weights => fit_weights
 
   end type fit
@@ -85,43 +95,47 @@ module operation_fitting
      module procedure create_fit
   end interface fit
 
-  !===================================================================!
-  ! The form optimizer: it stores no state of its own; it evaluates a
-  ! form on a point set and adjusts the member set.
-  !===================================================================!
+  !-------------------------------------------------------------------!
+  ! Type that models the form optimizer: it stores no state of its
+  ! own; it evaluates a form on a point set and adjusts the member set
+  !-------------------------------------------------------------------!
 
   type, abstract :: form_optimizer
 
    contains
 
+     ! Deferred procedures
      procedure(adapt_interface), deferred :: adapt
 
   end type form_optimizer
 
   abstract interface
 
+     !----------------------------------------------------------------!
+     ! Interface for adapting a form's member set to a point set
+     !----------------------------------------------------------------!
+
      subroutine adapt_interface(this, shape, positions)
        import :: form_optimizer, form, dp
-       class(form_optimizer), intent(in) :: this
-       class(form), intent(inout) :: shape
-       real(dp), intent(in) :: positions(:)
+       class(form_optimizer), intent(in)    :: this
+       class(form)          , intent(inout) :: shape
+       real(dp)             , intent(in)    :: positions(:)
      end subroutine adapt_interface
 
   end interface
 
-!=====================================================================!
-! The pruner: the form family's first concretion.
-!
-! The simplest form decision, made a type: a basis member the
-! points cannot resolve - one whose column of values vanishes on the
-! whole point set - is removed from the member set before any fit
-! runs. What was previously a pivot test inside a solve is now a
-! form change, owned by the sector that changes forms, at the lower
-! rate of form changes.
-!
-!=====================================================================!
-
   public :: pruner
+
+  !-------------------------------------------------------------------!
+  ! Type that models the pruner, the form family's first concretion.
+  !
+  ! The simplest form decision, made a type: a basis member the points
+  ! cannot resolve, one whose column of values vanishes on the whole
+  ! point set, is removed from the member set before any fit runs.
+  ! What was previously a pivot test inside a solve is now a form
+  ! change, owned by the sector that changes forms, at the lower rate
+  ! of form changes.
+  !-------------------------------------------------------------------!
 
   type, extends(form_optimizer) :: pruner
 
@@ -135,13 +149,19 @@ module operation_fitting
 
 contains
 
+  !===================================================================!
+  ! Creates a fit of a form at the target, along a direction, with a
+  ! scale and, when given, the multi-index of the derivative it reads
+  ! in place of the slope
+  !===================================================================!
+
   type(fit) function create_fit(shape, at, direction, scale, orders) result(this)
 
-    class(form), intent(in)        :: shape
-    real(dp), intent(in)           :: at(:)
-    real(dp), intent(in)           :: direction(3)
-    real(dp), intent(in), optional :: scale
-    integer , intent(in), optional :: orders(:)
+    class(form), intent(in)           :: shape
+    real(dp)   , intent(in)           :: at(:)
+    real(dp)   , intent(in)           :: direction(3)
+    real(dp)   , intent(in), optional :: scale
+    integer    , intent(in), optional :: orders(:)
 
     character(len=250) :: message
 
@@ -159,19 +179,23 @@ contains
        this % orders = orders
     end if
 
-    ! ONE ARGUMENT: THE FIELD THE FORM IS FITTED TO. Its entries are
+    ! One argument: the field the form is fitted to. Its entries are
     ! the points of the point set and its components are their
-    ! coordinates, so the count is the dimension of the space the
-    ! form spans and not one. A form over a line takes one component
-    ! and a form over a plane takes two, and stating one for both
-    ! rejects every fit above a line.
+    ! coordinates, so the count is the dimension of the space the form
+    ! spans and not one. A form over a line takes one component and a
+    ! form over a plane takes two, and stating one for both rejects
+    ! every fit above a line.
     call this % declare_arguments(1, [contract(FIELD_REAL, shape % dimension())])
 
   end function create_fit
 
+  !===================================================================!
+  ! Returns the name of the fit
+  !===================================================================!
+
   pure function fit_name(this) result(name)
 
-    class(fit), intent(in) :: this
+    class(fit)      , intent(in)  :: this
     character(len=:), allocatable :: name
 
     name = 'fit over ' // merge('a stored form', 'no form yet  ', &
@@ -180,20 +204,21 @@ contains
   end function fit_name
 
   !===================================================================!
-  ! The weights of the fit on the points pts, size(this % at)
-  ! coordinates per point: one weight per point.
+  ! Returns the weights of the fit on the points pts, size(this % at)
+  ! coordinates per point: one weight per point
   !===================================================================!
 
   function fit_weights(this, pts) result(w)
 
     class(fit), intent(in) :: this
     real(dp)  , intent(in) :: pts(:)
-    real(dp), allocatable :: w(:)
+    real(dp), allocatable  :: w(:)
 
     type(stored_directed_graph) :: constellation
-    type(stored_field) :: positions
-    class(field), allocatable :: fitted
+    type(stored_field)          :: positions
+    class(field), allocatable   :: fitted
 
+    ! The points as the vertices of a graph without edges
     constellation = stored_directed_graph(size(pts) / size(this % at), tails=[integer ::], heads=[integer ::])
     positions = stored_field('positions', constellation % vertex_set(), constellation % num_vertices(), &
          & num_components=size(this % at))
@@ -202,29 +227,31 @@ contains
     call fitted % real_vector(w)
 
   end function fit_weights
+
   !===================================================================!
-  ! Positions in, weights out. The conditions respect the member set;
-  ! the dual is passed to the level's own solver.
+  ! Applies the fit: positions in, weights out. The conditions respect
+  ! the member set, and the dual (B W B^T) lambda = r is passed to the
+  ! level's own solver, the conjugate gradient iteration.
   !===================================================================!
 
   subroutine fit_apply(this, input_graph, inputs, output)
 
-    class(fit), intent(in)                         :: this
-    class(directed_graph), intent(in)                       :: input_graph
-    type(binding), intent(in), optional       :: inputs(:)
-    class(field), allocatable, intent(inout) :: output
+    class(fit)               , intent(in)           :: this
+    class(directed_graph)    , intent(in)           :: input_graph
+    type(binding)            , intent(in), optional :: inputs(:)
+    class(field), allocatable, intent(inout)        :: output
 
-    type(stored_field)   :: out
-    type(stencil) :: dual
+    type(stored_field)       :: out
+    type(stencil)            :: dual
     type(conjugate_gradient) :: solver
-    real(dp), allocatable :: positions(:), w(:), b(:,:), bw(:,:)
-    real(dp), allocatable :: g(:,:), r(:), lam(:), point_weight(:)
-    integer , allocatable :: member_list(:), axis(:)
-    real(dp), allocatable :: first(:)
-    logical , allocatable :: active(:)
-    real(dp) :: achieved, d2, nearest
-    integer :: npts, nc, i, j, d
-    character(len=250) :: message
+    real(dp), allocatable    :: positions(:), w(:), b(:,:), bw(:,:)
+    real(dp), allocatable    :: g(:,:), r(:), lam(:), point_weight(:)
+    integer , allocatable    :: member_list(:), axis(:)
+    real(dp), allocatable    :: first(:)
+    logical , allocatable    :: active(:)
+    real(dp)                 :: achieved, d2, nearest
+    integer                  :: npts, nc, i, j, d
+    character(len=250)       :: message
 
     npts = input_graph % num_vertices()
 
@@ -247,7 +274,7 @@ contains
 
        ! The distance weight: a point's weight is the inverse of its
        ! squared distance from the target; the target's own point, when
-       ! it is a member, is weighted as the nearest neighbour.
+       ! it is a member, is weighted as the nearest neighbour
        allocate(point_weight(npts))
        nearest = huge(1.0_dp)
        do j = 1, npts
@@ -261,10 +288,12 @@ contains
           point_weight(j) = 1.0_dp / max(point_weight(j), nearest)
        end do
 
+       ! The right side: the derivative given, or the slope along the
+       ! direction
        if (allocated(this % orders)) then
           call this % shape % derivatives(this % at, this % at, this % orders, r)
        else
-          ! the slope along the direction: the first derivative along
+          ! The slope along the direction: the first derivative along
           ! each coordinate times the direction's component
           r = 0.0_dp
           allocate(axis(d), first(nc))
@@ -278,7 +307,7 @@ contains
        r = this % scale * r
 
        ! Membership is the member set: a table entry outside the form's
-       ! member set contributes no condition and no right-hand side.
+       ! member set contributes no condition and no right-hand side
        call this % shape % members(member_list)
        allocate(active(nc))
        active = .false.
@@ -294,6 +323,7 @@ contains
           end if
        end do
 
+       ! The dual, B W B^T, the identity on the inactive members
        allocate(bw(nc, npts))
        do j = 1, npts
           bw(:, j) = b(:, j) * point_weight(j)
@@ -313,6 +343,7 @@ contains
        lam = 0.0_dp
        call solver % solve(r, lam, achieved)
 
+       ! The weights, w = W B^T lambda
        do j = 1, npts
           w(j) = 0.0_dp
           do i = 1, nc
@@ -330,29 +361,34 @@ contains
 
   end subroutine fit_apply
 
-
   !===================================================================!
-  ! Remove the members the points cannot resolve. The constant member
-  ! is always retained: its value is nonzero at every point.
+  ! Removes the members the points cannot resolve: those whose column
+  ! of values on the points has a squared norm at or below the
+  ! threshold times the largest. The constant member is always
+  ! retained: its value is nonzero at every point.
+  !
+  !   member            1      x      y      x^2     ...
+  !   column norm     |#####| |###|  |   |   |##|          y removed:
+  !                                  ^ at or below the threshold
   !===================================================================!
 
   subroutine adapt(this, shape, positions)
 
-    class(pruner), intent(in) :: this
-    class(form), intent(inout) :: shape
-    real(dp), intent(in) :: positions(:)
+    class(pruner), intent(in)    :: this
+    class(form)  , intent(inout) :: shape
+    real(dp)     , intent(in)    :: positions(:)
 
     real(dp), allocatable :: phi(:), column_norm(:), centroid(:)
-    integer :: nc, npts, j, m, d
+    integer               :: nc, npts, j, m, d
 
     d    = shape % dimension()
     nc   = shape % num_members()
     npts = size(positions) / d
     allocate(centroid(d))
 
-    ! The members are evaluated about the point set's centroid, so the
-    ! members the points cannot resolve do not depend on the point
-    ! set's position.
+    ! The members are evaluated about the point set's centroid, so that
+    ! the members the points cannot resolve do not depend on the point
+    ! set's position
     centroid = 0.0_dp
     do j = 1, npts
        centroid = centroid + positions(d * (j - 1) + 1 : d * j)
@@ -371,11 +407,10 @@ contains
 
     ! Membership is the member set: the pruned form is restricted to
     ! the retained table entries. A set needs no second list to specify
-    ! its members, and the form sets its own - this procedure decides
-    ! the members and does not write them directly.
+    ! its members, and the form sets its own; this procedure decides the
+    ! members and does not write them directly.
     call shape % restrict(pack([(m, m = 1, nc)], column_norm > this % threshold * maxval(column_norm)))
 
   end subroutine adapt
-
 
 end module operation_fitting

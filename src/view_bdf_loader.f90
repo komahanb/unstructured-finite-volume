@@ -1,19 +1,35 @@
 !=====================================================================!
-! THE SURFACE OF A NASTRAN BULK DATA FILE, for drawing: the points of
-! its GRID cards, of short fields or of long ones (GRID*, the third
-! coordinate on the continuation line), and the corners of its
-! quadrangles and triangles (CQUAD4, CQUAD8, CQUAD9, CTRIA3, CTRIA6),
-! the corners first on each card. Each cell is drawn by its corners;
-! a point no corner names is dropped and the points are renumbered in
-! the order read. Any other card is passed over.
+! Module that reads the surface of a Nastran bulk data file, for
+! drawing: the points of its GRID cards, of short fields or of long
+! ones (GRID*, the third coordinate on the continuation line), and the
+! corners of its quadrangles and triangles (CQUAD4, CQUAD8, CQUAD9,
+! CTRIA3, CTRIA6), the corners first on each card:
+!
+!   short fields, 8 columns each
+!   |GRID    |ID      |CP      |X1      |X2      |X3      |
+!    1        9        17       25       33       41       49
+!
+!   long fields, 16 columns each, X3 on the continuation line
+!   |GRID*   |ID              |CP              |X1              |X2              |
+!    1        9                25               41               57               73
+!   |*       |X3              |
+!    1        9                25
+!
+!   a cell's corners, from the fourth field
+!   |CQUAD4  |EID     |PID     |G1      |G2      |G3      |G4      |
+!    1        9        17       25       33       41       49       57
+!
+! Each cell is drawn by its corners. A point no corner names is
+! dropped, and the points are renumbered in the order the cells'
+! corners first name them. Any other card is passed over.
 !
 !      call bdf_surface('hub4b.bdf', points, corners, count, kinds)
 !
-! points(:, p) the three coordinates of point p; corners(:, c) the
-! points of cell c, padded to four; count(c) its corners; kinds(c) its
-! gmsh element number, 3 the quadrangle and 2 the triangle. A number
-! in the short fields may omit the exponent's letter, 1.5-3 for
-! 1.5e-3, as Nastran admits.
+! points(:, p) stores the three coordinates of point p; corners(:, c)
+! the points of cell c, padded to four; count(c) its number of
+! corners; kinds(c) its gmsh element number, 3 the quadrangle and 2
+! the triangle. A number in the short fields may omit the exponent's
+! letter, 1.5-3 for 1.5e-3, as Nastran admits.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -25,9 +41,21 @@ module view_bdf_loader
   implicit none
 
   private
+
   public :: bdf_surface
 
 contains
+
+  !===================================================================!
+  ! Reads the points and the cells of a bulk data file, and renumbers
+  ! the points the cells name:
+  !
+  !   ids read          101   102   205   300
+  !   place(id)          -1    -2    -3    -4    minus the read position
+  !   cells name        205, 101, 102
+  !   place(id)           2     3     1    -4    the order first named;
+  !                                              300 is dropped
+  !===================================================================!
 
   subroutine bdf_surface(file, points, corners, count, kinds)
 
@@ -35,11 +63,12 @@ contains
     real(dp), allocatable, intent(out) :: points(:,:)
     integer , allocatable, intent(out) :: corners(:,:), count(:), kinds(:)
 
-    character(len=128) :: line, next
+    character(len=128)    :: line, next
     real(dp), allocatable :: read_points(:,:)
     integer , allocatable :: ids(:), cells(:,:), cell_count(:), cell_kind(:), place(:)
-    integer :: unit, status, np, nc, id, c, k, n
+    integer               :: unit, status, np, nc, id, c, k, n
 
+    ! The cards, read into arrays that double as they fill
     allocate(read_points(3, 1024), ids(1024), cells(4, 1024), cell_count(1024), cell_kind(1024))
     np = 0
     nc = 0
@@ -85,7 +114,8 @@ contains
     end do
     close(unit)
 
-    ! the points the corners name, renumbered in the order read
+    ! The points the corners name, renumbered in the order they are
+    ! first named
     allocate(place(minval(ids(1:np)):maxval(ids(1:np))), source=0)
     do k = 1, np
        place(ids(k)) = -k
@@ -119,6 +149,7 @@ contains
 
   contains
 
+    ! The points' arrays doubled when full
     subroutine grow_points()
       real(dp), allocatable :: p(:,:)
       integer , allocatable :: i(:)
@@ -130,6 +161,7 @@ contains
       call move_alloc(i, ids)
     end subroutine grow_points
 
+    ! The cells' arrays doubled when full
     subroutine grow_cells()
       integer, allocatable :: q(:,:), m(:), t(:)
       if (nc < size(cell_count)) return
@@ -144,14 +176,20 @@ contains
 
   end subroutine bdf_surface
 
-  ! a number of a field, its exponent's letter supplied where Nastran
-  ! omits it: a sign after the first digit begins the exponent
+  !===================================================================!
+  ! Returns the number in a field, its exponent's letter supplied where
+  ! Nastran omits it: a sign after the first digit begins the exponent,
+  !
+  !   '1.5-3'   ->  '1.5e-3'
+  !   '-2.+4'   ->  '-2.e+4'
+  !===================================================================!
+
   real(dp) function number(field)
 
     character(len=*), intent(in) :: field
 
     character(len=len(field) + 1) :: text
-    integer :: k, first
+    integer                       :: k, first
 
     text  = adjustl(field)
     first = 1

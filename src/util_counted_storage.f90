@@ -1,5 +1,5 @@
 !=====================================================================!
-! Counted ownership of immutable storage.
+! Module that states counted ownership of immutable storage.
 !
 ! A storage cell S records its version and the set B(S) of live
 ! bindings, one serial per owner. A counted reference r is bound to S
@@ -7,21 +7,31 @@
 ! B(S); it is released by finalization or by being assigned over,
 ! which removes its serial. The contents of S are cleared when B(S)
 ! becomes empty. The cell object itself is retained and recycled: a
-! reference whose binding is stale addresses a cell that still
-! exists, the versions differ, and the reference reports that it is
-! not live instead of reading released storage.
+! reference whose binding is stale addresses a cell that still exists,
+! the versions differ, and the reference reports that it is not live
+! instead of reading released storage:
+!
+!   cell S, version 5, B(S) = { 11, 12 }
+!      ^              ^
+!      |              |
+!   r1: (5, 11)    r2: (5, 12)          two owners, both live
+!
+!   r1 released     B(S) = { 12 }
+!   r2 released     B(S) = { }          S cleared, version 0, onto
+!                                       the free list
+!   a copy (5, 12)  5 /= 0              not live: refused
 !
 ! Release is idempotent in the serial. gfortran 15 assigns a
-! containing object by finalizing the destination component in
-! place, then calling the component's defined assignment on a
-! temporary that still contains the destination's former bytes: the
-! finalizer removes the serial, and the later release of the
-! temporary finds nothing to remove.
+! containing object by finalizing the destination component in place,
+! then calling the component's defined assignment on a temporary that
+! still contains the destination's former bytes: the finalizer removes
+! the serial, and the later release of the temporary finds nothing to
+! remove.
 !
 ! Owners are the references bound through acquire or through defined
 ! assignment: intrinsic assignment of the reference or of any object
 ! containing it, function results, arrays, move_alloc. Fortran also
-! copies a value bitwise without defined assignment under
+! copies a value bitwise without defined assignment, under
 ! allocate(source=variable), structure constructors, polymorphic
 ! intrinsic assignment and array constructors of containing objects;
 ! gfortran 15 finalizes some of those copies. Such a copy is not an
@@ -39,6 +49,8 @@
 ! re-entrant; the cleared cell joins the free list in a second entry.
 ! Reads by an owner (live, num_owners, storage) take no lock: no other
 ! thread can clear a cell on which this thread has a live binding.
+!
+! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 
 module util_counted_storage
@@ -49,69 +61,82 @@ module util_counted_storage
 
   public :: counted_storage, counted_reference
 
-  !===================================================================!
-  ! The cell: a version, the live binding serials, and deferred
-  ! clearing of the owner's own contents.
-  !===================================================================!
+  !-------------------------------------------------------------------!
+  ! Type that models the cell: a version, the live binding serials,
+  ! and the deferred clearing of the owner's own contents
+  !-------------------------------------------------------------------!
 
   type, abstract :: counted_storage
-     integer, private :: version = 0
-     integer, private :: num_owners = 0
+     integer, private              :: version = 0
+     integer, private              :: num_owners = 0
      integer, allocatable, private :: bindings(:)
    contains
      procedure(clear_interface), deferred :: clear
   end type counted_storage
 
   abstract interface
+
+     !----------------------------------------------------------------!
+     ! Interface for clearing the owner's contents of a cell
+     !----------------------------------------------------------------!
+
      subroutine clear_interface(this)
        import counted_storage
        class(counted_storage), intent(inout) :: this
      end subroutine clear_interface
+
   end interface
+
+  !-------------------------------------------------------------------!
+  ! Type that models a link of the free list of released cells,
+  !
+  !   released_cells --> [ cell ] --> [ cell ] --> ... --> null
+  !-------------------------------------------------------------------!
 
   type :: cell_link
      class(counted_storage), pointer :: cell => null()
-     type(cell_link), pointer :: next => null()
+     type(cell_link)       , pointer :: next => null()
   end type cell_link
 
-  !===================================================================!
-  ! The reference: a cell, the version it was bound to, and the
-  ! serial of its own binding.
-  !===================================================================!
+  !-------------------------------------------------------------------!
+  ! Type that models the reference: a cell, the version it was bound
+  ! to, and the serial of its own binding
+  !-------------------------------------------------------------------!
 
   type :: counted_reference
      class(counted_storage), pointer, private :: cell => null()
-     integer, private :: version = 0
-     integer, private :: binding = 0
+     integer                        , private :: version = 0
+     integer                        , private :: binding = 0
    contains
-     procedure :: acquire
-     procedure :: live
-     procedure :: released
-     procedure :: num_owners
-     procedure :: storage
+     procedure          :: acquire
+     procedure          :: live
+     procedure          :: released
+     procedure          :: num_owners
+     procedure          :: storage
      procedure, private :: assign
-     generic :: assignment(=) => assign
-     final :: release
+     generic            :: assignment(=) => assign
+     final              :: release
   end type counted_reference
 
+  ! The registry: the free list, and the version and binding serials
   type(cell_link), pointer :: released_cells => null()
-  integer :: last_version = 0
-  integer :: last_binding = 0
+  integer                  :: last_version = 0
+  integer                  :: last_binding = 0
 
 contains
 
   !===================================================================!
-  ! Bind this reference to a new cell of the template's dynamic
-  ! type, as its one owner. A released cell of that type is reused;
+  ! Binds this reference to a new cell of the template's dynamic type,
+  ! as its one owner. A released cell of that type is reused;
   ! otherwise one is allocated. Any previous binding is released.
   !===================================================================!
 
   subroutine acquire(this, template)
 
     class(counted_reference), intent(inout) :: this
-    class(counted_storage) , intent(in)    :: template
+    class(counted_storage)  , intent(in)    :: template
 
-    type(cell_link), pointer :: link, previous
+    type(cell_link), pointer        :: link, previous
     class(counted_storage), pointer :: cleared
 
     !$omp critical(counted_storage_registry)
@@ -120,6 +145,7 @@ contains
     call recycle(cleared)
 
     !$omp critical(counted_storage_registry)
+    ! The first released cell of the template's type, unlinked
     previous => null()
     link => released_cells
     do while (associated(link))
@@ -140,6 +166,7 @@ contains
        allocate(this % cell, mold=template)
     end if
 
+    ! A new version, and this reference its one owner
     last_version = last_version + 1
     this % version = last_version
     this % cell % version = last_version
@@ -150,14 +177,17 @@ contains
 
   end subroutine acquire
 
-  ! Register one more owner on a live cell and return its serial.
+  !===================================================================!
+  ! Registers one more owner on a live cell and returns its serial.
   ! Called inside the registry's critical region.
+  !===================================================================!
+
   integer function new_binding(cell) result(binding)
 
     class(counted_storage), intent(inout) :: cell
 
     integer, allocatable :: larger(:)
-    character(len=250) :: message
+    character(len=250)   :: message
 
     if (cell % num_owners == size(cell % bindings)) then
        if (cell % num_owners > huge(cell % num_owners) / 2) then
@@ -176,6 +206,11 @@ contains
 
   end function new_binding
 
+  !===================================================================!
+  ! Returns whether the reference is live: bound, and its version the
+  ! cell's
+  !===================================================================!
+
   pure logical function live(this)
 
     class(counted_reference), intent(in) :: this
@@ -185,10 +220,13 @@ contains
 
   end function live
 
-  ! Bound once and no longer live: the cell was cleared by its last
-  ! owner, or this value is a bitwise copy whose twin released the
-  ! binding. A default reference has never been bound and is not
-  ! released.
+  !===================================================================!
+  ! Returns whether the reference was bound once and is no longer
+  ! live: the cell was cleared by its last owner, or this value is a
+  ! bitwise copy whose twin released the binding. A default reference
+  ! has never been bound and is not released.
+  !===================================================================!
+
   pure logical function released(this)
 
     class(counted_reference), intent(in) :: this
@@ -197,7 +235,11 @@ contains
 
   end function released
 
-  ! Zero for a reference that is not live.
+  !===================================================================!
+  ! Returns the number of the cell's owners, zero for a reference that
+  ! is not live
+  !===================================================================!
+
   pure integer function num_owners(this)
 
     class(counted_reference), intent(in) :: this
@@ -207,12 +249,16 @@ contains
 
   end function num_owners
 
-  ! The owner fills and reads the cell through this pointer; the
-  ! reference does not interpret its contents.
+  !===================================================================!
+  ! Returns the cell, null for a reference that is not live. The owner
+  ! fills and reads the cell through this pointer; the reference does
+  ! not interpret its contents.
+  !===================================================================!
+
   function storage(this) result(cell)
 
     class(counted_reference), intent(in) :: this
-    class(counted_storage), pointer :: cell
+    class(counted_storage)  , pointer    :: cell
 
     cell => null()
     if (live(this)) cell => this % cell
@@ -220,12 +266,12 @@ contains
   end function storage
 
   !===================================================================!
-  ! Defined assignment: the destination joins the owners of the
-  ! source's cell with a serial of its own, after leaving its own
-  ! cell. Elemental, so that arrays and containing objects of any
-  ! rank assign through it. The source is read before the
-  ! destination is released, so assigning a value to itself or to
-  ! another owner of the same cell keeps the cell live.
+  ! Assigns a reference, the defined assignment: the destination joins
+  ! the owners of the source's cell with a serial of its own, after
+  ! leaving its own cell. Elemental, so that arrays and containing
+  ! objects of any rank assign through it. The source is read before
+  ! the destination is released, so that assigning a value to itself
+  ! or to another owner of the same cell keeps the cell live.
   !===================================================================!
 
   impure elemental subroutine assign(lhs, rhs)
@@ -240,16 +286,19 @@ contains
 
   end subroutine assign
 
+  !===================================================================!
   ! The registry part of assignment: one more binding on the source's
-  ! cell, then the destination's own binding removed.
+  ! cell, then the destination's own binding removed
+  !===================================================================!
+
   subroutine bind_over(lhs, rhs, cleared)
 
-    class(counted_reference), intent(inout) :: lhs
-    type(counted_reference) , intent(in)    :: rhs
-    class(counted_storage), pointer, intent(out) :: cleared
+    class(counted_reference)       , intent(inout) :: lhs
+    type(counted_reference)        , intent(in)    :: rhs
+    class(counted_storage), pointer, intent(out)   :: cleared
 
     class(counted_storage), pointer :: cell
-    integer :: version, binding
+    integer                         :: version, binding
 
     !$omp critical(counted_storage_registry)
     cell => null()
@@ -269,10 +318,10 @@ contains
   end subroutine bind_over
 
   !===================================================================!
-  ! Finalization: remove this binding's serial; the last owner clears
-  ! the cell and retains it for reuse. A reference whose serial is
-  ! not registered, because it was already released or because it is
-  ! a bitwise copy of a released owner, changes nothing.
+  ! Finalizes a reference: removes this binding's serial, and the last
+  ! owner clears the cell and retains it for reuse. A reference whose
+  ! serial is not registered, because it was already released or
+  ! because it is a bitwise copy of a released owner, changes nothing.
   !===================================================================!
 
   impure elemental subroutine release(this)
@@ -286,10 +335,15 @@ contains
 
   end subroutine release
 
+  !===================================================================!
+  ! Removes this reference's binding inside the registry's critical
+  ! region
+  !===================================================================!
+
   subroutine release_binding(this, cleared)
 
-    type(counted_reference), intent(inout) :: this
-    class(counted_storage), pointer, intent(out) :: cleared
+    type(counted_reference)        , intent(inout) :: this
+    class(counted_storage), pointer, intent(out)   :: cleared
 
     !$omp critical(counted_storage_registry)
     call remove_binding(this, cleared)
@@ -297,15 +351,21 @@ contains
 
   end subroutine release_binding
 
-  ! Remove this reference's serial from its cell and unbind the
+  !===================================================================!
+  ! Removes this reference's serial from its cell and unbinds the
   ! reference. When the serial was the last one the cell's version
-  ! becomes zero, so no reference is live on it, and the cell is
+  ! becomes zero, so that no reference is live on it, and the cell is
   ! returned for clearing; otherwise null. Called inside the
   ! registry's critical region.
+  !
+  !   bindings   [ 11  12  13 ]     remove 11: the last moves into
+  !   bindings   [ 13  12 ]         its place
+  !===================================================================!
+
   subroutine remove_binding(this, cleared)
 
-    type(counted_reference), intent(inout) :: this
-    class(counted_storage), pointer, intent(out) :: cleared
+    type(counted_reference)        , intent(inout) :: this
+    class(counted_storage), pointer, intent(out)   :: cleared
 
     integer :: k, n
 
@@ -330,8 +390,11 @@ contains
 
   end subroutine remove_binding
 
-  ! Clear a cell that has no owner and place it on the free list. The
+  !===================================================================!
+  ! Clears a cell that has no owner and places it on the free list. The
   ! owner's clear runs outside the registry's critical region.
+  !===================================================================!
+
   subroutine recycle(cell)
 
     class(counted_storage), pointer, intent(in) :: cell

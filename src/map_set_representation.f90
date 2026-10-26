@@ -1,8 +1,7 @@
 !=====================================================================!
-! SET REPRESENTATION
-!
-! How a finite set's members are stored and enumerated HERE. Three
-! primitive operations, and nothing else:
+! Module that states the set representation: how a finite set's
+! members are stored and enumerated here. Three primitive operations,
+! and nothing else:
 !
 !     num_members    how many
 !     member(k)      the member at position k
@@ -13,9 +12,14 @@
 !     member(local_index(v)) = v      for every member v
 !     local_index(member(k)) = k      for k = 1 .. num_members
 !
-! which force enumeration to be injective: a representation lists each
-! member once. Two further operations are consequences of those laws
-! and are implemented once, on the abstract type, for every concretion:
+!         position k                      member v
+!      1  2  3  ...  n    -- member -->   values of the set
+!                         <- local_index --
+!
+! which force the enumeration to be injective: a representation lists
+! each member once. Two further operations are consequences of those
+! laws and are implemented once, on the abstract type, for every
+! concretion:
 !
 !     has(v)    = (local_index(v) /= 0)
 !     members   = [ member(k), k = 1 .. num_members ]
@@ -23,34 +27,30 @@
 ! A concretion that overrides either must return the same; in
 ! particular a non-member's local_index is 0 and no other sentinel.
 !
-!                       NO SEMANTIC IDENTITY
+! No semantic identity. A representation stores no token, no declare,
+! no id, no same_as and no name. Which set it describes is not the
+! representation's concern: that is determined by a type(graph), and
+! by nothing else. Two representations with equal extensions are
+! interchangeable descriptions; two graphs with equal extensions are
+! two sets. This is the whole of the split: identity above, storage
+! here.
 !
-! A representation stores NO token, NO declare, NO id, NO same_as and
-! NO name. WHICH set this describes is not the representation's
-! concern - that is determined by a type(graph), and by nothing else.
-! Two representations
-! with equal extensions are interchangeable descriptions; two graphs
-! with equal extensions are two sets.
-!
-! This is the whole of the split: identity above, storage here.
-!
-!                        SCALE, AND WHY
+! Scale, and why:
 !
 !     |G|                    = O(N_semantic)
 !     |representation|       = O(N_extent)
 !
 ! A bulk extension must not require O(N_extent) semantic graph objects
-! merely in order to exist. A counted representation of 10^9 members is
-! one integer; a million-node semantic task graph may validly
-! contain 10^6 graphs. Semantic complexity and extensional
-! cardinality are different quantities.
+! merely in order to exist. A counted representation of 10^9 members
+! is one integer; a million-node semantic task graph may validly
+! contain 10^6 graphs. Semantic complexity and extensional cardinality
+! are different quantities.
 !
-!                     THE NAMESPACE CONVENTION
-!
-! Fortran forbids a module and its type sharing one name. The
-! convention, recorded once and applied throughout: the MODULE has
-! the systematic name graph_<noun>_<role>; the TYPES inside omit the
-! graph_ prefix. map_set/set_map is the precedent.
+! The namespace convention. Fortran forbids a module and its type
+! sharing one name. The convention, recorded once and applied
+! throughout: the module has the systematic name graph_<noun>_<role>;
+! the types inside omit the graph_ prefix. map_set/set_map is the
+! precedent.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -60,22 +60,25 @@ module map_set_representation
   implicit none
 
   private
+
   public :: set_representation
   public :: counted_set_representation, listed_set_representation
 
-  !===================================================================!
-  ! The contract: the three primitives deferred, the two theorems
-  ! concrete, identity nowhere.
-  !===================================================================!
+  !-------------------------------------------------------------------!
+  ! Type that models the contract: the three primitives deferred, the
+  ! two theorems concrete, identity nowhere
+  !-------------------------------------------------------------------!
 
   type, abstract :: set_representation
 
    contains
 
+     ! Deferred procedures
      procedure(representation_num_members_interface), deferred :: num_members
      procedure(representation_member_interface)     , deferred :: member
      procedure(representation_local_index_interface), deferred :: local_index
 
+     ! Provided procedures
      procedure :: members => representation_members
      procedure :: has     => representation_has
 
@@ -83,16 +86,28 @@ module map_set_representation
 
   abstract interface
 
+     !----------------------------------------------------------------!
+     ! Interface for the number of members
+     !----------------------------------------------------------------!
+
      pure integer function representation_num_members_interface(this)
        import set_representation
        class(set_representation), intent(in) :: this
      end function representation_num_members_interface
+
+     !----------------------------------------------------------------!
+     ! Interface for the member at a position
+     !----------------------------------------------------------------!
 
      pure integer function representation_member_interface(this, position)
        import set_representation
        class(set_representation), intent(in) :: this
        integer                  , intent(in) :: position
      end function representation_member_interface
+
+     !----------------------------------------------------------------!
+     ! Interface for the position of a value, 0 for a non-member
+     !----------------------------------------------------------------!
 
      pure integer function representation_local_index_interface(this, value)
        import set_representation
@@ -102,10 +117,11 @@ module map_set_representation
 
   end interface
 
-  !===================================================================!
-  ! The counted representation: members 1..n, stored as n. O(1),
-  ! whatever n is: every primitive is a comparison or an identity.
-  !===================================================================!
+  !-------------------------------------------------------------------!
+  ! Type that models the counted representation: members 1..n, stored
+  ! as n. O(1), whatever n is: every primitive is a comparison or an
+  ! identity.
+  !-------------------------------------------------------------------!
 
   type, extends(set_representation) :: counted_set_representation
 
@@ -123,14 +139,21 @@ module map_set_representation
      module procedure create_counted
   end interface counted_set_representation
 
-  !===================================================================!
-  ! The listed representation: an explicit array of member values, in
-  ! declaration order. The representation describes a set with or
-  ! without any declared ambient - the embedding is not stored here.
-  ! A sorted permutation indexes that same array: construction takes
-  ! O(n log n), membership O(log n), and enumeration retains the first
-  ! occurrence of every value. Storage is two integers per member.
-  !===================================================================!
+  !-------------------------------------------------------------------!
+  ! Type that models the listed representation: an explicit array of
+  ! member values, in declaration order. The representation describes
+  ! a set with or without any declared ambient; the embedding is not
+  ! stored here. A sorted permutation indexes that same array:
+  ! construction takes O(n log n), membership O(log n), and the
+  ! enumeration retains the first occurrence of every value. Storage is
+  ! two integers per member:
+  !
+  !   values given   [ 7, 3, 7, 5 ]
+  !   listed         [ 7, 3, 5 ]      first occurrences, declaration order
+  !   inverse        [ 2, 3, 1 ]      positions in listed, by increasing value:
+  !                                   listed(2) = 3 < listed(3) = 5 < listed(1) = 7
+  !   local_index(5)                  a binary search over inverse: 3
+  !-------------------------------------------------------------------!
 
   type, extends(set_representation) :: listed_set_representation
 
@@ -152,8 +175,8 @@ module map_set_representation
 contains
 
   !===================================================================!
-  ! The two theorems, for every concretion: membership is a nonzero
-  ! position, and the members are the enumeration.
+  ! Returns whether a value is a member: a nonzero position, for every
+  ! concretion
   !===================================================================!
 
   pure logical function representation_has(this, value)
@@ -164,6 +187,10 @@ contains
     representation_has = this % local_index(value) /= 0
 
   end function representation_has
+
+  !===================================================================!
+  ! Returns the members: the enumeration, for every concretion
+  !===================================================================!
 
   pure subroutine representation_members(this, values)
 
@@ -177,7 +204,8 @@ contains
   end subroutine representation_members
 
   !===================================================================!
-  ! Counted: n, clamped at zero. The empty set is a set.
+  ! Creates the counted representation of n members, n clamped at
+  ! zero: the empty set is a set
   !===================================================================!
 
   pure type(counted_set_representation) function create_counted(n) &
@@ -189,6 +217,10 @@ contains
 
   end function create_counted
 
+  !===================================================================!
+  ! Returns n, the number of counted members
+  !===================================================================!
+
   pure integer function counted_num_members(this)
 
     class(counted_set_representation), intent(in) :: this
@@ -196,6 +228,10 @@ contains
     counted_num_members = this % n
 
   end function counted_num_members
+
+  !===================================================================!
+  ! Returns the counted member at a position, the position itself
+  !===================================================================!
 
   pure integer function counted_member(this, position)
 
@@ -205,6 +241,10 @@ contains
     counted_member = position
 
   end function counted_member
+
+  !===================================================================!
+  ! Returns the position of a value among 1..n, or 0
+  !===================================================================!
 
   pure integer function counted_local_index(this, value)
 
@@ -217,9 +257,10 @@ contains
   end function counted_local_index
 
   !===================================================================!
-  ! Listed: the values passed in, each retained once, the first
-  ! occurrence retaining its position - the enumeration law needs
-  ! injectivity, and declaration order is the representation's own.
+  ! Creates the listed representation of the values passed in, each
+  ! retained once, the first occurrence keeping its position: the
+  ! enumeration law needs injectivity, and the declaration order is the
+  ! representation's own
   !===================================================================!
 
   pure type(listed_set_representation) function create_listed(values) &
@@ -228,12 +269,14 @@ contains
     integer, intent(in) :: values(:)
 
     integer, allocatable :: order(:), work(:)
-    integer :: j, num_retained, last_value, at
+    integer              :: j, num_retained, last_value, at
 
+    ! The positions sorted by value, stably
     allocate(order(size(values)), work(size(values)))
     order = [(j, j = 1, size(values))]
     call order_by_member(values, order, work, 1, size(values))
 
+    ! The first position of each distinct value
     num_retained = 0
     do j = 1, size(values)
        if (num_retained > 0) then
@@ -261,10 +304,16 @@ contains
 
   end function create_listed
 
+  !===================================================================!
+  ! Sorts the positions order(first:last) by their values, a stable
+  ! merge sort: equal values keep their order
+  !===================================================================!
+
   recursive pure subroutine order_by_member(values, order, work, first, last)
 
-    integer, intent(in) :: values(:), first, last
+    integer, intent(in)    :: values(:), first, last
     integer, intent(inout) :: order(:), work(:)
+
     integer :: middle, left, right, k
 
     if (last <= first) return
@@ -292,6 +341,10 @@ contains
 
   end subroutine order_by_member
 
+  !===================================================================!
+  ! Returns the number of listed members
+  !===================================================================!
+
   pure integer function listed_num_members(this)
 
     class(listed_set_representation), intent(in) :: this
@@ -304,6 +357,10 @@ contains
 
   end function listed_num_members
 
+  !===================================================================!
+  ! Returns the listed member at a position
+  !===================================================================!
+
   pure integer function listed_member(this, position)
 
     class(listed_set_representation), intent(in) :: this
@@ -312,6 +369,11 @@ contains
     listed_member = this % listed(position)
 
   end function listed_member
+
+  !===================================================================!
+  ! Returns the position of a value, by a binary search over the
+  ! listed members in increasing order, or 0 for a non-member
+  !===================================================================!
 
   pure integer function listed_local_index(this, value)
 

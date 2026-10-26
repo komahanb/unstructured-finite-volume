@@ -1,37 +1,33 @@
 !=====================================================================!
-! The concrete field: values over a domain.
+! Module that states the concrete field: values over a domain.
 !
 ! One concrete type serves every field in the tower. Its domain is a
-! set GRAPH, and the domain's identity is the only datum that ever
+! set graph, and the domain's identity is the only datum that ever
 ! distinguishes a cell field from a face field; the field stores no
 ! side flag. Because there is exactly one concrete field, a plain
 ! Fortran array can store a collection of them.
 !
-!                  WHAT THE FIELD STORES OF ITS DOMAIN
+! What the field stores of its domain:
 !
 !      type(graph) :: graph       which set        O(1)
 !      integer     :: num_entries    how many         O(1)
 !
-! and nothing else. An earlier version stored a COPY of the whole
+! and nothing else. An earlier version stored a copy of the whole
 ! domain object, which for a listed domain meant a copy of the member
 ! list: 40 fields on a 200 000-member domain stored 28.7 MB of
 ! duplicated extension, measured, against 30.5 MB predicted for
 ! exactly that duplication. The extension is now stored once, in
 ! whatever set map the caller owns.
 !
-! No information was lost. A field only ever returned two values
-! about its domain - WHICH and HOW MANY - and both are retained by
-! value. The copy already froze the count, so freezing it explicitly
-! changes no behaviour; it only stops the copy from costing
-! O(N_extent).
+! No information was lost. A field only ever returned two values about
+! its domain, which and how many, and both are retained by value. The
+! copy already froze the count, so freezing it explicitly changes no
+! behaviour; it only stops the copy from costing O(N_extent).
 !
-!=====================================================================!
-!
-!                        THE VALUE-KIND RULE
-!
-! A field stores one kind of value at a time, in the one store every
-! field inherits from field_calculus, where the ten adapters are
-! written once. From that, three rules that hold for all of them:
+! The value-kind rule. A field stores one kind of value at a time, in
+! the one store every field inherits from field_calculus, where the
+! ten adapters are written once. From that, three rules hold for all
+! of them:
 !
 !      check first   a caller checks value_kind() before reading a
 !                    vector
@@ -48,12 +44,9 @@
 ! No conversion happens anywhere. A field that stores boundary names
 ! does not return them as numbers.
 !
-!=====================================================================!
-!
-!                       WHERE A VALUE IS STORED
-!
-! A field stores its values in the order the domain lists its
-! members, and stores the components of one member contiguously:
+! Where a value is stored. A field stores its values in the order the
+! domain lists its members, and stores the components of one member
+! contiguously:
 !
 !      member          7        7        3        3
 !      component       1        2        1        2
@@ -63,7 +56,7 @@
 !
 !      position = (entry_position - 1) * num_components + component
 !
-! Everything that reads a flat vector out of a field depends on this -
+! Everything that reads a flat vector out of a field depends on this:
 ! a linear solver, a file writer, a matrix adapter. It is the reason
 ! this library needs no degree-of-freedom index map of its own.
 !
@@ -72,7 +65,7 @@
 
 module field_stored
 
-  use util_precision  , only : dp
+  use util_precision, only : dp
   use field_calculus, only : field
   use graph_fractal , only : graph
   use view_directed , only : directed_graph
@@ -81,24 +74,33 @@ module field_stored
   implicit none
 
   private
+
   public :: stored_field, typed_field_domain
 
-  !===================================================================!
-  ! One field: the description and the store the abstract field
-  ! contains, stated by the constructor and nothing more.
-  !===================================================================!
+  !-------------------------------------------------------------------!
+  ! Type that models one field: the description and the store the
+  ! abstract field contains, stated by the constructor and nothing
+  ! more
+  !-------------------------------------------------------------------!
 
   type, extends(field) :: stored_field
    contains
      procedure :: assign_in => stored_field_assign_in
   end type stored_field
 
-  !===================================================================!
-  ! The domain a family of fields shares. A primal state, a tangent,
-  ! a costate, a residual, and a functional's state differ in meaning,
-  ! not in the rule for choosing the graph they live on. This value
-  ! states that graph identity and shape once.
-  !===================================================================!
+  !-------------------------------------------------------------------!
+  ! Type that models the domain a family of fields shares. A primal
+  ! state, a tangent, a costate, a residual and a functional's state
+  ! differ in meaning, not in the rule for choosing the graph they live
+  ! on. This value states that graph identity and shape once:
+  !
+  !   typed_field_domain(graph, entries, components)
+  !        |
+  !        +--> state, functional state, design, direction, tangent,
+  !             costate, residual, forcing, solution
+  !
+  !   each a real field on the same graph, of the same shape
+  !-------------------------------------------------------------------!
 
   type :: typed_field_domain
 
@@ -108,10 +110,12 @@ module field_stored
 
    contains
 
+     ! The domain's shape
      procedure :: domain         => typed_field_domain_graph
      procedure :: num_entries    => typed_field_domain_num_entries
      procedure :: num_components => typed_field_domain_num_components
 
+     ! The fields of the family
      procedure :: real_field       => typed_field_domain_real_field
      procedure :: state            => typed_field_domain_state
      procedure :: functional_state => typed_field_domain_functional_state
@@ -125,12 +129,9 @@ module field_stored
 
   end type typed_field_domain
 
-  !===================================================================!
-  ! Constructor. Name the field, state its domain, state how many
-  ! components each entry has. The values are set afterwards through
-  ! a setter, which is also what fixes the kind.
-  !===================================================================!
-
+  ! The constructor names the field, states its domain, and states how
+  ! many components each entry has. The values are set afterwards
+  ! through a setter, which is also what fixes the kind.
   interface stored_field
      module procedure create
   end interface stored_field
@@ -143,7 +144,7 @@ module field_stored
 contains
 
   !===================================================================!
-  ! Build an empty field on a domain. The domain's identity states
+  ! Creates an empty field on a domain. The domain's identity states
   ! whether this is a cell field or a face field; the field does not
   ! store the fact a second time.
   !===================================================================!
@@ -152,7 +153,7 @@ contains
        & result(this)
 
     character(len=*), intent(in)           :: label
-    type(graph) , intent(in)           :: domain
+    type(graph)     , intent(in)           :: domain
     integer         , intent(in)           :: num_entries
     integer         , intent(in), optional :: num_components
     character(len=*), intent(in), optional :: unit_name
@@ -162,11 +163,11 @@ contains
   end function create
 
   !===================================================================!
-  ! Build the common domain of a family of fields on the vertex set
-  ! of a directed graph: the identity is the graph's vertex set and
-  ! the extent is its vertex count, so no caller states an extent
-  ! read from an array. The stored_field setter refuses a value
-  ! vector that does not fill entries times components.
+  ! Creates the common domain of a family of fields on the vertex set
+  ! of a directed graph: the identity is the graph's vertex set and the
+  ! extent its vertex count, so that no caller states an extent read
+  ! from an array. The stored_field setter refuses a value vector that
+  ! does not fill entries times components.
   !===================================================================!
 
   type(typed_field_domain) function create_placed(points, num_components) result(this)
@@ -183,13 +184,13 @@ contains
   end function create_placed
 
   !===================================================================!
-  ! Build the common domain of a family of fields from an identity
-  ! and its extent. A graph value is an identity without a
-  ! cardinality, so this form is for an owner that stores the declared
-  ! cardinality of that same identity (a discrete domain, a residual's
-  ! unknown and point sets, a linearization's image read from the
-  ! statement's result); a caller with the directed graph places
-  ! through it instead.
+  ! Creates the common domain of a family of fields from an identity
+  ! and its extent. A graph value is an identity without a cardinality,
+  ! so this form is for an owner that stores the declared cardinality
+  ! of that same identity (a discrete domain, a residual's unknown and
+  ! point sets, a linearization's image read from the statement's
+  ! result); a caller with the directed graph places through it
+  ! instead.
   !===================================================================!
 
   type(typed_field_domain) function create_domain(domain, num_entries, num_components) result(this)
@@ -197,7 +198,8 @@ contains
     type(graph), intent(in)           :: domain
     integer    , intent(in)           :: num_entries
     integer    , intent(in), optional :: num_components
-    type(token) :: identity
+
+    type(token)        :: identity
     character(len=150) :: message
 
     identity = domain % id()
@@ -223,6 +225,10 @@ contains
 
   end function create_domain
 
+  !===================================================================!
+  ! Returns the graph the family is defined on
+  !===================================================================!
+
   type(graph) function typed_field_domain_graph(this) result(domain)
 
     class(typed_field_domain), intent(in) :: this
@@ -230,6 +236,10 @@ contains
     domain = this % graph
 
   end function typed_field_domain_graph
+
+  !===================================================================!
+  ! Returns the number of entries
+  !===================================================================!
 
   pure integer function typed_field_domain_num_entries(this) result(num_entries)
 
@@ -239,6 +249,10 @@ contains
 
   end function typed_field_domain_num_entries
 
+  !===================================================================!
+  ! Returns the number of components of each entry
+  !===================================================================!
+
   pure integer function typed_field_domain_num_components(this) result(num_components)
 
     class(typed_field_domain), intent(in) :: this
@@ -247,13 +261,18 @@ contains
 
   end function typed_field_domain_num_components
 
+  !===================================================================!
+  ! Returns a real field of the family with the given label and values
+  ! and, when given, unit name
+  !===================================================================!
+
   type(stored_field) function typed_field_domain_real_field(this, label, values, unit_name) &
        & result(data)
 
     class(typed_field_domain), intent(in)           :: this
-    character(len=*)    , intent(in)           :: label
-    real(dp)            , intent(in)           :: values(:)
-    character(len=*)    , intent(in), optional :: unit_name
+    character(len=*)         , intent(in)           :: label
+    real(dp)                 , intent(in)           :: values(:)
+    character(len=*)         , intent(in), optional :: unit_name
 
     if (present(unit_name)) then
        data = stored_field(label, this % graph, this % ne, &
@@ -266,65 +285,94 @@ contains
 
   end function typed_field_domain_real_field
 
+  !===================================================================!
+  ! Returns the family's state field
+  !===================================================================!
+
   type(stored_field) function typed_field_domain_state(this, values) result(data)
 
     class(typed_field_domain), intent(in) :: this
-    real(dp)            , intent(in) :: values(:)
+    real(dp)                 , intent(in) :: values(:)
 
     data = this % real_field('state', values)
 
   end function typed_field_domain_state
 
+  !===================================================================!
+  ! Returns the family's functional state field
+  !===================================================================!
+
   type(stored_field) function typed_field_domain_functional_state(this, values) result(data)
 
     class(typed_field_domain), intent(in) :: this
-    real(dp)            , intent(in) :: values(:)
+    real(dp)                 , intent(in) :: values(:)
 
     data = this % real_field('functional state', values)
 
   end function typed_field_domain_functional_state
 
+  !===================================================================!
+  ! Returns the family's design field
+  !===================================================================!
+
   type(stored_field) function typed_field_domain_design(this, values) result(data)
 
     class(typed_field_domain), intent(in) :: this
-    real(dp)            , intent(in) :: values(:)
+    real(dp)                 , intent(in) :: values(:)
 
     data = this % real_field('design', values)
 
   end function typed_field_domain_design
 
+  !===================================================================!
+  ! Returns the family's direction field
+  !===================================================================!
+
   type(stored_field) function typed_field_domain_direction(this, values) result(data)
 
     class(typed_field_domain), intent(in) :: this
-    real(dp)            , intent(in) :: values(:)
+    real(dp)                 , intent(in) :: values(:)
 
     data = this % real_field('direction', values)
 
   end function typed_field_domain_direction
 
+  !===================================================================!
+  ! Returns the family's tangent field
+  !===================================================================!
+
   type(stored_field) function typed_field_domain_tangent(this, values) result(data)
 
     class(typed_field_domain), intent(in) :: this
-    real(dp)            , intent(in) :: values(:)
+    real(dp)                 , intent(in) :: values(:)
 
     data = this % real_field('tangent', values)
 
   end function typed_field_domain_tangent
 
+  !===================================================================!
+  ! Returns the family's costate field
+  !===================================================================!
+
   type(stored_field) function typed_field_domain_costate(this, values) result(data)
 
     class(typed_field_domain), intent(in) :: this
-    real(dp)            , intent(in) :: values(:)
+    real(dp)                 , intent(in) :: values(:)
 
     data = this % real_field('costate', values)
 
   end function typed_field_domain_costate
 
+  !===================================================================!
+  ! Returns the family's residual field, labelled 'residual' unless
+  ! another label is given
+  !===================================================================!
+
   type(stored_field) function typed_field_domain_residual(this, values, label) result(data)
 
     class(typed_field_domain), intent(in)           :: this
-    real(dp)            , intent(in)           :: values(:)
-    character(len=*)    , intent(in), optional :: label
+    real(dp)                 , intent(in)           :: values(:)
+    character(len=*)         , intent(in), optional :: label
 
     if (present(label)) then
        data = this % real_field(label, values)
@@ -334,26 +382,34 @@ contains
 
   end function typed_field_domain_residual
 
+  !===================================================================!
+  ! Returns the family's forcing field
+  !===================================================================!
+
   type(stored_field) function typed_field_domain_forcing(this, values) result(data)
 
     class(typed_field_domain), intent(in) :: this
-    real(dp)            , intent(in) :: values(:)
+    real(dp)                 , intent(in) :: values(:)
 
     data = this % real_field('forcing', values)
 
   end function typed_field_domain_forcing
 
+  !===================================================================!
+  ! Returns the family's solution field
+  !===================================================================!
+
   type(stored_field) function typed_field_domain_solution(this, values) result(data)
 
     class(typed_field_domain), intent(in) :: this
-    real(dp)            , intent(in) :: values(:)
+    real(dp)                 , intent(in) :: values(:)
 
     data = this % real_field('solution', values)
 
   end function typed_field_domain_solution
 
   !===================================================================!
-  ! Place this value at a location that is a stored field. A location
+  ! Places this value at a location that is a stored field. A location
   ! of any other type is an error: the caller requested a copy the
   ! location cannot store.
   !===================================================================!

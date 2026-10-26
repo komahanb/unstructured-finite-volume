@@ -1,114 +1,125 @@
 !=====================================================================!
-! LEVEL 4 OF THE NEW TOWER . THE GRAPH ALGORITHMS
+! Module that states level 4 of the new tower, the graph algorithms.
 !
-! The level defines WHAT GRAPH-THEORETIC PREDICATES CAN BE
-! EVALUATED on an interpretation. The algorithms are defined HERE, as
-! free module procedures over a binary relation on one domain - never
-! as methods on the relation or on any container:
-! traversal acts on structure, it is not structure (AGENTS.md 18,
-! CALCULATOR.md 11). This module contains exactly what its first
-! caller - the calculator's dependency traversal - requires:
+! The level defines what graph-theoretic predicates can be evaluated
+! on an interpretation. The algorithms are defined here, as free module
+! procedures over a binary relation on one domain, never as methods on
+! the relation or on any container: traversal acts on structure, it is
+! not structure (AGENTS.md 18, CALCULATOR.md 11). This module contains
+! exactly what its first caller, the calculator's dependency
+! traversal, requires:
 !
-!      sources      the members with empty preimage
-!      sinks        the members with empty image
-!      reachable    whether a directed path exists
+!      sources             the members with empty preimage
+!      sinks               the members with empty image
+!      reachable           whether a directed path exists
 !      topological_order   every arrow forward, or rejection
 !
-! No components, no colouring, no condensation, no visitor
-! machinery: each is added when a caller requires it.
+!     1 ----> 2 ----> 4
+!     |               ^
+!     v               |
+!     3 --------------+        5
 !
-!                    SUBOBJECTS, NOT INTEGER LISTS
+!   sources            { 1, 5 }
+!   sinks              { 4, 5 }
+!   reachable(1, 4)    true;  reachable(4, 1) false
+!   topological_order  1 2 3 4 5
 !
-! Sources and sinks are returned as declared subobjects of the
-! view's own domain - so they have identity, membership, size and
-! local_index without additional operations, and their enumeration is
-! CANONICAL BY THE DOMAIN'S DECLARATION ORDER: the scan traverses V by
-! local index, and a member's numeric value never orders anything. An
-! isolated member, with empty image and empty preimage, is both by
-! definition.
+! No components, no colouring, no condensation, no visitor machinery:
+! each is added when a caller requires it.
 !
-!                    CONVENTIONS, FIXED
+! Subobjects, not integer lists. Sources and sinks are returned as
+! declared subobjects of the view's own domain, so that they have
+! identity, membership, size and local_index without additional
+! operations, and their enumeration is canonical by the domain's
+! declaration order: the scan traverses V by local index, and a
+! member's numeric value never orders anything. An isolated member,
+! with empty image and empty preimage, is both by definition.
 !
-! reachable(v, v) is TRUE for every member v, by the zero-length
-! path; an endpoint outside the domain returns FALSE, never an
-! index into invalid storage. A topological order is undefined on a
-! cycle: the algorithm REJECTS the input rather than constructing an
-! order. A cyclic relation remains a valid structure - a valid
-! interpretation is not a valid input to every algorithm.
+! Conventions, fixed. reachable(v, v) is true for every member v, by
+! the zero-length path; an endpoint outside the domain returns false,
+! never an index into invalid storage. A topological order is
+! undefined on a cycle: the algorithm rejects the input rather than
+! constructing an order. A cyclic relation remains a valid structure;
+! a valid interpretation is not a valid input to every algorithm.
 !
-!                    COSTS, AS WRITTEN
+! Costs, as written. Nothing here is optimized before a large caller
+! exists. With n = |V|, m = |A|, and the carrier's own lookup cost
+! T_idx:
 !
-! Nothing here is optimized before a large caller exists. With n = |V|,
-! m = |A|, and the carrier's own lookup cost T_idx:
-!
-!      sources/sinks       O(n) fibre reads, each costing T_idx -
-!                          and then the subobject declaration,
-!                          which validates every retained member
-!                          against the ambient (T_has each) and
-!                          removes duplicates with its current
-!                          quadratic upper bound check
+!      sources/sinks       O(n) fibre reads, each costing T_idx, and
+!                          then the subobject declaration, which
+!                          validates every retained member against the
+!                          ambient (T_has each) and removes duplicates
+!                          with its current quadratic upper bound check
 !      reachable           breadth-first, O(n + m) fibre reads and
 !                          visited marks, each mark one T_idx
-!      topological_order   the plain deterministic Kahn algorithm:
-!                          each round rescans the domain for the
-!                          first member of zero indegree in
-!                          declaration order - O(n^2) scanning plus
-!                          O(n + m) fibre and T_idx work. A priority
-!                          structure is not yet required.
+!      topological_order   the deterministic Kahn algorithm, the members
+!                          of zero indegree in a priority queue by
+!                          local index: O((n + m) log n), plus the
+!                          O(n + m) fibre and T_idx work
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 
 module relation_algorithms
 
-  use graph_fractal           , only : graph
-  use relation_finitary          , only : relation
-  use relation_binary   , only : integer_fibre, binary_relation, transposed_relation, transpose_of
-  use map_set           , only : set_map
-  use map_set_store     , only : set_store
+  use graph_fractal    , only : graph
+  use relation_finitary, only : relation
+  use relation_binary  , only : integer_fibre, binary_relation, transposed_relation, transpose_of
+  use map_set          , only : set_map
+  use map_set_store    , only : set_store
 
   implicit none
 
   private
+
   public :: sources, sinks, reachable, topological_order
 
-  ! Per-call traversal state. References remain valid only during the
-  ! enclosing algorithm; module readers require no captured procedure.
+  !-------------------------------------------------------------------!
+  ! Type that models the state of one reachability search. Its
+  ! references remain valid only during the enclosing algorithm;
+  ! module readers require no captured procedure.
+  !-------------------------------------------------------------------!
+
   type :: reachability_context
      type(set_map), pointer :: sets => null()
-     type(graph) :: domain
-     logical, pointer :: visited(:) => null()
-     integer, pointer :: queue(:) => null()
-     integer :: tail = 0
-     integer :: target_member = 0
-     logical :: is_reachable = .false.
+     type(graph)            :: domain
+     logical, pointer       :: visited(:) => null()
+     integer, pointer       :: queue(:) => null()
+     integer                :: tail = 0
+     integer                :: target_member = 0
+     logical                :: is_reachable = .false.
   end type reachability_context
+
+  !-------------------------------------------------------------------!
+  ! Type that models the state of one topological ordering
+  !-------------------------------------------------------------------!
 
   type :: topological_order_context
      type(set_map), pointer :: sets => null()
-     type(graph) :: domain
-     integer, pointer :: indegree(:) => null()
+     type(graph)            :: domain
+     integer, pointer       :: indegree(:) => null()
      ! the members of zero indegree not yet enumerated: a priority
      ! queue by local index in an array, whose first entry is the minimum
-     integer, pointer :: ready(:) => null()
-     integer :: num_ready = 0
+     integer, pointer       :: ready(:) => null()
+     integer                :: num_ready = 0
   end type topological_order_context
 
 contains
 
   !===================================================================!
-  ! The members with empty preimage, as a subobject of the domain, in
-  ! the domain's own order.
+  ! Returns the members with empty preimage, as a subobject of the
+  ! domain, in the domain's own order
   !===================================================================!
 
   subroutine sources(adjacency, sets, source_set)
 
-    class(relation), target      , intent(in)    :: adjacency
-    type(set_store)              , intent(inout) :: sets
-    type(graph)              , intent(out)   :: source_set
+    class(relation), target, intent(in)    :: adjacency
+    type(set_store)        , intent(inout) :: sets
+    type(graph)            , intent(out)   :: source_set
 
     class(binary_relation), pointer :: a
-    type(graph)      :: dom
+    type(graph)                     :: dom
 
     call require_adjacency(adjacency, a, dom)
     call declare_unpointed(a, 'sources', dom, sets, source_set)
@@ -116,19 +127,20 @@ contains
   end subroutine sources
 
   !===================================================================!
-  ! The members with empty image: the sources of the converse,
-  ! read through the transposed view, so the search is written once.
+  ! Returns the members with empty image: the sources of the converse,
+  ! read through the transposed view, so that the search is written
+  ! once
   !===================================================================!
 
   subroutine sinks(adjacency, sets, sink_set)
 
-    class(relation), target      , intent(in)    :: adjacency
-    type(set_store)              , intent(inout) :: sets
-    type(graph)              , intent(out)   :: sink_set
+    class(relation), target, intent(in)    :: adjacency
+    type(set_store)        , intent(inout) :: sets
+    type(graph)            , intent(out)   :: sink_set
 
-    class(binary_relation), pointer :: a
+    class(binary_relation), pointer   :: a
     type(transposed_relation), target :: converse
-    type(graph)      :: dom
+    type(graph)                       :: dom
 
     call require_adjacency(adjacency, a, dom)
     converse = transpose_of(a)
@@ -137,8 +149,8 @@ contains
   end subroutine sinks
 
   !===================================================================!
-  ! The members with an empty preimage, declared as a subobject of the
-  ! domain in the domain's own order.
+  ! Declares the members with an empty preimage as a subobject of the
+  ! domain, in the domain's own order
   !===================================================================!
 
   subroutine declare_unpointed(a, label, dom, sets, unpointed_set)
@@ -150,7 +162,7 @@ contains
     type(graph)                   , intent(out)   :: unpointed_set
 
     integer, allocatable :: retained(:)
-    type(integer_fibre) :: fibre
+    type(integer_fibre)  :: fibre
     integer              :: i, n, m, size_of_dom
 
     size_of_dom = sets % num_members_of(dom)
@@ -171,25 +183,25 @@ contains
   end subroutine declare_unpointed
 
   !===================================================================!
-  ! Whether a directed path exists. Every member reaches itself by the
-  ! zero-length path; a non-member reaches nothing and is reached by
-  ! nothing. Breadth-first over the successor fibres, visited
-  ! marked by local index.
+  ! Returns whether a directed path exists. Every member reaches itself
+  ! by the zero-length path; a non-member reaches nothing and is
+  ! reached by nothing. Breadth-first over the successor fibres,
+  ! visited marked by local index.
   !===================================================================!
 
   logical function reachable(adjacency, sets, from, to)
 
-    class(relation), target      , intent(in) :: adjacency
-    type(set_map), target        , intent(in) :: sets
-    integer                      , intent(in) :: from
-    integer                      , intent(in) :: to
+    class(relation), target, intent(in) :: adjacency
+    type(set_map)  , target, intent(in) :: sets
+    integer                , intent(in) :: from
+    integer                , intent(in) :: to
 
     class(binary_relation), pointer :: a
-    type(reachability_context) :: context
-    logical, allocatable, target :: visited(:)
-    integer, allocatable, target :: queue(:)
-    type(integer_fibre) :: fibre
-    integer              :: head, v, n
+    type(reachability_context)      :: context
+    logical, allocatable, target    :: visited(:)
+    integer, allocatable, target    :: queue(:)
+    type(integer_fibre)             :: fibre
+    integer                         :: head, v, n
 
     reachable = .false.
 
@@ -227,10 +239,16 @@ contains
 
   end function reachable
 
+  !===================================================================!
+  ! Visits the successors of a member: marks the target reached, or
+  ! queues each successor not yet visited
+  !===================================================================!
+
   subroutine visit_successors(members, context)
 
-    integer, intent(in) :: members(:)
+    integer , intent(in)    :: members(:)
     class(*), intent(inout) :: context
+
     integer :: j, s, member_index
 
     select type (context)
@@ -256,33 +274,35 @@ contains
   end subroutine visit_successors
 
   !===================================================================!
-  ! The deterministic Kahn algorithm: n rounds, each taking the FIRST
-  ! member of zero indegree in the domain's declaration order -
-  ! local_index, never numeric value - so one graph has one order.
-  ! The members of zero indegree form a priority queue by local index,
-  ! so a round costs log n and the order (n + e) log n rather than n^2.
-  ! Members are returned as member values. A cycle leaves no member of
-  ! zero indegree before the n rounds are complete, and the algorithm
-  ! rejects the input.
+  ! Returns a topological order by the deterministic Kahn algorithm: n
+  ! rounds, each taking the first member of zero indegree in the
+  ! domain's declaration order, local_index and never numeric value, so
+  ! that one graph has one order. The members of zero indegree form a
+  ! priority queue by local index, so a round costs log n and the order
+  ! (n + e) log n rather than n^2. Members are returned as member
+  ! values. A cycle leaves no member of zero indegree before the n
+  ! rounds are complete, and the algorithm rejects the input, or
+  ! reports it through acyclic when that is given.
   !===================================================================!
 
   subroutine topological_order(adjacency, sets, order, acyclic)
 
-    class(relation), target      , intent(in)  :: adjacency
-    type(set_map), target        , intent(in)  :: sets
-    integer, allocatable         , intent(out) :: order(:)
-    logical, optional            , intent(out) :: acyclic
+    class(relation), target, intent(in)  :: adjacency
+    type(set_map)  , target, intent(in)  :: sets
+    integer, allocatable   , intent(out) :: order(:)
+    logical, optional      , intent(out) :: acyclic
 
     class(binary_relation), pointer :: a
     type(topological_order_context) :: context
-    integer, allocatable, target :: indegree(:), ready(:)
-    type(integer_fibre) :: fibre
-    integer              :: n, i, order_index, selected
-    character(len=150) :: message
+    integer, allocatable, target    :: indegree(:), ready(:)
+    type(integer_fibre)             :: fibre
+    integer                         :: n, i, order_index, selected
+    character(len=150)              :: message
 
     call require_adjacency(adjacency, a, context % domain)
     n   = sets % num_members_of(context % domain)
 
+    ! Every member's indegree, and those of zero ready
     allocate(indegree(n), ready(n), order(n))
     context % sets => sets
     context % indegree => indegree
@@ -296,6 +316,7 @@ contains
        if (indegree(i) == 0) call push_ready(context, i)
     end do
 
+    ! The rounds
     do order_index = 1, n
        if (context % num_ready == 0) then
           if (present(acyclic)) then
@@ -318,13 +339,23 @@ contains
 
   end subroutine topological_order
 
-  ! The priority queue of members of zero indegree, a binary tree in an
-  ! array: the parent of position at is at / 2, and no parent exceeds
-  ! its children.
+  !===================================================================!
+  ! Adds a member to the priority queue of members of zero indegree, a
+  ! binary tree in an array: the parent of position at is at / 2, and
+  ! no parent exceeds its children,
+  !
+  !              2                 ready = [ 2, 5, 3, 7 ]
+  !           +--+--+
+  !           5     3
+  !           |
+  !           7
+  !===================================================================!
+
   subroutine push_ready(context, member_index)
 
     type(topological_order_context), intent(inout) :: context
-    integer, intent(in) :: member_index
+    integer                        , intent(in)    :: member_index
+
     integer :: at, parent, exchanged
 
     context % num_ready = context % num_ready + 1
@@ -341,9 +372,15 @@ contains
 
   end subroutine push_ready
 
+  !===================================================================!
+  ! Removes and returns the least member of the priority queue: the
+  ! last entry moves to the root and sinks to its place
+  !===================================================================!
+
   integer function pop_ready(context) result(member_index)
 
     type(topological_order_context), intent(inout) :: context
+
     integer :: at, child, exchanged
 
     member_index = context % ready(1)
@@ -365,10 +402,16 @@ contains
 
   end function pop_ready
 
+  !===================================================================!
+  ! Decreases the indegree of each successor of the member taken, and
+  ! readies those that reach zero
+  !===================================================================!
+
   subroutine decrease_indegrees(members, context)
 
-    integer, intent(in) :: members(:)
+    integer , intent(in)    :: members(:)
     class(*), intent(inout) :: context
+
     integer :: j, member_index
 
     select type (context)
@@ -386,17 +429,17 @@ contains
   end subroutine decrease_indegrees
 
   !===================================================================!
-  ! The precondition every algorithm checks: the adjacency must be a
-  ! binary relation over one domain (source and target the same set).
-  ! Either violation stops the program, because a traversal over two
-  ! domains has no single member set to enumerate.
+  ! Requires the precondition every algorithm checks: the adjacency
+  ! must be a binary relation over one domain (source and target the
+  ! same set). Either violation stops the program, because a traversal
+  ! over two domains has no single member set to enumerate.
   !===================================================================!
 
   subroutine require_adjacency(adjacency, a, dom)
 
     class(relation), target        , intent(in)  :: adjacency
     class(binary_relation), pointer, intent(out) :: a
-    type(graph)                , intent(out) :: dom
+    type(graph)                    , intent(out) :: dom
 
     type(graph) :: s, t
 
@@ -418,6 +461,5 @@ contains
     dom = s
 
   end subroutine require_adjacency
-
 
 end module relation_algorithms

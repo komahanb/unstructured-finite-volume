@@ -1,5 +1,5 @@
 !=====================================================================!
-! Traversals over a graph, written as operations.
+! Module that writes traversals over a graph as operations.
 !
 ! A traversal reads the structure of a graph and assigns a whole
 ! number to every cell. That makes every traversal a vertex field
@@ -8,21 +8,17 @@
 !
 !      graph structure  ---> traversal --->  an integer per cell
 !
-! The graph stores no algorithms. The graph evaluates structural
-! queries; algorithms are applied to it from outside. This separation
-! keeps the graph contract small, and a new algorithm is added without
-! changing the graph.
+! The graph stores no algorithms. It evaluates structural queries, and
+! algorithms are applied to it from outside. This separation keeps the
+! graph contract small, and a new algorithm is added without changing
+! the graph.
 !
 ! One type stores the rule, so a caller can store several traversals
-! in a plain array and a new traversal costs a case rather than a
+! in a plain array, and a new traversal costs a case rather than a
 ! class.
 !
-!=====================================================================!
-!
-!                        WHAT EACH RULE COMPUTES
-!
-! COLOURING gives every cell a colour such that no face has the same
-! colour at both ends:
+! What each rule computes. Colouring gives every cell a colour such
+! that no face has the same colour at both ends:
 !
 !            (1)---(2)---(3)---(4)
 !             1     2     1     2
@@ -31,16 +27,27 @@
 ! all cells of one colour update at the same time, because no two of
 ! them are neighbours.
 !
-! VISIT ORDER numbers the cells in the order a breadth-first
-! traversal reaches them, starting from cell one. Solvers that require
-! a consistent ordering of the mesh read this.
+! Visit order numbers the cells in the order a breadth-first traversal
+! reaches them, starting from the seed cell, one by default. Solvers
+! that require a consistent ordering of the mesh read this.
 !
-! COMPONENT gives all the cells that can reach each other the same
+! Component gives all the cells that can reach each other the same
 ! number. Two cells share a number exactly when a path joins them, so
 ! a mesh with two connected components reports two components.
 !
-! DEPTH counts faces from the seed cell. Cells the seed cannot reach
+! Depth counts faces from the seed cell. Cells the seed cannot reach
 ! are marked minus one, because no distance to them exists.
+!
+!        (1)---(2)---(4)
+!         |
+!        (3)---(5)            (6)---(7)
+!
+!   cell                    1   2   3   4   5   6   7
+!   visit order from 1      1   2   3   4   5  -1  -1
+!   depth from 1            0   1   1   2   2  -1  -1
+!   component               1   1   1   1   1   2   2
+!
+!   (each cell's neighbours read in increasing order)
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -49,14 +56,15 @@ module operation_traversal
 
   use operation_action, only : operation, binding
   use operation_action, only : emit
-  use view_directed, only : directed_graph
-  use field_calculus, only : field
-  use graph_fractal      , only : graph
-  use field_stored  , only : stored_field
+  use view_directed   , only : directed_graph
+  use field_calculus  , only : field
+  use graph_fractal   , only : graph
+  use field_stored    , only : stored_field
 
   implicit none
 
   private
+
   public :: traversal
   public :: TRAVERSAL_COLOURING, TRAVERSAL_VISIT_ORDER, TRAVERSAL_COMPONENT, TRAVERSAL_DEPTH
 
@@ -65,9 +73,10 @@ module operation_traversal
   integer, parameter :: TRAVERSAL_COMPONENT   = 3
   integer, parameter :: TRAVERSAL_DEPTH       = 4
 
-  !===================================================================!
-  ! One traversal, storing which rule it computes and where it starts.
-  !===================================================================!
+  !-------------------------------------------------------------------!
+  ! Type that models one traversal: which rule it computes and where
+  ! it starts
+  !-------------------------------------------------------------------!
 
   type, extends(operation) :: traversal
 
@@ -87,8 +96,8 @@ module operation_traversal
 contains
 
   !===================================================================!
-  ! Construct a traversal that follows one rule, named after it. The
-  ! seed names the vertex a depth traversal starts from; the other
+  ! Creates a traversal that follows one rule, named after it. The seed
+  ! names the vertex a breadth-first traversal starts from; the other
   ! rules need no seed.
   !===================================================================!
 
@@ -101,7 +110,7 @@ contains
 
     if (present(seed)) this % seed = seed
 
-    ! a traversal reads no input: every value comes from the graph
+    ! A traversal reads no input: every value comes from the graph
     select case (rule)
     case (TRAVERSAL_VISIT_ORDER)
        call this % declare_arguments(0, label='visit order')
@@ -116,23 +125,25 @@ contains
   end function create
 
   !===================================================================!
-  ! Traverse the graph and return a whole number per cell.
+  ! Traverses the graph and returns a whole number per cell.
   !
-  ! Nothing here reads inputs. Every value comes from the structure
-  ! of the graph alone: structure in, rule applied, integers out.
+  ! Nothing here reads inputs. Every value comes from the structure of
+  ! the graph alone: structure in, rule applied, integers out.
   !===================================================================!
 
   subroutine traversal_apply(this, input_graph, inputs, output)
 
-    class(traversal)       , intent(in)                 :: this
-    class(directed_graph)      , intent(in)                 :: input_graph
-    type(binding), intent(in), optional       :: inputs(:)
-    class(field), allocatable, intent(inout) :: output
+    class(traversal)         , intent(in)           :: this
+    class(directed_graph)    , intent(in)           :: input_graph
+    type(binding)            , intent(in), optional :: inputs(:)
+    class(field), allocatable, intent(inout)        :: output
 
-    type(stored_field)           :: out
-    integer , allocatable :: labels(:)
-    integer :: nv
+    type(stored_field)   :: out
+    integer, allocatable :: labels(:)
+    integer              :: nv
 
+    ! Names inputs, which a traversal does not read, to keep the
+    ! compiler from warning that the argument is unused
     associate (u1 => present(inputs)); end associate
 
     nv = input_graph % num_vertices()
@@ -157,21 +168,22 @@ contains
   end subroutine traversal_apply
 
   !===================================================================!
-  ! Assign every cell the lowest colour not assigned to any neighbour.
+  ! Assigns every cell the lowest colour not assigned to any
+  ! neighbour, the cells taken in order.
   !
   ! Greedy, so the colour count is not minimal. The required guarantee
-  ! is satisfied: no face has one colour at both ends, which is what makes a
+  ! is met: no face has one colour at both ends, which is what makes a
   ! colour safe to sweep in parallel.
   !===================================================================!
 
   subroutine colour(input_graph, labels)
 
-    class(directed_graph)        , intent(in)  :: input_graph
-    integer, allocatable, intent(out) :: labels(:)
+    class(directed_graph), intent(in)  :: input_graph
+    integer, allocatable , intent(out) :: labels(:)
 
     integer, allocatable :: nbrs(:)
     logical, allocatable :: adjacent_colours(:)
-    integer :: nv, v, i, c
+    integer              :: nv, v, i, c
 
     nv = input_graph % num_vertices()
     allocate(labels(nv))
@@ -181,13 +193,14 @@ contains
 
     do v = 1, nv
 
+       ! The colours the neighbours already have
        adjacent_colours = .false.
        call input_graph % adjacent_vertices(v, nbrs)
        do i = 1, size(nbrs)
           if (labels(nbrs(i)) >= 1) adjacent_colours(labels(nbrs(i))) = .true.
        end do
 
-       ! The lowest colour not assigned to any neighbour.
+       ! The lowest colour not assigned to any neighbour
        c = 1
        do while (c <= nv .and. adjacent_colours(c))
           c = c + 1
@@ -199,9 +212,14 @@ contains
   end subroutine colour
 
   !===================================================================!
-  ! Traverse outward from the seed, one level at a time. Either number
-  ! the cells in the order they are reached, or count the faces crossed
-  ! to reach them.
+  ! Traverses outward from the seed, one level at a time, and either
+  ! numbers the cells in the order they are reached or counts the
+  ! faces crossed to reach them:
+  !
+  !   queue   [ seed | its neighbours | theirs | ... ]
+  !             ^head                 ^tail
+  !   a cell is taken at the head, its unreached neighbours added at
+  !   the tail, until the head passes the tail
   !
   ! A cell the seed cannot reach is marked minus one in either mode.
   ! Marking "not reachable" is preferred to a distance of zero, which
@@ -210,18 +228,18 @@ contains
 
   subroutine breadth_first(input_graph, seed, labels, depth_mode)
 
-    class(directed_graph)        , intent(in)  :: input_graph
-    integer             , intent(in)  :: seed
-    integer, allocatable, intent(out) :: labels(:)
-    logical             , intent(in)  :: depth_mode
+    class(directed_graph), intent(in)  :: input_graph
+    integer              , intent(in)  :: seed
+    integer, allocatable , intent(out) :: labels(:)
+    logical              , intent(in)  :: depth_mode
 
     integer, allocatable :: queue(:), depth(:), nbrs(:)
-    integer :: nv, head_of_queue, tail_of_queue, v, i, rank
+    integer              :: nv, head_of_queue, tail_of_queue, v, i, rank
 
     nv = input_graph % num_vertices()
     allocate(labels(nv), queue(nv), depth(nv))
-    labels  = -1
-    depth = -1
+    labels = -1
+    depth  = -1
 
     if (seed < 1 .or. seed > nv) return
 
@@ -260,35 +278,35 @@ contains
   end subroutine breadth_first
 
   !===================================================================!
-  ! Assign the same number to every cell of one connected component.
+  ! Assigns the same number to every cell of one connected component.
   !
-  ! Start a new number at the first unmarked cell, traverse the whole
-  ! component, and repeat. Two cells share a number exactly when a path
-  ! joins them.
+  ! A new number starts at the first unmarked cell, the whole component
+  ! is traversed, and the search repeats. Two cells share a number
+  ! exactly when a path joins them.
   !===================================================================!
 
   subroutine components(input_graph, labels)
 
-    class(directed_graph)        , intent(in)  :: input_graph
-    integer, allocatable, intent(out) :: labels(:)
+    class(directed_graph), intent(in)  :: input_graph
+    integer, allocatable , intent(out) :: labels(:)
 
     integer, allocatable :: queue(:), nbrs(:)
-    integer :: nv, v, i, component_index, head_of_queue, tail_of_queue, u
+    integer              :: nv, v, i, component_index, head_of_queue, tail_of_queue, u
 
     nv = input_graph % num_vertices()
     allocate(labels(nv), queue(nv))
-    labels  = 0
+    labels          = 0
     component_index = 0
 
     do v = 1, nv
 
        if (labels(v) /= 0) cycle
 
-       component_index         = component_index + 1
+       component_index = component_index + 1
        labels(v)       = component_index
-       queue(1)      = v
-       head_of_queue = 1
-       tail_of_queue = 1
+       queue(1)        = v
+       head_of_queue   = 1
+       tail_of_queue   = 1
 
        do while (head_of_queue <= tail_of_queue)
           u = queue(head_of_queue)
@@ -296,7 +314,7 @@ contains
           call input_graph % adjacent_vertices(u, nbrs)
           do i = 1, size(nbrs)
              if (labels(nbrs(i)) /= 0) cycle
-             labels(nbrs(i))        = component_index
+             labels(nbrs(i))      = component_index
              tail_of_queue        = tail_of_queue + 1
              queue(tail_of_queue) = nbrs(i)
           end do

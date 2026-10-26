@@ -1,18 +1,27 @@
 !=====================================================================!
-! The connectivity graph: a directed graph whose edges also store the
-! two differential orders a discretization reads across.
+! Module that states the connectivity graph: a directed graph whose
+! edges also store the two differential orders a discretization reads
+! across.
 !
-! A family's block_connectivity and stage_connectivity each return one of these:
-! vertices are instants or stages, and an edge from tail to head
-! states that the row at head, of degree head_degree(edge), reads a
-! value at tail, of degree tail_degree(edge). No arithmetic is
-! written here - edge_coefficient (operation_family) and weights_terms
-! (operation_coupling) read this incidence and these two degree
-! labels to compute an edge's number; this type states only which
-! edge exists and at which two degrees, stacked by the same ordering
-! degree itself imposes: tail_degree and head_degree never combine
-! two edges of the same tail and head into one, since a discretization
-! never states the same relation between the same two vertices twice.
+! A family's block_connectivity and stage_connectivity each return one
+! of these. Its vertices are instants or stages, and an edge from tail
+! to head states that the row at head, of degree head_degree(edge),
+! reads a value at tail, of degree tail_degree(edge):
+!
+!   tail: instant k-1                         head: instant k
+!
+!     q'(k-1)  o ------------ edge e ------------> o  q(k)
+!
+!   tail_degree(e) = 1                        head_degree(e) = 0
+!   the row of q(k) reads q'(k-1)
+!
+! No arithmetic is written here. edge_coefficient (operation_family)
+! and weights_terms (operation_coupling) read this incidence and these
+! two degree labels to compute an edge's number. This type states only
+! which edge exists and at which two degrees. tail_degree and
+! head_degree never combine two edges of the same tail and head into
+! one, since a discretization never states the same relation between
+! the same two vertices twice.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -24,7 +33,13 @@ module view_directed_connectivity
   implicit none
 
   private
+
   public :: connectivity_graph
+
+  !-------------------------------------------------------------------!
+  ! Type that models a stored directed graph with a pair of degrees on
+  ! every edge
+  !-------------------------------------------------------------------!
 
   type, extends(stored_directed_graph) :: connectivity_graph
 
@@ -45,10 +60,12 @@ module view_directed_connectivity
 contains
 
   !===================================================================!
-  ! Build the incidence through the parent constructor - Fortran has
-  ! no super-constructor call, so the parent part is built and
-  ! assigned whole - then attach the two degree labels, one pair per
-  ! edge.
+  ! Creates the graph of nv vertices and the given edges, with one pair
+  ! of degrees per edge.
+  !
+  ! Fortran has no call to a parent's constructor, so the parent part
+  ! is built and assigned whole, and the two degree labels are attached
+  ! after it.
   !===================================================================!
 
   type(connectivity_graph) function create(nv, tails, heads, tail_degrees, head_degrees) &
@@ -73,6 +90,10 @@ contains
 
   end function create
 
+  !===================================================================!
+  ! Returns the degree of the value an edge reads at its tail
+  !===================================================================!
+
   pure integer function tail_degree(this, edge_index)
 
     class(connectivity_graph), intent(in) :: this
@@ -81,6 +102,10 @@ contains
     tail_degree = this % tail_degrees(edge_index)
 
   end function tail_degree
+
+  !===================================================================!
+  ! Returns the degree of the row an edge enters at its head
+  !===================================================================!
 
   pure integer function head_degree(this, edge_index)
 

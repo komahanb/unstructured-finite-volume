@@ -1,29 +1,35 @@
 !=====================================================================!
-! Two-grid multigrid: a minimizer that changes resolution within one
-! iteration.
+! Module that states two-grid multigrid: a minimizer that changes
+! resolution within one iteration.
 !
-! One family, one iteration structure - and this member's policy is
-! the coarse correction. A smoother removes the high-frequency part
-! of the error at low cost; the smooth remainder, high cost on the
-! fine graph, is low cost one level down, so the residual is
-! restricted to the blocks, solved there, and the correction is
-! prolonged back:
+! One family, one iteration structure, and this member's policy is the
+! coarse correction. A smoother removes the high-frequency part of the
+! error at low cost; the smooth remainder, which it reduces slowly on
+! the fine graph, is reduced in few operations one level down, so the
+! residual is restricted to the blocks, solved there, and the
+! correction is prolonged back:
 !
 !      smooth . restrict . solve coarse . prolong . correct . smooth
 !
-! GOVERNANCE, twice. The smoother is a stored minimizer sweeping the
+!   fine     smooth                                    correct, smooth
+!               \                                      ^
+!                r = rhs - A x                        /  e = P ec
+!                 \                                  /
+!   coarse         rc = R r  -->  solve A_c ec = rc
+!
+! Governance, twice. The smoother is a stored minimizer sweeping the
 ! fine statement; the coarse correction is a stored minimizer solving
-! the block statement. Multigrid does not iterate on its own - it
+! the block statement. Multigrid does not iterate on its own: it
 ! schedules the two minimizers it governs.
 !
-! THE GALERKIN CONSTRUCTION. The coarse operator is not re-derived: it is
-! the fine stencil operator READ THROUGH THE AGGREGATES - each
+! The Galerkin construction. The coarse operator is not re-derived: it
+! is the fine stencil operator read through the aggregates. Each
 ! dependency (row, column, weight) becomes (block of row, block of
-! column, weight), and the dependencies mapped to one block
-! pair are combined into one entry (combine_triples), so the
-! coarse matrix has one entry per pair. That is R A P with summing
-! restriction and injected prolongation, and it satisfies the
-! commutation identity the test suite checks:
+! column, weight), and the dependencies mapped to one block pair are
+! combined into one entry (combine_triples), so that the coarse matrix
+! has one entry per pair. That is R A P with summing restriction and
+! injected prolongation, and it satisfies the commutation identity the
+! test suite checks:
 !
 !      solve_coarse( R(A(P e)) ) = e        the coarsened statement
 !                                           returns what the fine one
@@ -39,19 +45,19 @@
 
 module operation_multigrid
 
-  use iso_fortran_env , only : int64
-  use util_precision  , only : dp
-  use view_directed, only : directed_graph
+  use iso_fortran_env     , only : int64
+  use util_precision      , only : dp
+  use view_directed       , only : directed_graph
   use view_directed_stored, only : stored_directed_graph
-  use operation_stencil, only : stencil, combine_triples
+  use operation_stencil   , only : stencil, combine_triples
   use operation_minimizer , only : minimizer, state, restrict, compact_labels, solve_result, SOLVE_INNER_FAILED
   use operation_minimizer , only : saturated_sum
   use, intrinsic :: ieee_arithmetic, only : ieee_is_finite
-  use operation_action       , only : operation
-  use graph_fractal          , only : graph
-  use field_stored           , only : stored_field
-  use util_tally, only : linear_solves, tally
-  use transform_structure, only : through_blocks
+  use operation_action    , only : operation
+  use graph_fractal       , only : graph
+  use field_stored        , only : stored_field
+  use util_tally          , only : linear_solves, tally
+  use transform_structure , only : through_blocks
 
   implicit none
 
@@ -59,26 +65,32 @@ module operation_multigrid
 
   public :: multigrid
 
+  !-------------------------------------------------------------------!
+  ! Type that models two-grid multigrid: the smoother and the coarse
+  ! minimizer it governs, and the aggregates that map the fine
+  ! unknowns onto the blocks
+  !-------------------------------------------------------------------!
+
   type, extends(minimizer) :: multigrid
 
      class(minimizer), allocatable :: smoother
      class(minimizer), allocatable :: coarse
 
      integer, allocatable :: aggregates(:)
-     integer :: nblocks = 0
+     integer              :: nblocks = 0
 
-     ! the number of coarse statements this object has made: the
+     ! The number of coarse statements this object has made: the
      ! version of the k-th is k, compared only by this object's coarse
      ! minimizer, so the sequence is the object's and not the module's
      integer :: num_statements = 0
 
    contains
 
-     procedure :: name  => multigrid_name
+     procedure :: name            => multigrid_name
      procedure :: setup
-     procedure :: state => multigrid_state
-     procedure :: restrict => multigrid_restrict
-     procedure :: bind_account => multigrid_bind_account
+     procedure :: state           => multigrid_state
+     procedure :: restrict        => multigrid_restrict
+     procedure :: bind_account    => multigrid_bind_account
      procedure :: storage_entries => multigrid_storage_entries
      procedure :: solve
 
@@ -86,11 +98,17 @@ module operation_multigrid
 
 contains
 
+  !===================================================================!
+  ! Returns the name of the iteration
+  !===================================================================!
+
   pure function multigrid_name(this) result(name)
 
-    class(multigrid), intent(in) :: this
+    class(multigrid), intent(in)  :: this
     character(len=:), allocatable :: name
 
+    ! Names this, which the name does not read, to keep the compiler
+    ! from warning that the argument is unused
     associate (u1 => this); end associate
 
     name = 'two-grid multigrid'
@@ -98,15 +116,10 @@ contains
   end function multigrid_name
 
   !===================================================================!
-  ! After state: read the fine stencil through the aggregates and
-  ! pass the governed pair their statements. The smoother sweeps the
-  ! fine one; the coarse minimizer solves the block one.
-  !===================================================================!
-
-  !===================================================================!
-  ! State, and where aggregates are already stored, set the two levels
-  ! up at once: a governing minimizer that re-states its inner
-  ! minimizer at every iteration need not reference the coarse level.
+  ! States the operator and, where aggregates are already stored, sets
+  ! the two levels up at once: a governing minimizer that re-states its
+  ! inner minimizer at every iteration need not reference the coarse
+  ! level.
   !===================================================================!
 
   subroutine multigrid_state(this, action, context, unknown_domain, num_unknowns, &
@@ -134,11 +147,11 @@ contains
   end subroutine multigrid_state
 
   !===================================================================!
-  ! The aggregates of the selected unknowns, relabelled compactly in
-  ! order of first appearance. The smoother is over the fine domain
-  ! and is restricted by the selection itself; the coarse minimizer is
-  ! over the blocks and is restricted by the blocks the selection
-  ! meets, in that same order.
+  ! Restricts the solve to the selected unknowns: their aggregates,
+  ! relabelled compactly in order of first appearance. The smoother is
+  ! over the fine domain and is restricted by the selection itself;
+  ! the coarse minimizer is over the blocks and is restricted by the
+  ! blocks the selection meets, in that same order.
   !===================================================================!
 
   subroutine multigrid_restrict(this, selected)
@@ -147,7 +160,7 @@ contains
     integer         , intent(in)    :: selected(:)
 
     integer, allocatable :: labels(:), blocks(:)
-    character(len=250) :: message
+    character(len=250)   :: message
 
     call restrict(this, selected)
     if (allocated(this % aggregates)) then
@@ -167,8 +180,9 @@ contains
   end subroutine multigrid_restrict
 
   !===================================================================!
-  ! The smoother's entries over the fine unknowns and the coarse
-  ! minimizer's over the aggregates, where aggregates are stored.
+  ! Returns the entries stored: the smoother's over the fine unknowns,
+  ! and the coarse minimizer's over the aggregates, where aggregates
+  ! are stored
   !===================================================================!
 
   pure integer(int64) function multigrid_storage_entries(this, num_unknowns) result(entries)
@@ -188,12 +202,19 @@ contains
 
   end function multigrid_storage_entries
 
+  !===================================================================!
+  ! Sets the two levels up on the aggregates: reads the fine stencil
+  ! through them and passes the governed pair their statements. The
+  ! smoother sweeps the fine one; the coarse minimizer solves the block
+  ! one.
+  !===================================================================!
+
   subroutine setup(this, aggregates)
 
     class(multigrid), intent(inout) :: this
-    integer, intent(in) :: aggregates(:)
+    integer         , intent(in)    :: aggregates(:)
 
-    type(stencil) :: block_statement
+    type(stencil)         :: block_statement
     integer , allocatable :: rows(:), columns(:)
     real(dp), allocatable :: weights(:), zeros(:)
 
@@ -201,26 +222,26 @@ contains
     this % nblocks    = maxval(aggregates)
 
     ! The Galerkin construction: every dependency mapped to a block
-    ! pair, the dependencies of one pair summed into one entry.
+    ! pair, the dependencies of one pair summed into one entry
     call through_map(this % action, aggregates, this % nblocks, rows, columns, weights)
 
     allocate(zeros(this % nblocks))
     zeros = 0.0_dp
 
     block_statement = stencil(rows, columns, weights, zeros, label='block statement')
-    ! versioned, so a direct coarse solver factorises it once and
+    ! Versioned, so that a direct coarse solver factorises it once and
     ! not once per cycle
     this % num_statements = this % num_statements + 1
     call block_statement % versioned(this % num_statements)
 
-    ! The smoother is a STRUCTURED one - jacobi, gauss-seidel - so it
-    ! is passed the dependent-variable coupling explicitly. On this
-    ! path the mesh the action executes over IS the coupling of its
-    ! unknowns, and stating so here makes that a caller's statement
-    ! rather than the minimizer's assumption.
-    ! the smoother sweeps a block at a time where the unknowns come in
-    ! blocks, and colours the coupling between blocks: the fine
-    ! pattern read through the blocks, one vertex each
+    ! The smoother is a structured one, Jacobi or Gauss-Seidel, so it is
+    ! passed the dependent-variable coupling explicitly. On this path
+    ! the mesh the action executes over is the coupling of its unknowns,
+    ! and stating so here makes that a caller's statement rather than
+    ! the minimizer's assumption. The smoother sweeps a block at a time
+    ! where the unknowns come in blocks, and colours the coupling
+    ! between blocks: the fine pattern read through the blocks, one
+    ! vertex each.
     this % smoother % block_width = this % block_width
     if (this % block_width > 1) then
        call this % smoother % state(this % action, this % graph, &
@@ -232,8 +253,8 @@ contains
             & this % unknown_domain, this % num_unknowns, coupling = this % graph)
     end if
 
-    ! The coarse statement stores its own stencil, and that stencil
-    ! is exactly the coupling of the coarse unknowns.
+    ! The coarse statement stores its own stencil, and that stencil is
+    ! exactly the coupling of the coarse unknowns
     call this % coarse % state(block_statement, block_statement % pattern, &
          & block_statement % pattern % vertex_set(), &
          & block_statement % pattern % num_vertices(), &
@@ -242,28 +263,28 @@ contains
   end subroutine setup
 
   !===================================================================!
-  ! The cycle: smooth, restrict the residual, prolong the correction,
-  ! smooth again.
-  !===================================================================!
-
-  !===================================================================!
-  ! A stencil's dependencies read through a map of its vertices onto
-  ! nb blocks: (row, column, weight) becomes (block of row, block of
-  ! column, weight), and the dependencies of one block pair are
-  ! summed into one entry, in the order combine_triples defines. An
-  ! action that is not a stencil stops the program.
+  ! Returns a stencil's dependencies read through a map of its vertices
+  ! onto nb blocks: (row, column, weight) becomes (block of row, block
+  ! of column, weight), and the dependencies of one block pair are
+  ! summed into one entry, in the order combine_triples defines,
+  !
+  !   A_c(I, J) = the sum over the rows i of I and the columns j of J
+  !               of A(i, j)
+  !
+  ! A row is an edge's head and a column its tail. An action that is
+  ! not a stencil stops the program.
   !===================================================================!
 
   subroutine through_map(fine, block_of, nb, rows, columns, weights)
 
-    class(operation), intent(in) :: fine
-    integer         , intent(in) :: block_of(:), nb
+    class(operation)     , intent(in)  :: fine
+    integer              , intent(in)  :: block_of(:), nb
     integer , allocatable, intent(out) :: rows(:), columns(:)
     real(dp), allocatable, intent(out) :: weights(:)
 
     integer , allocatable :: r(:), c(:)
     real(dp), allocatable :: w(:)
-    integer :: e, ne
+    integer               :: e, ne
 
     select type (fine)
     type is (stencil)
@@ -283,12 +304,15 @@ contains
   end subroutine through_map
 
   !===================================================================!
-  ! A stencil's pattern read through blocks of consecutive unknowns:
-  ! the graph over the blocks with an edge where any unknown of one
-  ! reads any unknown of the other, self-edges removed. The coupling
-  ! a block smoother colours. num_vertices is the stencil's vertex
-  ! count: the extent of the affine part evaluated from it when the
-  ! minimizer was stated.
+  ! Returns a stencil's pattern read through blocks of consecutive
+  ! unknowns: the graph over the blocks with an edge where any unknown
+  ! of one reads any unknown of the other, self-edges removed. This is
+  ! the coupling a block smoother colours. num_vertices is the
+  ! stencil's vertex count, the extent of the affine part evaluated
+  ! from it when the minimizer was stated.
+  !
+  !   unknowns   1 2 3 | 4 5 6 | 7 8 9        width = 3
+  !   blocks       1   |   2   |   3
   !===================================================================!
 
   function read_through(action, num_vertices, width) result(coupling)
@@ -300,7 +324,7 @@ contains
     integer , allocatable :: crows(:), ccolumns(:)
     real(dp), allocatable :: cweights(:)
     logical , allocatable :: off_diagonal(:)
-    integer :: v, nb
+    integer               :: v, nb
 
     nb = num_vertices / width
     call through_map(action, [((v - 1) / width + 1, v = 1, num_vertices)], nb, &
@@ -310,17 +334,24 @@ contains
 
   end function read_through
 
+  !===================================================================!
+  ! Solves A x = rhs by cycles, and returns the norm of the residual
+  ! achieved. The cycle: smooth, restrict the residual, solve on the
+  ! blocks, prolong the correction, smooth again. A failed or
+  ! non-finite inner solve ends the iteration as an inner failure.
+  !===================================================================!
+
   subroutine solve(this, rhs, x, achieved)
 
     class(multigrid), intent(inout) :: this
-    real(dp), intent(in)    :: rhs(:)
-    real(dp), intent(inout) :: x(:)
-    real(dp), intent(out)   :: achieved
+    real(dp)        , intent(in)    :: rhs(:)
+    real(dp)        , intent(inout) :: x(:)
+    real(dp)        , intent(out)   :: achieved
 
     real(dp), allocatable :: r(:), rc(:), ec(:), e(:)
-    real(dp) :: smoothed, coarse_residual
-    integer :: it
-    type(solve_result) :: outcome
+    real(dp)              :: smoothed, coarse_residual
+    integer               :: it
+    type(solve_result)    :: outcome
 
     call this % record_event(linear_solves)
 
@@ -333,6 +364,7 @@ contains
 
     do it = 1, this % max_iterations
 
+       ! Smooth
        call this % smoother % solve(rhs, x, smoothed)
 
        call this % imbalance(rhs, x, r)
@@ -345,7 +377,7 @@ contains
 
        ! Restriction: the residual restricted onto the blocks;
        ! prolongation: the correction computed there, prolonged by the
-       ! transpose.
+       ! transpose
        call through_blocks(this % aggregates, this % nblocks, 1, r, rc, transposed=.false.)
        ec = 0.0_dp
        call this % coarse % solve(rc, ec, coarse_residual)
@@ -358,6 +390,7 @@ contains
        call through_blocks(this % aggregates, this % nblocks, 1, e, ec, transposed=.true.)
        x = x + e
 
+       ! Smooth again
        call this % smoother % solve(rhs, x, smoothed)
 
        call this % imbalance(rhs, x, r)
@@ -373,15 +406,14 @@ contains
 
   end subroutine solve
 
-
   !===================================================================!
-  ! Bind the account of this minimizer and of its children.
+  ! Binds the account of this minimizer and of its children
   !===================================================================!
 
   subroutine multigrid_bind_account(this, account)
 
-    class(multigrid), intent(inout) :: this
-    type(tally), pointer, intent(in) :: account
+    class(multigrid)    , intent(inout) :: this
+    type(tally), pointer, intent(in)    :: account
 
     this % account => account
     if (allocated(this % smoother)) call this % smoother % bind_account(account)

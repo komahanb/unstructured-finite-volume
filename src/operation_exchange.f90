@@ -1,61 +1,89 @@
 !=====================================================================!
-! THE EXCHANGE: the distribution of the unknowns over the images and
-! the operators it induces on vectors.
+! Module that states the exchange: the distribution of the unknowns
+! over the images and the operators it induces on vectors.
 !
 ! Of the whole, an exchange serves vectors of the whole length: every
-! image has every entry; those it owns are its own, and every other
-! is stale until a gather. Of a part, it serves vectors of the part's
+! image has every entry; those it owns are its own, and every other is
+! stale until a gather. Of a part, it serves vectors of the part's
 ! length: the part the partitioner cuts from the coupling of the
-! blocks, in the part's own numbering, the owned unknowns first and
-! the halo after them. The exchange is
+! blocks, in the part's own numbering, the owned unknowns first and the
+! halo after them.
+!
+!      of the whole   [ owned by 1 | owned by 2 | owned by 3 ]   on every
+!                       current on its owner, stale elsewhere    image
+!
+!      of a part      [ this image's owned blocks | halo blocks ]
+!
+! The exchange is
 !
 !      gather(x)       of the whole: x(i) := x(i) of the owner of i,
 !                      for every i; of a part: every halo entry takes
 !                      its owner's value
 !      total(s)        the sum of s over the images
 !      maximum(s)      the largest s over the images
-!      part(coupling)  the part of this image, of the whole's
-!                      ownership
+!      part(coupling)  the part of this image, of the whole's ownership
 !      restriction(x)  the part's entries of a whole vector
 !      assembled(x)    the whole vector of the parts' owned entries
 !      add_summed_rows(x, y)
 !                      a summed row's owner adds to y the other parts'
 !                      terms of the row at x
 !
-! The ownership is given per unknown and is the same for every
-! unknown of a block, so the part is cut from the coupling of the
-! blocks and consists of whole blocks. The neighbours of a part are
-! the owners of its halo; the relation is symmetric, the adjacency of
-! the blocks being so. The part sends to each neighbour the unknowns
-! of its owned blocks adjacent to that neighbour's, one segment per
-! neighbour in ascending image order, each segment in the order of
-! the colouring of the whole blocks, then of the block; the halo it
-! receives from a neighbour is that neighbour's segment for it, in
-! the same order. Both ends compute the segments from the same
-! ownership and the same adjacency, so nothing is exchanged to form
-! them, and a gather of a part is one write of the sent segments to
-! this image's outbox, one synchronisation with the neighbours, and
-! one contiguous read of each neighbour's segment: the volume per
-! image is that of its own halo, not of the interface of the whole,
-! and no image waits for an image that is not its neighbour, except
-! through the one sum of the summed rows when there are any. The
-! part also stores the colouring of the whole blocks, the same on
+! Blocks and neighbours. The ownership is given per unknown and is the
+! same for every unknown of a block, so the part is cut from the
+! coupling of the blocks and consists of whole blocks. The neighbours
+! of a part are the owners of its halo; the relation is symmetric, the
+! adjacency of the blocks being so.
+!
+! Segments. The part sends to each neighbour the unknowns of its owned
+! blocks adjacent to that neighbour's, one segment per neighbour in
+! ascending image order, each segment in the order of the colouring of
+! the whole blocks, then of the block; the halo it receives from a
+! neighbour is that neighbour's segment for it, in the same order.
+!
+!      the outbox of image k, one buffer
+!
+!      |  to image 1   |  to image 3, this one    |  to image 5   |
+!      | c1 | c2 | c3  |  c1   |   c2   |   c3    | c1 | c2 | c3  |
+!                      ^
+!                      remote_first(1, k): what image 3 reads from
+!
+! Both ends compute the segments from the same ownership and the same
+! adjacency, so nothing is exchanged to form them, and a gather of a
+! part is one write of the sent segments to this image's outbox, one
+! synchronisation with the neighbours, and one contiguous read of each
+! neighbour's segment: the volume per image is that of its own halo,
+! not of the interface of the whole, and no image waits for an image
+! that is not its neighbour, except through the one sum of the summed
+! rows when there are any.
+!
+! The part also stores the colouring of the whole blocks, the same on
 ! every image, so that a relaxation sweeping the colours in turn
 ! gathers each colour's segments alone, and relaxes in the order one
-! image does. A summed row reads every point - the integral of an
-! unknown over the region - so it is not a coupling of the cut: its
-! owner states the terms of its own columns, every other part keeps
-! the terms of its owned columns here, and one sum over the images
-! of their partial sums completes the row. Under one image nothing is
-! exchanged.
+! image does.
 !
-! The outbox is a coarray allocated in this module, by every image
-! at once with the same bounds. The coarray runtime in use
-! (OpenCoarrays 2.9.2 under gfortran 14) mis-sizes a remote read
-! whose source or destination is vector-subscripted, and rejects one
-! of zero length: every remote read here is a contiguous section of
-! positive length into a contiguous vector. The reductions need no
-! coarray variable: the collectives are sound.
+! Summed rows. A summed row reads every point, the integral of an
+! unknown over the region, so it is not a coupling of the cut: its
+! owner states the terms of its own columns, every other part keeps the
+! terms of its owned columns here, and one sum over the images of their
+! partial sums completes the row.
+!
+!      row r, owned by image 1, reads every column
+!
+!      image 1      its own columns' terms, in its own rows
+!      image 2      partial(r) = terms of its owned columns at x  --+
+!      image 3      partial(r) = terms of its owned columns at x  --+
+!                                                                   |
+!      image 1      y(r) += co_sum(partial)(r)  <-------------------+
+!
+! Under one image nothing is exchanged.
+!
+! The runtime. The outbox is a coarray allocated in this module, by
+! every image at once with the same bounds. The coarray runtime in use
+! (OpenCoarrays 2.9.2 under gfortran 14) mis-sizes a remote read whose
+! source or destination is vector-subscripted, and rejects one of zero
+! length: every remote read here is a contiguous section of positive
+! length into a contiguous vector. The reductions need no coarray
+! variable: the collectives are sound.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -73,36 +101,49 @@ module operation_exchange
   implicit none
 
   private
+
   public :: exchange, blocked, state_summed_rows
+
+  !-------------------------------------------------------------------!
+  ! Type that models an exchange: of the whole when whole_index is not
+  ! allocated, of a part when it is
+  !-------------------------------------------------------------------!
 
   type :: exchange
 
-     integer :: image = 1
+     integer :: image  = 1
      integer :: images = 1
-     ! the unknowns of a block, which share their owner
+
+     ! The unknowns of a block, which share their owner
      integer :: width = 1
-     ! the whole's ownership, one owning image per unknown
+
+     ! The whole's ownership, one owning image per unknown
      integer, allocatable :: owner(:)
-     ! over the entries of the vectors this exchange serves
+
+     ! Over the entries of the vectors this exchange serves
      logical, allocatable :: is_owned(:)
      integer, allocatable :: owned(:)
-     ! of a part: the whole's index of each entry, owned first
+
+     ! Of a part: the whole's index of each entry, owned first
      integer, allocatable :: whole_index(:)
-     ! of a part: the colour of each of its blocks in the colouring of
+
+     ! Of a part: the colour of each of its blocks in the colouring of
      ! the whole blocks, and the number of colours
      integer, allocatable :: block_colour(:)
-     integer :: num_colours = 0
-     ! of a part: the neighbouring images, ascending; the entries sent,
-     ! in the order of the outbox, those of neighbour k and colour c
-     ! at sent_first(c, k):sent_first(c + 1, k) - 1; the halo entries
+     integer              :: num_colours = 0
+
+     ! Of a part: the neighbouring images, ascending; the entries sent,
+     ! in the order of the outbox, those of neighbour k and colour c at
+     ! sent_first(c, k):sent_first(c + 1, k) - 1; the halo entries
      ! received, in the order of the neighbours' segments, those of
-     ! neighbour k and colour c at received_first(c, k):
-     ! received_first(c + 1, k) - 1, read from the neighbour's outbox
-     ! from remote_first(c, k)
+     ! neighbour k and colour c at
+     ! received_first(c, k):received_first(c + 1, k) - 1, read from the
+     ! neighbour's outbox from remote_first(c, k)
      integer, allocatable :: neighbours(:)
      integer, allocatable :: sent(:), received(:)
      integer, allocatable :: sent_first(:,:), received_first(:,:), remote_first(:,:)
-     ! of a part: the summed rows, each one's row in this part when it
+
+     ! Of a part: the summed rows, each one's row in this part when it
      ! owns it (zero otherwise), and the terms of this part's owned
      ! columns in the rows it does not own
      integer , allocatable :: summed_row(:), term_row(:), term_column(:)
@@ -110,9 +151,12 @@ module operation_exchange
 
    contains
 
+     ! The gather and the reductions
      procedure :: gather
      procedure :: total
      procedure :: maximum
+
+     ! The part, and the passage of vectors and operators to it
      procedure :: part
      procedure :: restriction
      procedure :: assembled
@@ -125,33 +169,39 @@ module operation_exchange
      module procedure create
   end interface exchange
 
-  ! THE OUTBOX: the segments this image sends, in two buffers
-  ! alternated by every gather of a part. A neighbour reads a buffer
-  ! after the synchronisation of its gather; the next gather writes
-  ! the other buffer, and the one after it passes a synchronisation
-  ! the neighbour reaches only after its read, so no read is overtaken
-  ! by a write. One vector, the second buffer after the first, each
-  ! of the largest segment total over the images, the bounds being
-  ! the same on every image.
+  ! The outbox: the segments this image sends, in two buffers alternated
+  ! by every gather of a part. A neighbour reads a buffer after the
+  ! synchronisation of its gather; the next gather writes the other
+  ! buffer, and the one after it passes a synchronisation the neighbour
+  ! reaches only after its read, so no read is overtaken by a write.
+  !
+  !      gather     1          2          3          4
+  !      writes     buffer 1   buffer 2   buffer 1   buffer 2
+  !
+  ! One vector, the second buffer after the first, each of the largest
+  ! segment total over the images, the bounds being the same on every
+  ! image.
   real(dp), allocatable :: outbox(:)[:]
+
+  ! The buffer the last gather wrote; the first gather writes buffer 1
   integer :: buffer = 2
 
 contains
 
   !===================================================================!
-  ! The exchange of the whole of the ownership given, one owning image
-  ! per unknown, the unknowns in blocks of the width given. An owner
-  ! outside 1..num_images(), or an ownership not in whole blocks, is
-  ! invalid input.
+  ! Creates the exchange of the whole of the ownership given, one
+  ! owning image per unknown, the unknowns in blocks of the width
+  ! given. An owner outside 1..num_images(), or an ownership not in
+  ! whole blocks, is invalid input.
   !===================================================================!
 
   function create(owner, width) result(this)
 
-    integer, intent(in) :: owner(:)
+    integer, intent(in)           :: owner(:)
     integer, intent(in), optional :: width
-    type(exchange) :: this
+    type(exchange)                :: this
 
-    integer :: i
+    integer            :: i
     character(len=250) :: message
 
     this % image  = this_image()
@@ -174,30 +224,34 @@ contains
   end function create
 
   !===================================================================!
-  ! THE PART of this image, cut by the partitioner from the coupling
-  ! of the blocks with the whole's ownership adopted: whole blocks,
-  ! the owned first; and the segments sent to and received from each
-  ! neighbour, from one pass over the adjacency of the blocks. Every
-  ! image calls this at once: the outbox is allocated here. A
+  ! Returns the part of this image, cut by the partitioner from the
+  ! coupling of the blocks with the whole's ownership adopted: whole
+  ! blocks, the owned first; and the segments sent to and received from
+  ! each neighbour, from one pass over the adjacency of the blocks.
+  ! Every image calls this at once: the outbox is allocated here. A
   ! coupling of another vertex count than the ownership, or a block
   ! whose unknowns have several owners, is invalid input.
+  !
+  !      unknowns  1 2 | 3 4 | 5 6 | ...      width 2
+  !      blocks     1     2     3    ...      block_owner(b) = owner of
+  !                                           its first unknown
   !===================================================================!
 
   function part(this, coupling) result(local)
 
     class(exchange)      , intent(in) :: this
     class(directed_graph), intent(in) :: coupling
-    type(exchange) :: local
+    type(exchange)                    :: local
 
-    type(stored_directed_graph) :: blocks
-    type(partitioner) :: cut
-    type(traversal) :: colouring
-    class(field), allocatable :: coloured
-    type(partition_relation) :: rel
+    type(stored_directed_graph)        :: blocks
+    type(partitioner)                  :: cut
+    type(traversal)                    :: colouring
+    class(field), allocatable          :: coloured
+    type(partition_relation)           :: rel
     class(directed_graph), allocatable :: cut_part
-    integer, allocatable :: block_owner(:), local_blocks(:), colours(:)
-    integer :: nb, w, i, b, j, owned_blocks, length
-    character(len=250) :: message
+    integer, allocatable               :: block_owner(:), local_blocks(:), colours(:)
+    integer                            :: nb, w, i, b, j, owned_blocks, length
+    character(len=250)                 :: message
 
     w  = this % width
     nb = size(this % owner) / w
@@ -218,7 +272,7 @@ contains
     call colouring % apply(blocks, output=coloured)
     call coloured % integer_vector(colours)
 
-    ! this image's part alone
+    ! This image's part alone
     cut = partitioner(PARTITION_ADOPTED, this % images, part=this % image, adopted=block_owner)
     call cut % partition_graph(blocks, cut_part, rel)
     owned_blocks = count(block_owner == this % image)
@@ -244,16 +298,21 @@ contains
   end function part
 
   !===================================================================!
-  ! THE SEGMENTS of a part. The neighbours are the owners of the halo
-  ! blocks. One pass over the blocks owned by this image or by a
-  ! neighbour reads each block's adjacent owners: a block of this
-  ! image adjacent to neighbour k is sent to k; a block of neighbour k
-  ! adjacent to this image is received from k; a block of neighbour k
-  ! adjacent to an image before this one lies before k's segment for
-  ! this image in k's outbox. A halo block received from no neighbour,
-  ! or a received block outside the part, is invalid input: the
-  ! partitioner's halo is the set of blocks adjacent to the owned
-  ! ones, which is what the pass reads.
+  ! Forms the segments of a part. The neighbours are the owners of the
+  ! halo blocks. One pass over the blocks owned by this image or by a
+  ! neighbour reads each block's adjacent owners:
+  !
+  !      block of          adjacent to         is
+  !      this image        neighbour k         sent to k
+  !      neighbour k       this image          received from k
+  !      neighbour k       an image before     before k's segment for
+  !                        this one            this image, in k's outbox
+  !
+  ! The first pass counts the blocks of each segment, the second places
+  ! their unknowns in the order of the counts. A halo block received
+  ! from no neighbour, or a received block outside the part, is invalid
+  ! input: the partitioner's halo is the set of blocks adjacent to the
+  ! owned ones, which is what the pass reads.
   !===================================================================!
 
   subroutine segments(local, blocks, block_owner, colours, local_blocks, owned_blocks)
@@ -266,14 +325,14 @@ contains
     integer, allocatable :: neighbour_index(:), marked(:), adjacent(:)
     integer, allocatable :: send_count(:,:), receive_count(:,:), before(:)
     integer, allocatable :: send_at(:,:), receive_at(:,:), place_of(:)
-    integer :: me, w, nc, nn, nb, b, o, i, k, c, m, pass, p, j, s, r
+    integer              :: me, w, nc, nn, nb, b, o, i, k, c, m, pass, p, j, s, r
 
     me = local % image
     w  = local % width
     nc = local % num_colours
     nb = size(block_owner)
 
-    ! the neighbours, ascending, from the owners of the halo blocks
+    ! The neighbours, ascending, from the owners of the halo blocks
     allocate(neighbour_index(local % images), source=0)
     do i = owned_blocks + 1, size(local_blocks)
        neighbour_index(block_owner(local_blocks(i))) = 1
@@ -296,7 +355,7 @@ contains
     place_of(local % whole_index) = [(i, i = 1, size(local % whole_index))]
     marked = 0
 
-    ! the first pass counts the blocks of each segment, the second
+    ! The first pass counts the blocks of each segment, the second
     ! places their unknowns in the order of the counts
     do pass = 1, 2
        if (pass == 1) then
@@ -323,7 +382,7 @@ contains
           call blocks % adjacent_vertices(b, adjacent)
           do i = 1, size(adjacent)
              m = block_owner(adjacent(i))
-             ! each adjacent image once per block and pass
+             ! Each adjacent image once per block and pass
              if (m == o .or. marked(m) == (pass - 1) * nb + b) cycle
              marked(m) = (pass - 1) * nb + b
              if (o == me) then
@@ -364,13 +423,17 @@ contains
 
   end subroutine segments
 
-  ! the first entry of each (colour, neighbour) segment, the segments
-  ! of one neighbour consecutive by colour and the neighbours
-  ! consecutive, each block counted contributing w entries
+  !===================================================================!
+  ! Returns the first entry of each (colour, neighbour) segment: the
+  ! segments of one neighbour consecutive by colour and the neighbours
+  ! consecutive, each block counted contributing w entries, and one
+  ! past the last segment of each neighbour in row nc + 1
+  !===================================================================!
+
   pure subroutine segment_bounds(count, w, first)
     integer, intent(in)  :: count(:,:), w
     integer, intent(out) :: first(:,:)
-    integer :: c, k, n
+    integer              :: c, k, n
     n = 1
     do k = 1, size(count, 2)
        do c = 1, size(count, 1)
@@ -382,11 +445,11 @@ contains
   end subroutine segment_bounds
 
   !===================================================================!
-  ! The outbox of the length given on this image, allocated by every
+  ! Allocates the outbox of the length given on this image, by every
   ! image at once with the largest length over the images. An outbox
   ! at least that long is left as it is: a reallocation synchronises
-  ! every image, and an exchange formed earlier still writes within
-  ! the length it was formed with.
+  ! every image, and an exchange formed earlier still writes within the
+  ! length it was formed with.
   !===================================================================!
 
   subroutine allocate_outbox(length)
@@ -407,11 +470,11 @@ contains
   end subroutine allocate_outbox
 
   !===================================================================!
-  ! THE GATHER. Of the whole, by one sum over the images of the vector
-  ! with every entry not owned set to zero: each entry is owned by one
-  ! image, so the sum is the owner's value everywhere. Of a part, by
-  ! the neighbour exchange: the sent segments written to this image's
-  ! outbox, one synchronisation with the neighbours, and each
+  ! Gathers a vector. Of the whole, by one sum over the images of the
+  ! vector with every entry not owned set to zero: each entry is owned
+  ! by one image, so the sum is the owner's value everywhere. Of a part,
+  ! by the neighbour exchange: the sent segments written to this
+  ! image's outbox, one synchronisation with the neighbours, and each
   ! neighbour's segment for this image read from its outbox into the
   ! halo. Every image calls it, with the same colour.
   !===================================================================!
@@ -420,15 +483,17 @@ contains
 
     class(exchange), intent(in)    :: this
     real(dp)       , intent(inout) :: x(:)
-    ! of a part, the segments of this colour alone
-    integer        , intent(in), optional :: colour
-    ! of a part, the other parts' terms of the summed rows at x, times
+
+    ! Of a part, the segments of this colour alone
+    integer, intent(in), optional :: colour
+
+    ! Of a part, the other parts' terms of the summed rows at x, times
     ! the factor, added to this vector
-    real(dp)       , intent(inout), optional :: summed_into(:)
-    real(dp)       , intent(in)   , optional :: factor
+    real(dp), intent(inout), optional :: summed_into(:)
+    real(dp), intent(in)   , optional :: factor
 
     real(dp), allocatable :: segment(:)
-    integer :: c1, c2, k, a, b, ra, rb, shift
+    integer               :: c1, c2, k, a, b, ra, rb, shift
 
     if (this % images == 1) return
     if (.not. allocated(this % whole_index)) then
@@ -455,13 +520,13 @@ contains
     do k = 1, size(this % neighbours)
        a  = this % received_first(c1, k)
        b  = this % received_first(c2 + 1, k) - 1
-       ! a section of no entries is not read: the runtime rejects
-       ! a remote read of zero length
+       ! A section of no entries is not read: the runtime rejects a
+       ! remote read of zero length
        if (b < a) cycle
        ra = shift + this % remote_first(c1, k)
        rb = ra + b - a
-       ! into a contiguous vector first: the runtime mis-sizes a
-       ! remote read whose destination is vector-subscripted
+       ! Into a contiguous vector first: the runtime mis-sizes a remote
+       ! read whose destination is vector-subscripted
        segment(1:b - a + 1) = outbox(ra:rb)[this % neighbours(k)]
        x(this % received(a:b)) = segment(1:b - a + 1)
     end do
@@ -470,25 +535,29 @@ contains
   end subroutine gather
 
   !===================================================================!
-  ! The part's entries of a whole vector, and the whole vector of the
-  ! parts' owned entries, by one sum over the images.
+  ! Returns the part's entries of a whole vector
   !===================================================================!
 
   function restriction(this, x) result(y)
 
-    class(exchange), intent(in) :: this
-    real(dp)       , intent(in) :: x(:)
-    real(dp), allocatable :: y(:)
+    class(exchange)      , intent(in) :: this
+    real(dp)             , intent(in) :: x(:)
+    real(dp), allocatable             :: y(:)
 
     y = x(this % whole_index)
 
   end function restriction
 
+  !===================================================================!
+  ! Returns the whole vector of the parts' owned entries, by one sum
+  ! over the images
+  !===================================================================!
+
   function assembled(this, x) result(y)
 
-    class(exchange), intent(in) :: this
-    real(dp)       , intent(in) :: x(:)
-    real(dp), allocatable :: y(:)
+    class(exchange)      , intent(in) :: this
+    real(dp)             , intent(in) :: x(:)
+    real(dp), allocatable             :: y(:)
 
     allocate(y(size(this % owner)), source=0.0_dp)
     y(this % whole_index(this % owned)) = x(this % owned)
@@ -497,10 +566,10 @@ contains
   end function assembled
 
   !===================================================================!
-  ! The triples of an operator on the whole restricted to the part:
-  ! those of the rows it owns, in the part's numbering. A column of an
-  ! owned row outside the part is invalid input: the part contains every
-  ! block adjacent to its own.
+  ! Returns the triples of an operator on the whole restricted to the
+  ! part: those of the rows it owns, in the part's numbering. A column
+  ! of an owned row outside the part is invalid input: the part
+  ! contains every block adjacent to its own.
   !===================================================================!
 
   subroutine restricted_triples(this, rows, columns, weights, part_rows, part_columns, part_weights, summed)
@@ -510,13 +579,14 @@ contains
     real(dp)             , intent(in)  :: weights(:)
     integer , allocatable, intent(out) :: part_rows(:), part_columns(:)
     real(dp), allocatable, intent(out) :: part_weights(:)
-    ! the whole's summed rows: of those the terms of the owned columns
+
+    ! The whole's summed rows: of those the terms of the owned columns
     ! alone, the others' being added by add_summed_rows
-    integer              , intent(in), optional :: summed(:)
+    integer, intent(in), optional :: summed(:)
 
     integer, allocatable :: place_of(:)
     logical, allocatable :: owned_row(:), is_summed(:)
-    integer :: i
+    integer              :: i
 
     allocate(place_of(size(this % owner)), source=0)
     place_of(this % whole_index) = [(i, i = 1, size(this % whole_index))]
@@ -536,9 +606,9 @@ contains
   end subroutine restricted_triples
 
   !===================================================================!
-  ! THE SUMMED ROWS of a part, from the whole's rows and the whole
-  ! operator's terms (rows, columns, weights): the terms this part owns
-  ! the column of, in the rows it does not own.
+  ! States the summed rows of a part, from the whole's rows and the
+  ! whole operator's terms (rows, columns, weights): the terms this
+  ! part owns the column of, in the rows it does not own
   !===================================================================!
 
   subroutine state_summed_rows(this, summed, rows, columns, weights)
@@ -549,7 +619,7 @@ contains
 
     integer, allocatable :: place_of(:), index_of(:)
     logical, allocatable :: from_here(:)
-    integer :: i
+    integer              :: i
 
     allocate(place_of(size(this % owner)), index_of(size(this % owner)), source=0)
     place_of(this % whole_index) = [(i, i = 1, size(this % whole_index))]
@@ -563,7 +633,7 @@ contains
   end subroutine state_summed_rows
 
   !===================================================================!
-  ! The other parts' terms of the summed rows at x added to y at the
+  ! Adds the other parts' terms of the summed rows at x to y at the
   ! rows this part owns: one sum over the images of every part's
   ! partial sums. Every image calls it, the owner of no summed row too.
   !===================================================================!
@@ -573,11 +643,12 @@ contains
     class(exchange), intent(in)    :: this
     real(dp)       , intent(in)    :: x(:)
     real(dp)       , intent(inout) :: y(:)
-    ! the terms times this factor, one when absent
-    real(dp)       , intent(in), optional :: factor
+
+    ! The terms times this factor, one when absent
+    real(dp), intent(in), optional :: factor
 
     real(dp), allocatable :: partial(:)
-    integer :: e
+    integer               :: e
 
     if (.not. allocated(this % summed_row)) return
     if (size(this % summed_row) == 0) return
@@ -594,19 +665,22 @@ contains
   end subroutine add_summed_rows
 
   !===================================================================!
-  ! The coupling of the blocks of `width` consecutive unknowns: an
-  ! edge between two blocks for every edge of the unknowns' coupling
-  ! that joins them.
+  ! Returns the coupling of the blocks of width consecutive unknowns:
+  ! an edge between two blocks for every edge of the unknowns' coupling
+  ! that joins them, an edge within one block omitted
+  !
+  !      unknowns   1 -- 3        width 2      blocks   1 -- 2
+  !                 2    4                     (1 2)    (3 4)
   !===================================================================!
 
   function blocked(coupling, width) result(blocks)
 
     class(directed_graph), intent(in) :: coupling
     integer              , intent(in) :: width
-    type(stored_directed_graph) :: blocks
+    type(stored_directed_graph)       :: blocks
 
     integer, allocatable :: tails(:), heads(:)
-    integer :: e, ne, t, h, n
+    integer              :: e, ne, t, h, n
 
     ne = coupling % num_edges()
     allocate(tails(ne), heads(ne))
@@ -624,12 +698,20 @@ contains
 
   end function blocked
 
+  !===================================================================!
+  ! Returns the sum of s over the images
+  !===================================================================!
+
   real(dp) function total(this, s)
     class(exchange), intent(in) :: this
     real(dp)       , intent(in) :: s
     total = s
     if (this % images > 1) call co_sum(total)
   end function total
+
+  !===================================================================!
+  ! Returns the largest s over the images
+  !===================================================================!
 
   real(dp) function maximum(this, s)
     class(exchange), intent(in) :: this

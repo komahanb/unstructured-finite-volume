@@ -1,49 +1,57 @@
 !=====================================================================!
-! RELATIONAL VIEW
-!
-! One view of a graph, in which the two branches are interpreted as the
-! pair (S, P):
+! Module that states the relational view: one view of a graph, in
+! which the two branches are read as the pair (S, P),
 !
 !     branch(1) = the sequence of member sets
 !     branch(2) = the sequence of relations
 !
+!                    G
+!              +-----+-------+
+!          branch(1)     branch(2)
+!          s1 -> s2 -> NULL     p1 -> NULL       sequences of element graphs
+!           |     |              |
+!           v     v              v
+!          the owned set        the owned relation    through the binding
+!          objects               objects
+!
 ! (S, P) is a view. The same graph remains readable under any other,
 ! and the kernel defines none of these terms.
 !
-! THE BINDING. A branch references a GRAPH, never an arbitrary object.
+! The binding. A branch references a graph, never an arbitrary object.
 ! The member sets and relations of this repository are not yet graphs,
-! so each element graph denotes one of them and a binding maps the
-! element to the legacy object it denotes. The binding OWNS its
+! so each element graph denotes one of them, and a binding maps the
+! element to the legacy object it denotes. The binding owns its
 ! objects, because a non-owning pointer passed to a caller can outlive
 ! the object it references.
 !
-! THE STORAGE LAW.
+! The storage law:
 !
 !     a binding is a counted reference to its objects; bind_* preserves
 !     every outstanding object pointer while any owner of the binding
 !     remains.
 !
-! That law has a cost. A row stores a POINTER to an individually
+! That law has a cost. A row stores a pointer to an individually
 ! allocated object, never the object itself: when the row array grows,
 ! the rows are copied and the objects do not move. Storing the object
-! in the row - as an allocatable component - was measured and rejected,
+! in the row, as an allocatable component, was measured and rejected,
 ! because growth relocates the array and every non-owning pointer then
 ! reads freed storage: incorrect values first, a fatal error next. See
-! test/graph-relational/lifetime.f90, which checks this law on every run.
+! test/graph-relational/lifetime.f90, which checks this law on every
+! run.
 !
-! ASSIGNMENT BINDS ONE MORE OWNER of the same objects
+! Assignment binds one more owner of the same objects
 ! (util_counted_storage); the last owner's finalization deallocates
-! them. No Fortran mechanism prohibits assignment at compile time;
-! four were compiled and measured in
-! test/graph-relational/fortran-assignment, and a deep copy was
-! measured and rejected (test/graph-relational/lifetime.f90).
-! Extension and replacement are different operations: bind_* extends
-! a binding with one owner and preserves every pointer it has
-! returned; a binding with more than one owner is immutable and
-! bind_* refuses. A copy made without defined assignment (allocate
-! with source=, a structure constructor, polymorphic assignment) is
-! not an owner: the first of the two to be finalized releases the
-! binding and the other is refused at its next access.
+! them. No Fortran mechanism prohibits assignment at compile time; four
+! were compiled and measured in test/graph-relational/fortran-assignment,
+! and a deep copy was measured and rejected
+! (test/graph-relational/lifetime.f90). Extension and replacement are
+! different operations: bind_* extends a binding with one owner and
+! preserves every pointer it has returned; a binding with more than one
+! owner is immutable and bind_* refuses. A copy made without defined
+! assignment (allocate with source=, a structure constructor,
+! polymorphic assignment) is not an owner: the first of the two to be
+! finalized releases the binding and the other is refused at its next
+! access.
 !
 ! Because a row stores a pointer rather than the object, the pointer
 ! this module returns does not point into the binding. The binding
@@ -56,10 +64,10 @@
 ! here: they existed only because a Fortran array has one dynamic
 ! type, and that is a storage fact.
 !
-! Sequence behaviour is delegated to view_sequence. Nothing here
-! reads a cell.
+! Sequence behaviour is delegated to view_sequence. Nothing here reads
+! a cell.
 !
-! THREE FAILURES, STRUCTURALLY APART.
+! Three failures, structurally apart:
 !
 !     malformed sequence   rejected, by view_sequence
 !     unstorable object    rejected, by bind_set / bind_relation
@@ -73,14 +81,14 @@
 ! because copying it into owned storage copies a reference to a base
 ! the binding does not keep allocated.
 !
-! THE VALIDITY LAW:
+! The validity law:
 !
 !     G is relationally valid iff
 !       (i)   no member set occurs twice in the member-set sequence,
 !       (ii)  no relation occurs twice in the relation sequence, and
 !       (iii) every domain of every relation is a member set of G.
 !
-! S and P are SETS; the branches represent them as sequences, and a
+! S and P are sets; the branches represent them as sequences, and a
 ! sequence may repeat what a set cannot. (i) and (ii) are that
 ! difference, reported rather than rejected, because repetition is a
 ! property of a constructed graph.
@@ -90,36 +98,47 @@
 
 module view_relational
 
-  use graph_fractal    , only : graph, branch
-  use token_identity   , only : token
+  use graph_fractal       , only : graph, branch
+  use token_identity      , only : token
   use util_counted_storage, only : counted_storage, counted_reference
-  use map_token_rows   , only : identity_rows
-  use relation_finitary, only : relation
-  use view_sequence    , only : sequence_num_elements, sequence_element, &
+  use map_token_rows      , only : identity_rows
+  use relation_finitary   , only : relation
+  use view_sequence       , only : sequence_num_elements, sequence_element, &
        & sequence_empty, sequence_first, sequence_rest
 
   implicit none
 
   private
+
   public :: relational_binding
   public :: num_member_sets, member_set_at
   public :: num_relations, relation_at
   public :: has_set, relational_valid
 
-  !===================================================================!
-  ! Owned storage. The elements are the keys of two identity-row
-  ! tables; the objects run parallel to the rows, each allocated
-  ! separately and referenced by pointer. The cell is jointly owned
-  ! by every binding value assigned from it.
-  !===================================================================!
+  !-------------------------------------------------------------------!
+  ! Type that models a bound member set: a pointer to its separately
+  ! allocated object
+  !-------------------------------------------------------------------!
 
   type :: bound_set
-     type(graph)    , pointer :: object => null()
+     type(graph), pointer :: object => null()
   end type bound_set
+
+  !-------------------------------------------------------------------!
+  ! Type that models a bound relation: a pointer to its separately
+  ! allocated object
+  !-------------------------------------------------------------------!
 
   type :: bound_relation
      class(relation), pointer :: object => null()
   end type bound_relation
+
+  !-------------------------------------------------------------------!
+  ! Type that models the owned storage. The elements are the keys of
+  ! two identity-row tables; the objects run parallel to the rows, each
+  ! allocated separately and referenced by pointer. The cell is jointly
+  ! owned by every binding value assigned from it.
+  !-------------------------------------------------------------------!
 
   type, extends(counted_storage) :: bound_objects
 
@@ -132,6 +151,11 @@ module view_relational
      procedure :: clear => release_objects
 
   end type bound_objects
+
+  !-------------------------------------------------------------------!
+  ! Type that models the binding: a counted reference to the owned
+  ! storage
+  !-------------------------------------------------------------------!
 
   type :: relational_binding
 
@@ -153,8 +177,9 @@ module view_relational
 contains
 
   !===================================================================!
-  ! Binding. The object is copied into owned storage; the element's
-  ! identity is the key, so an element is declared and bound once.
+  ! Binds a member set to an element. The object is copied into owned
+  ! storage; the element's identity is the key, so an element is
+  ! declared and bound once.
   !
   ! What may be stored: an object with an assigned identity, because
   ! the view compares objects and nothing else; and, for a relation,
@@ -162,6 +187,10 @@ contains
   ! owned storage stores a reference to a base the binding does not
   ! keep allocated. A view is defined over a bound relation, never
   ! stored inside one.
+  !
+  ! Replacing a binding cannot preserve the pointers it has returned,
+  ! so replacement is not an operation. The binding is INTENT(INOUT):
+  ! an INTENT(OUT) dummy would be finalized before this body executed.
   !===================================================================!
 
   subroutine bind_set(this, element, object)
@@ -171,9 +200,9 @@ contains
     type(graph)              , intent(in)    :: object
 
     type(bound_objects), pointer :: objects
-    integer :: at
+    integer                      :: at
 
-    ! An undeclared token does not match itself.
+    ! An undeclared token does not match itself
     if (.not. object % same_as(object)) then
        error stop 'view_relational: bind_set requires an identified object, but this object is &
             &not self-identical (its identity is undeclared)'
@@ -190,6 +219,11 @@ contains
 
   end subroutine bind_set
 
+  !===================================================================!
+  ! Binds a relation to an element, under the same rules, the relation
+  ! materialized
+  !===================================================================!
+
   subroutine bind_relation(this, element, object)
 
     class(relational_binding), intent(inout) :: this
@@ -197,7 +231,7 @@ contains
     class(relation)          , intent(in)    :: object
 
     type(bound_objects), pointer :: objects
-    integer :: at
+    integer                      :: at
 
     if (.not. object % same_as(object)) then
        error stop 'view_relational: bind_relation requires an identified object, but this object &
@@ -221,16 +255,16 @@ contains
   end subroutine bind_relation
 
   !===================================================================!
-  ! The cell this binding is bound to. A binding whose objects were
-  ! released stops the program: the last owner deallocated them, or
-  ! this value is a bitwise copy whose twin released the binding.
-  ! A binding never bound has no cell.
+  ! Returns the cell this binding is bound to. A binding whose objects
+  ! were released stops the program: the last owner deallocated them,
+  ! or this value is a bitwise copy whose twin released the binding. A
+  ! binding never bound has no cell.
   !===================================================================!
 
   function cell(this) result(objects)
 
     class(relational_binding), intent(in) :: this
-    type(bound_objects), pointer          :: objects
+    type(bound_objects)      , pointer    :: objects
 
     class(counted_storage), pointer :: storage
 
@@ -248,17 +282,17 @@ contains
   end function cell
 
   !===================================================================!
-  ! The cell to extend: acquired by the first bind_*; a binding with
-  ! more than one owner is immutable and stops the program.
+  ! Returns the cell to extend, acquired by the first bind_*; a binding
+  ! with more than one owner is immutable and stops the program
   !===================================================================!
 
   function extended(this) result(objects)
 
     class(relational_binding), intent(inout) :: this
-    type(bound_objects), pointer             :: objects
+    type(bound_objects)      , pointer       :: objects
 
     type(bound_objects) :: template
-    character(len=100) :: message
+    character(len=100)  :: message
 
     if (this % reference % num_owners() > 1) then
        write(message,'(a,i0)') 'view_relational: extended requires a binding with a sole owner; &
@@ -270,8 +304,11 @@ contains
 
   end function extended
 
-  ! The number of binding values bound to these objects; zero for a
-  ! binding without any.
+  !===================================================================!
+  ! Returns the number of binding values bound to these objects; zero
+  ! for a binding without any
+  !===================================================================!
+
   pure integer function num_owners(this)
 
     class(relational_binding), intent(in) :: this
@@ -281,15 +318,15 @@ contains
   end function num_owners
 
   !===================================================================!
-  ! Lookup by element identity, returning a reference into owned
-  ! storage.
+  ! Returns the member set bound to an element, by its identity: a
+  ! reference into owned storage
   !===================================================================!
 
   function set_for(this, element) result(s)
 
     class(relational_binding), intent(in) :: this
     type(graph)              , intent(in) :: element
-    type(graph), pointer                  :: s
+    type(graph)              , pointer    :: s
 
     type(bound_objects), pointer :: objects
 
@@ -302,11 +339,15 @@ contains
 
   end function set_for
 
+  !===================================================================!
+  ! Returns the relation bound to an element, by its identity
+  !===================================================================!
+
   function relation_for(this, element) result(r)
 
     class(relational_binding), intent(in) :: this
     type(graph)              , intent(in) :: element
-    class(relation), pointer              :: r
+    class(relation)          , pointer    :: r
 
     type(bound_objects), pointer :: objects
 
@@ -320,13 +361,7 @@ contains
   end function relation_for
 
   !===================================================================!
-  ! Rejection. Replacing a binding cannot preserve the pointers it has
-  ! returned, so replacement is not an operation. INTENT(INOUT): an
-  ! INTENT(OUT) dummy would be finalized before this body executed.
-  !===================================================================!
-
-  !===================================================================!
-  ! Release every object of a cell, when its last owner is finalized.
+  ! Releases every object of a cell, when its last owner is finalized
   !===================================================================!
 
   subroutine release_objects(this)
@@ -334,7 +369,7 @@ contains
     class(bound_objects), intent(inout) :: this
 
     type(identity_rows) :: no_rows
-    integer :: k
+    integer             :: k
 
     do k = 1, this % set_rows % num_rows()
        if (associated(this % sets(k) % object)) deallocate(this % sets(k) % object)
@@ -346,13 +381,16 @@ contains
 
     if (allocated(this % sets)) deallocate(this % sets)
     if (allocated(this % relations)) deallocate(this % relations)
-    ! the cell is recycled by the next acquisition: its key tables are
+    ! The cell is recycled by the next acquisition: its key tables are
     ! emptied with its objects
     this % set_rows = no_rows
     this % relation_rows = no_rows
 
   end subroutine release_objects
 
+  !===================================================================!
+  ! Returns the number of member sets of the graph
+  !===================================================================!
 
   integer function num_member_sets(g) result(n)
 
@@ -362,6 +400,10 @@ contains
 
   end function num_member_sets
 
+  !===================================================================!
+  ! Returns the number of relations of the graph
+  !===================================================================!
+
   integer function num_relations(g) result(n)
 
     type(graph), intent(in) :: g
@@ -370,12 +412,16 @@ contains
 
   end function num_relations
 
+  !===================================================================!
+  ! Returns the k-th member set of the graph, through the binding
+  !===================================================================!
+
   function member_set_at(g, b, k) result(s)
 
     type(graph)             , intent(in) :: g
     type(relational_binding), intent(in) :: b
     integer                 , intent(in) :: k
-    type(graph), pointer             :: s
+    type(graph)             , pointer    :: s
 
     type(graph), pointer :: element
 
@@ -384,12 +430,16 @@ contains
 
   end function member_set_at
 
+  !===================================================================!
+  ! Returns the k-th relation of the graph, through the binding
+  !===================================================================!
+
   function relation_at(g, b, k) result(r)
 
     type(graph)             , intent(in) :: g
     type(relational_binding), intent(in) :: b
     integer                 , intent(in) :: k
-    class(relation), pointer             :: r
+    class(relation)         , pointer    :: r
 
     type(graph), pointer :: element
 
@@ -399,9 +449,9 @@ contains
   end function relation_at
 
   !===================================================================!
-  ! Whether this graph contains that member set. One scan of the binding to
-  ! find the element that denotes it, then one traversal of the
-  ! sequence: O(m + n), never O(m*n).
+  ! Returns whether this graph contains that member set: one scan of
+  ! the binding to find the element that denotes it, then one
+  ! traversal of the sequence, O(m + n), never O(m*n)
   !===================================================================!
 
   logical function has_set(g, b, s) result(stored)
@@ -411,7 +461,7 @@ contains
     type(graph)             , intent(in) :: s
 
     type(bound_objects), pointer :: objects
-    integer :: k
+    integer                      :: k
 
     stored = .false.
 
@@ -428,9 +478,10 @@ contains
   end function has_set
 
   !===================================================================!
-  ! Does the sequence contain the element with this identity: the
-  ! element is stored as a key, so membership is read by token. A
-  ! chain of cells that reaches UNKNOWN is refused by sequence_first.
+  ! Returns whether the sequence contains the element with this
+  ! identity. The element is stored as a key, so membership is read by
+  ! token. A chain of cells that reaches UNKNOWN is refused by
+  ! sequence_first.
   !===================================================================!
 
   recursive logical function sequence_has_key(b, key) result(found)
@@ -450,8 +501,8 @@ contains
   end function sequence_has_key
 
   !===================================================================!
-  ! The validity law. S and P are sets, and every domain of every
-  ! relation is a member set of this graph.
+  ! Returns whether the graph is relationally valid: S and P are sets,
+  ! and every domain of every relation is a member set of this graph
   !===================================================================!
 
   logical function relational_valid(g, b) result(valid)
@@ -459,10 +510,10 @@ contains
     type(graph)             , intent(in) :: g
     type(relational_binding), intent(in) :: b
 
-    type(graph)  , pointer     :: s, s_earlier
-    class(relation)  , pointer     :: r, r_earlier
-    type(graph)                :: d
-    integer                        :: k, j
+    type(graph)    , pointer :: s, s_earlier
+    class(relation), pointer :: r, r_earlier
+    type(graph)              :: d
+    integer                  :: k, j
 
     valid = .false.
 

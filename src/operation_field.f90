@@ -1,38 +1,45 @@
 !=====================================================================!
-! FIELDS ON A MANIFOLD, CONTINUOUS AND DISCRETE.
+! Module that states the fields on a manifold, continuous and
+! discrete.
 !
-! A continuous field is a function on a manifold, stored as an
-! expression graph per component: a coordinate function, an unknown
-! function of the manifold, or a formula in these and in constants.
-! A discrete field is the same function on the points of a
-! discretization of the manifold: one value per point per component.
-! The one map between them, discretize, samples the continuous field
-! at the points; the residual, defined elsewhere, solves for an unknown
-! there instead.
+! Continuous and discrete. A continuous field is a function on a
+! manifold, stored as an expression graph per component: a coordinate
+! function, an unknown function of the manifold, or a formula in these
+! and in constants. A discrete field is the same function on the
+! points of a discretization of the manifold: one value per point per
+! component. The one map between them, discretize, samples the
+! continuous field at the points; the residual, defined elsewhere,
+! solves for an unknown there instead.
 !
-! The manifolds themselves are defined above this module. A field
-! sees its manifold through the two abstract supports below: the
-! continuous one by its identity, the discrete one by its points,
-! their positions and their measure. A manifold extends the first,
-! its discretization the second.
+!      continuous field on M   --discretize-->   discrete field on M_h
+!      an expression per                         a value per point
+!      component                                 and component
+!
+!      residual on M_h   --solve-->   discrete field and its jet
+!
+! Supports. The manifolds themselves are defined above this module. A
+! field sees its manifold through the two abstract supports below:
+! the continuous one by its identity, the discrete one by its points,
+! their positions and their measure. A manifold extends the first, its
+! discretization the second.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 
 module operation_field
 
-  use util_precision      , only : dp
-  use token_identity      , only : token
+  use util_precision       , only : dp
+  use token_identity       , only : token
   use util_derivative_terms, only : derivative_terms, coefficient, symmetric_terms
-  use operation_expansion , only : expansion
-  use operation_expression, only : expression, unknown, constant, coordinate, time_map, component, component_along, design
-  use operation_expression, only : derivative, jet_form
-  use operation_expression, only : partial_derivative, partial_in_design, total_derivative, stationarity
-  use operation_expression, only : boundary_terms
-  use operation_expression, only : FIRST_COORDINATE
-  use operation_expression, only : operator(+), operator(-), operator(*), operator(/), operator(**)
-  use operation_expression, only : sin, cos, exp, log, sqrt, heaviside
-  use view_expression     , only : expression_view
+  use operation_expansion  , only : expansion
+  use operation_expression , only : expression, unknown, constant, coordinate, time_map, component, component_along, design
+  use operation_expression , only : derivative, jet_form
+  use operation_expression , only : partial_derivative, partial_in_design, total_derivative, stationarity
+  use operation_expression , only : boundary_terms
+  use operation_expression , only : FIRST_COORDINATE
+  use operation_expression , only : operator(+), operator(-), operator(*), operator(/), operator(**)
+  use operation_expression , only : sin, cos, exp, log, sqrt, heaviside
+  use view_expression      , only : expression_view
 
   implicit none
 
@@ -42,25 +49,32 @@ module operation_field
   public :: unknown_field, coordinate_field, time_map_field, integral, maximum, representation
   public :: WHOLE, TIME_FACE, TIME_FACTOR, SPACE_FACTOR, DESIGN_FACTOR, SPACE_FACE
 
-  ! the parts a support can be of another
+  ! The parts a support can be of another
+  !
+  !      WHOLE           the support itself
+  !      TIME_FACE       the face at an instant
+  !      TIME_FACTOR     the time factor
+  !      SPACE_FACTOR    the space factor
+  !      DESIGN_FACTOR   the design factor
+  !      SPACE_FACE      the face at a value of a space coordinate
   integer, parameter :: WHOLE = 0, TIME_FACE = 1, TIME_FACTOR = 2, SPACE_FACTOR = 3, DESIGN_FACTOR = 4, &
        & SPACE_FACE = 5
   public :: operator(+), operator(-), operator(*), operator(/), operator(**)
   public :: sin, cos, exp, log, sqrt, heaviside
 
-  !===================================================================!
-  ! THE SUPPORTS. A continuous support is known to a field by its
-  ! identity alone; a discrete support by its points.
-  !===================================================================!
+  !-------------------------------------------------------------------!
+  ! Type that models a continuous support, known to a field by its
+  ! identity alone, and by the part of another support it is
+  !-------------------------------------------------------------------!
 
   type, abstract :: continuous_support
 
      type(token) :: identity
-     ! the part of another support this one is - the whole, the face
-     ! at an instant, the face at a value of a space coordinate, the
-     ! time factor, the space factor, the design factor - the identity
-     ! of that parent, and for a face the coordinate it is taken along
-     ! and the coordinate's value there
+     ! the part of another support this one is (the whole, the face at
+     ! an instant, the face at a value of a space coordinate, the time
+     ! factor, the space factor, the design factor), the identity of
+     ! that parent, and for a face the coordinate it is taken along and
+     ! the coordinate's value there
      integer     :: part = WHOLE
      type(token) :: parent
      integer     :: face_axis  = 0
@@ -72,6 +86,11 @@ module operation_field
 
   end type continuous_support
 
+  !-------------------------------------------------------------------!
+  ! Type that models a discrete support, known to a field by its
+  ! points, their positions and their measure
+  !-------------------------------------------------------------------!
+
   type, abstract :: discrete_support
 
      type(token) :: identity        ! of the continuous support discretized
@@ -81,28 +100,34 @@ module operation_field
 
    contains
 
-     procedure(count_interface)   , deferred :: num_points
-     procedure(count_interface)   , deferred :: num_coordinates
-     procedure(position_interface), deferred :: position
-     procedure(measure_interface) , deferred :: measure
-     procedure(factor_interface)  , deferred :: design_factor
+     procedure(count_interface)       , deferred :: num_points
+     procedure(count_interface)       , deferred :: num_coordinates
+     procedure(position_interface)    , deferred :: position
+     procedure(measure_interface)     , deferred :: measure
+     procedure(factor_interface)      , deferred :: design_factor
      procedure(face_measure_interface), deferred :: measure_on_face
 
   end type discrete_support
 
   abstract interface
 
-     ! the discretization of the design factor of the support: the
-     ! point a functional of the solution takes its values on, with
-     ! the expansion along the design
+     !----------------------------------------------------------------!
+     ! Interface for the discretization of the design factor of the
+     ! support: the point a functional of the solution takes its
+     ! values on, with the expansion along the design
+     !----------------------------------------------------------------!
+
      function factor_interface(this) result(factor)
        import :: discrete_support
-       class(discrete_support), intent(in) :: this
+       class(discrete_support), intent(in)  :: this
        class(discrete_support), allocatable :: factor
      end function factor_interface
 
-     ! the measure of point p within the face at the instant given:
-     ! zero for a point not on the face
+     !----------------------------------------------------------------!
+     ! Interface for the measure of point p within the face at the
+     ! instant given: zero for a point not on the face
+     !----------------------------------------------------------------!
+
      pure real(dp) function face_measure_interface(this, p, time)
        import :: discrete_support, dp
        class(discrete_support), intent(in) :: this
@@ -110,20 +135,30 @@ module operation_field
        real(dp)               , intent(in) :: time
      end function face_measure_interface
 
+     !----------------------------------------------------------------!
+     ! Interface for a count: of the points, or of the coordinates
+     !----------------------------------------------------------------!
+
      pure integer function count_interface(this)
        import :: discrete_support
        class(discrete_support), intent(in) :: this
      end function count_interface
 
-     ! the coordinates of point p
+     !----------------------------------------------------------------!
+     ! Interface for the coordinates of point p
+     !----------------------------------------------------------------!
+
      pure function position_interface(this, p) result(x)
        import :: discrete_support, dp
        class(discrete_support), intent(in) :: this
        integer                , intent(in) :: p
-       real(dp), allocatable :: x(:)
+       real(dp), allocatable                :: x(:)
      end function position_interface
 
-     ! the share of the manifold's measure at point p
+     !----------------------------------------------------------------!
+     ! Interface for the share of the manifold's measure at point p
+     !----------------------------------------------------------------!
+
      pure real(dp) function measure_interface(this, p)
        import :: discrete_support, dp
        class(discrete_support), intent(in) :: this
@@ -132,44 +167,58 @@ module operation_field
 
   end interface
 
-  !===================================================================!
-  ! THE CONTINUOUS FIELD: one expression per component, on one
-  ! support. An unknown has the field number of each component
-  ! on its manifold and its arguments, the names of the coordinates
-  ! it is a function of; a coordinate function has the coordinate it
-  ! is, and is its own argument - the design coordinate reads the
-  ! design of the point rather than a position; an integral has the
-  ! identity of the factor it runs over, which part of its parent
-  ! that factor is, and the parent's identity.
-  !===================================================================!
+  !-------------------------------------------------------------------!
+  ! Type that models the continuous field: one expression per
+  ! component, on one support.
+  !
+  !      kind                 what it stores
+  !      unknown              the field number of each component on
+  !                           its manifold, and its arguments, the
+  !                           names of the coordinates it is a
+  !                           function of
+  !      coordinate function  the coordinate it is, and itself as its
+  !                           argument; the design coordinate reads
+  !                           the design of the point, not a position
+  !      integral             the identity of the factor it runs over,
+  !                           which part of its parent that factor is,
+  !                           and the parent's identity
+  !-------------------------------------------------------------------!
 
   type :: continuous_field
 
-     type(token) :: on
+     ! The support, the name, the arguments and one expression per
+     ! component, with the field number of each, zero for none
+     type(token)                   :: on
      character(len=:), allocatable :: name
      character(len=8), allocatable :: argument(:)
      type(expression), allocatable :: component(:)
-     integer, allocatable :: index(:)
-     integer :: coordinate = 0
-     logical :: design_coordinate = .false.
-     ! a direction in the design: its vector over the design coordinates
-     real(dp), allocatable :: direction(:)
-     type(token) :: integrated_over
-     integer     :: integrated_part = WHOLE
-     type(token) :: integrated_parent
-     real(dp)    :: integrated_time = 0.0_dp
-     ! the weight of a smooth maximum over the factor; zero for an
+     integer         , allocatable :: index(:)
+     ! The coordinate a coordinate function is, and whether it is of
+     ! the design
+     integer                       :: coordinate = 0
+     logical                       :: design_coordinate = .false.
+     ! A direction in the design: its vector over the design
+     ! coordinates
+     real(dp)        , allocatable :: direction(:)
+     ! Of an integral: the factor, its part, its parent, and the
+     ! instant of a face at an instant
+     type(token)                   :: integrated_over
+     integer                       :: integrated_part = WHOLE
+     type(token)                   :: integrated_parent
+     real(dp)                      :: integrated_time = 0.0_dp
+     ! The weight of a smooth maximum over the factor; zero for an
      ! integral
-     real(dp)    :: weight = 0.0_dp
-     ! A FIELD OF TIME WITH AN INTEGRAL OVER THE REGION, on a manifold
-     ! of time and space: its value the component plus the integral over
-     ! the region of the integrand, the sum of a field and of integrals
-     ! over the space factor; such an integral enters a field linearly,
-     ! times fields of time alone
+     real(dp)                      :: weight = 0.0_dp
+     ! A field of time with an integral over the region, on a manifold
+     ! of time and space: its value the component plus the integral
+     ! over the region of the integrand, the sum of a field and of
+     ! integrals over the space factor; such an integral enters a field
+     ! linearly, times fields of time alone
      type(expression), allocatable :: integrand(:)
 
    contains
 
+     ! The derivatives, the partials and the stationarity
      procedure :: derivative     => field_derivative
      procedure, private :: jet_component => field_jet_component
      procedure :: jet_form       => field_jet_form
@@ -177,10 +226,14 @@ module operation_field
      procedure, private :: field_stationarity, field_stationarity_along
      generic   :: stationarity   => field_stationarity, field_stationarity_along
      procedure :: boundary_terms => field_boundary_terms
+
+     ! The discrete image and the functionals of a solution
      procedure :: discretize     => field_discretize
      procedure :: at             => field_at
      procedure :: differential   => field_differential
      procedure :: functional     => functional_over
+
+     ! The queries
      procedure :: num_components => field_num_components
      procedure :: graph          => field_graph
      procedure :: is_unknown
@@ -194,75 +247,89 @@ module operation_field
      module procedure create_constants
   end interface continuous_field
 
-  !===================================================================!
-  ! THE DISCRETE FIELD: its support, and one value per point and
-  ! component. The solution of a residual also stores the jet at
-  ! every point - the value and the derivatives of every unknown, as
-  ! the residual's rule lays them out - in every column of the
-  ! expansion along the design, jet(:, p, c + 1) the column c, so that
-  ! a functional of the solution reads the derivatives the residual
-  ! formed; slot(j) is the row of the jet component j reads, zero for
-  ! a component with no jet. The derivative along a design coordinate
-  ! is the field of the next column along it, which retains the
-  ! columns of that expansion alone, from the derivative's own on, the
-  ! expansion recorded in along: a mixed derivative along two
-  ! coordinates is not stored.
+  !-------------------------------------------------------------------!
+  ! Type that models the discrete field: its support, and one value
+  ! per point and component.
   !
-  ! THE QUADRATURE NODES. The solution of a residual stores, beside
-  ! its points, the nodes of the families' own quadrature: every
-  ! instant at every cell with the weight the multistep rules give
-  ! it, and every stage of a staged family's steps with the tableau's
-  ! weight - node_jet(:, n, c + 1) the jet at the node, node_weight
-  ! its weight, node_position its position, node_face_weight its
-  ! weight within the face of its instant (zero for a stage, and for
-  ! an instant of history). A functional of the solution is the sum
-  ! over the nodes, so that the objective is discretized by the
-  ! scheme that marches the state, not by a rule of the points.
-  !===================================================================!
+  ! The jet. The solution of a residual also stores the jet at every
+  ! point, the value and the derivatives of every unknown as the
+  ! residual's rule lays them out, in every column of the expansion
+  ! along the design, so that a functional of the solution reads the
+  ! derivatives the residual formed; slot(j) is the row of the jet
+  ! component j reads, zero for a component with no jet.
+  !
+  !      jet(row, p, c + 1)   row of the rule's tuple, at point p, in
+  !                           column c
+  !      column 0             the value
+  !      column(d, o)         the derivative of order o along the
+  !                           expansion d
+  !
+  ! The derivative along a design coordinate is the field of the next
+  ! column along it, which retains the columns of that expansion
+  ! alone, from the derivative's own on, the expansion recorded in
+  ! along: a mixed derivative along two coordinates is not stored.
+  !
+  ! The quadrature nodes. The solution of a residual stores, beside its
+  ! points, the nodes of the families' own quadrature: every instant at
+  ! every cell with the weight the multistep rules give it, and every
+  ! stage of a staged family's steps with the tableau's weight.
+  !
+  !      node_jet(:, n, c + 1)   the jet at node n, in column c
+  !      node_weight(n)          its weight
+  !      node_position(:, n)     its position
+  !      node_face_weight(n)     its weight within the face of its
+  !                              instant: zero for a stage, and for an
+  !                              instant of history
+  !
+  ! A functional of the solution is the sum over the nodes, so that the
+  ! objective is discretized by the scheme that marches the state, not
+  ! by a rule of the points.
+  !-------------------------------------------------------------------!
 
   type :: discrete_field
 
      class(discrete_support), allocatable :: on
-     character(len=32), allocatable :: name(:)
-     real(dp), allocatable :: value(:,:)
-     real(dp), allocatable :: jet(:,:,:)
-     integer , allocatable :: slot(:)
-     integer :: along = 0
-     type(expression), allocatable :: rule
-     real(dp), allocatable :: node_jet(:,:,:)
+     character(len=32)      , allocatable :: name(:)
+     real(dp)               , allocatable :: value(:,:)
+     real(dp)               , allocatable :: jet(:,:,:)
+     integer                , allocatable :: slot(:)
+     integer                              :: along = 0
+     type(expression)       , allocatable :: rule
+     real(dp)               , allocatable :: node_jet(:,:,:)
      ! the layout of the nodes' jets where it is not the rule's: under
-     ! a projection on the cells, the flux's, with the derivatives along
-     ! space its basis forms at the quadrature points
-     type(expression), allocatable :: node_rule
-     real(dp), allocatable :: node_weight(:)
+     ! a projection on the cells, the flux's, with the derivatives
+     ! along space its basis forms at the quadrature points
+     type(expression)       , allocatable :: node_rule
+     real(dp)               , allocatable :: node_weight(:)
      ! where an expansion moves the instants: the derivative of each
-     ! node's weight in each column above zero, node_weight_derivative(n,
-     ! c) of the column c's order along its expansion
-     real(dp), allocatable :: node_weight_derivative(:,:)
+     ! node's weight in each column above zero,
+     ! node_weight_derivative(n, c) of the column c's order along its
+     ! expansion
+     real(dp)               , allocatable :: node_weight_derivative(:,:)
      ! where the instants are pinned: node_instant(l, n) the l-th
      ! instant node n's weight depends on, zero past the last, and
-     ! node_instant_weight(l, n, c) the derivative in it of the weight's
-     ! column c; pinned_instants the instants' count
-     integer , allocatable :: node_instant(:,:)
-     real(dp), allocatable :: node_instant_weight(:,:,:)
-     integer :: pinned_instants = 0
-     real(dp), allocatable :: node_position(:,:)
-     real(dp), allocatable :: node_face_weight(:)
+     ! node_instant_weight(l, n, c) the derivative in it of the
+     ! weight's column c; pinned_instants the instants' count
+     integer                , allocatable :: node_instant(:,:)
+     real(dp)               , allocatable :: node_instant_weight(:,:,:)
+     integer                              :: pinned_instants = 0
+     real(dp)               , allocatable :: node_position(:,:)
+     real(dp)               , allocatable :: node_face_weight(:)
      ! the image that owns the node: a functional sums its owned nodes
      ! and the images' sums once
-     integer , allocatable :: node_image(:)
+     integer                , allocatable :: node_image(:)
      ! a solution whose stages were retained over checkpoints alone
      ! integrates the objective of its residual and no other
      ! functional: the value and its derivatives along the design,
      ! summed segment by segment, and the objective's formula
-     real(dp), allocatable :: objective_value(:)
-     character(len=:), allocatable :: objective_formula
+     real(dp)               , allocatable :: objective_value(:)
+     character(len=:)       , allocatable :: objective_formula
 
    contains
 
      procedure :: values
      procedure :: fields
-     procedure :: derivative      => discrete_derivative
+     procedure :: derivative     => discrete_derivative
      procedure :: norm
      procedure :: num_points     => discrete_num_points
      procedure :: num_components => discrete_num_components
@@ -274,6 +341,8 @@ module operation_field
      module procedure create_discrete
   end interface discrete_field
 
+  ! The operators on scalar continuous fields, and the difference of
+  ! two discrete fields
   interface operator(+)
      module procedure plus, real_plus, plus_real
   end interface operator(+)
@@ -320,6 +389,10 @@ module operation_field
 
 contains
 
+  !===================================================================!
+  ! Returns whether the support is the one of the identity given
+  !===================================================================!
+
   pure logical function same_support(this, other)
 
     class(continuous_support), intent(in) :: this
@@ -330,11 +403,13 @@ contains
   end function same_support
 
   !===================================================================!
-  ! THE CONSTRUCTORS. An unknown of a manifold: one expression leaf
-  ! per component, numbered from first, a function of the coordinates
-  ! named by its arguments. A coordinate function. A tuple of fields
-  ! on one support, each of one component. Constants, one per
-  ! component.
+  ! Creates an unknown of a manifold: one expression leaf per
+  ! component, numbered from first, a function of the coordinates
+  ! named by its arguments
+  !
+  !      unknown_field(M, 'u', 3, 2, ['t', 'x'])
+  !        components   unknown(3), unknown(4)
+  !        arguments    t, x
   !===================================================================!
 
   function unknown_field(on, name, first, components, arguments) result(this)
@@ -343,7 +418,7 @@ contains
     character(len=*)         , intent(in) :: name
     integer                  , intent(in) :: first, components
     character(len=*)         , intent(in) :: arguments(:)
-    type(continuous_field) :: this
+    type(continuous_field)                :: this
 
     integer :: k
 
@@ -361,13 +436,18 @@ contains
 
   end function unknown_field
 
+  !===================================================================!
+  ! Creates the coordinate function of the coordinate c, of the design
+  ! where of_design: its own argument, of no field number
+  !===================================================================!
+
   function coordinate_field(on, name, c, of_design) result(this)
 
-    class(continuous_support), intent(in) :: on
-    character(len=*)         , intent(in) :: name
-    integer                  , intent(in) :: c
+    class(continuous_support), intent(in)           :: on
+    character(len=*)         , intent(in)           :: name
+    integer                  , intent(in)           :: c
     logical                  , intent(in), optional :: of_design
-    type(continuous_field) :: this
+    type(continuous_field)                          :: this
 
     this % on         = on % identity
     this % name       = name
@@ -385,12 +465,15 @@ contains
 
   end function coordinate_field
 
-  ! the time map t(tau), a function of the coordinate of time; no
-  ! derivative follows it
+  !===================================================================!
+  ! Creates the time map t(tau), a function of the coordinate of time;
+  ! no derivative follows it
+  !===================================================================!
+
   function time_map_field(on) result(this)
 
     class(continuous_support), intent(in) :: on
-    type(continuous_field) :: this
+    type(continuous_field)                :: this
 
     this % on        = on % identity
     this % name      = 't_map'
@@ -401,13 +484,19 @@ contains
 
   end function time_map_field
 
+  !===================================================================!
+  ! Creates a tuple of fields on one support, each of one component:
+  ! component k is the k-th field's. A field on another support, or of
+  ! several components, stops the program.
+  !===================================================================!
+
   function create_tuple(on, fields) result(this)
 
     class(continuous_support), intent(in) :: on
     type(continuous_field)   , intent(in) :: fields(:)
-    type(continuous_field) :: this
+    type(continuous_field)                :: this
 
-    integer :: k
+    integer            :: k
     character(len=250) :: message
 
     this % on   = on % identity
@@ -430,11 +519,15 @@ contains
 
   end function create_tuple
 
+  !===================================================================!
+  ! Creates constants, one per component
+  !===================================================================!
+
   function create_constants(on, values) result(this)
 
     class(continuous_support), intent(in) :: on
     real(dp)                 , intent(in) :: values(:)
-    type(continuous_field) :: this
+    type(continuous_field)                :: this
 
     integer :: k
 
@@ -449,16 +542,16 @@ contains
   end function create_constants
 
   !===================================================================!
-  ! The integral of a field over a factor of its manifold: the field,
-  ! marked with the factor's identity, its part and its parent. The
-  ! discrete residual sums it over the points of that factor.
+  ! Returns the integral of a field over a factor of its manifold: the
+  ! field, marked with the factor's identity, its part and its parent.
+  ! The discrete residual sums it over the points of that factor.
   !===================================================================!
 
   function integral(f, over) result(this)
 
     type(continuous_field)   , intent(in) :: f
     class(continuous_support), intent(in) :: over
-    type(continuous_field) :: this
+    type(continuous_field)                :: this
 
     this = f
     this % integrated_over   = over % identity
@@ -469,16 +562,20 @@ contains
   end function integral
 
   !===================================================================!
-  ! THE SMOOTH MAXIMUM of the components of a field over a factor of
-  ! its manifold, of the weight rho > 0, the aggregate of Kreisselmeier
-  ! and Steinhauser:
+  ! Returns the smooth maximum of the components of a field over a
+  ! factor of its manifold, of the weight rho > 0, the aggregate of
+  ! Kreisselmeier and Steinhauser:
   !
-  !      log( integral of sum_i exp(rho f_i) ) / rho,
+  !      log( integral of the sum over i of exp(rho f_i) ) / rho,
   !
   ! which tends to the largest f_i over the factor as rho grows. On a
-  ! solution it is m + log( integral of sum_i exp(rho (f_i - m)) ) /
-  ! rho, m the largest f_i at the nodes, so that no exponential
-  ! exceeds one; along the design, the derivative of the logarithm.
+  ! solution it is
+  !
+  !      m + log( integral of the sum over i of exp(rho (f_i - m)) )
+  !        / rho,
+  !
+  ! m the largest f_i at the nodes, so that no exponential exceeds one;
+  ! along the design, the derivative of the logarithm.
   !===================================================================!
 
   function maximum(f, over, weight) result(this)
@@ -486,7 +583,7 @@ contains
     type(continuous_field)   , intent(in) :: f
     class(continuous_support), intent(in) :: over
     real(dp)                 , intent(in) :: weight
-    type(continuous_field) :: this
+    type(continuous_field)                :: this
 
     if (.not. weight > 0.0_dp) error stop 'operation_field: the weight of a smooth maximum is positive'
     if (allocated(f % integrand)) error stop 'operation_field: a smooth maximum is of a field with no integral'
@@ -496,28 +593,32 @@ contains
   end function maximum
 
   !===================================================================!
-  ! THE VALUE OF A FUNCTIONAL ON A SOLUTION: the integral over the
-  ! points of the support, with their measure, of the integrand
-  ! evaluated on the jet at each point; a field on the design factor
-  ! of the support. The differential is its gradient in the jet at
-  ! every point, in the layout of the solution's rule: the source of
-  ! the adjoint equation. A field that is not an integral is evaluated
-  ! on the jet at every point, at the design the jet is expanded
-  ! about: a field of the solution's support, one value per point and
-  ! component. Invalid input: an integral of several components, a
-  ! solution without a jet, or a field reading a derivative the rule
-  ! does not store.
+  ! Returns the value of a functional on a solution: the integral over
+  ! the points of the support, with their measure, of the integrand
+  ! evaluated on the jet at each point, or the smooth maximum. It is a
+  ! field on the design factor of the support: one point, and one
+  ! component per column of the expansion.
+  !
+  !      component   1        1 + column(d, o)
+  !      name        J        'expansion d order o'
+  !      value       J        the derivative of order o along d
+  !
+  ! A field that is not an integral is evaluated on the jet at every
+  ! point, at the design the jet is expanded about: a field of the
+  ! solution's support, one value per point and component. Invalid
+  ! input: an integral of several components, a solution without a
+  ! jet, or a field reading a derivative the rule does not store.
   !===================================================================!
 
   function field_at(this, solution) result(functional)
 
     class(continuous_field), intent(in) :: this
     type(discrete_field)   , intent(in) :: solution
-    type(discrete_field) :: functional
+    type(discrete_field)                :: functional
 
-    real(dp), allocatable :: total(:), gradient(:,:,:), partial(:,:)
+    real(dp), allocatable          :: total(:), gradient(:,:,:), partial(:,:)
     character(len=32), allocatable :: names(:)
-    integer :: d, o
+    integer                        :: d, o
 
     if (.not. this % is_integral()) then
        functional = field_on_points(this, solution)
@@ -542,20 +643,23 @@ contains
 
   end function field_at
 
-  ! a field that is not an integral, each component evaluated on the
-  ! jet at every point of the solution
+  !===================================================================!
+  ! Returns a field that is not an integral, each component evaluated
+  ! on the jet at every point of the solution
+  !===================================================================!
+
   function field_on_points(this, solution) result(on_points)
 
     class(continuous_field), intent(in) :: this
     type(discrete_field)   , intent(in) :: solution
-    type(discrete_field) :: on_points
+    type(discrete_field)                :: on_points
 
-    type(expression) :: g
-    type(expansion)  :: expanded
-    integer , allocatable :: slot(:)
-    real(dp), allocatable :: q(:), gradient(:), gd(:), designs(:), values(:,:)
+    type(expression)               :: g
+    type(expansion)                :: expanded
+    integer , allocatable          :: slot(:)
+    real(dp), allocatable          :: q(:), gradient(:), gd(:), designs(:), values(:,:)
     character(len=32), allocatable :: names(:)
-    integer :: j, p, k
+    integer                        :: j, p, k
 
     if (.not. (allocated(solution % rule) .and. allocated(solution % jet))) then
        error stop 'operation_field: a field is evaluated on the solution of a residual, which stores the jet &
@@ -586,21 +690,32 @@ contains
 
   end function field_on_points
 
-  ! density(p), when present, is the derivative of the functional in the
-  ! weight of node p: the field there for an integral, exp(rho (f - m))
-  ! / (rho I) for a smooth maximum
+  !===================================================================!
+  ! Returns the differential of a functional on a solution: its
+  ! gradient in the jet at every point, in the layout of the
+  ! solution's rule, the source of the adjoint equation, and its
+  ! partial in the design coordinates, in every column. density(p),
+  ! when present, is the derivative of the functional in the weight of
+  ! node p: the field there for an integral; for a smooth maximum the
+  ! sum over i of exp(rho (f_i - m)), over rho I.
+  !
+  !      smooth maximum    J  = m + log(I) / rho
+  !                        dJ = dI / (rho I)
+  !      along d           (dJ)' = (dI)' / (rho I) - dI I' / (rho I^2)
+  !===================================================================!
+
   subroutine field_differential(this, solution, gradient, partial, density, density_jet)
 
-    class(continuous_field), intent(in)  :: this
-    type(discrete_field)   , intent(in)  :: solution
-    real(dp), allocatable  , intent(out) :: gradient(:,:,:)
-    real(dp), allocatable  , intent(out) :: partial(:,:)
+    class(continuous_field), intent(in)            :: this
+    type(discrete_field)   , intent(in)            :: solution
+    real(dp), allocatable  , intent(out)           :: gradient(:,:,:)
+    real(dp), allocatable  , intent(out)           :: partial(:,:)
     real(dp), allocatable  , intent(out), optional :: density(:)
     real(dp), allocatable  , intent(out), optional :: density_jet(:,:)
 
     real(dp), allocatable :: total(:)
-    real(dp) :: m, scale
-    integer  :: c
+    real(dp)              :: m, scale
+    integer               :: c
 
     if (this % weight > 0.0_dp) then
        if (present(density_jet)) then
@@ -625,45 +740,69 @@ contains
   end subroutine field_differential
 
   !===================================================================!
-  ! The value of the functional in every column of the expansion -
-  ! total(c + 1) the column c: the value, then for each expansion d
-  ! its derivatives of order 1 to the order, by the jet arithmetic:
-  ! each component of the point's tuple enters as the quantity whose
-  ! k-th derivative along d is the solution's column of order k along
-  ! d, the coordinates as the quantities with the seed's derivatives.
-  ! The gradient of the value in the jet at every point,
-  ! gradient(:, p, 0), and its derivatives along d in the columns of
-  ! d, by one more direction seeded on the component varied; the
-  ! partial derivative of the value in each design coordinate i at
-  ! fixed state, partial(i, 0), by the reverse pass, and its
-  ! derivatives along d in the columns of d, by one more direction
-  ! seeded on the coordinate i. Over a face at an
-  ! instant the measure is the point's within the face, zero off it:
-  ! J = u(T)^2 / 2 is the integral of that field over the face at T.
-  ! density(p), when present, is the field at node p, of any measure,
-  ! zero at a node of another image.
+  ! Returns the value of the functional in every column of the
+  ! expansion, its gradient in the jet at every node or point, and its
+  ! partial in each design coordinate.
+  !
+  !      total(c + 1)        the value in column c: the value, then for
+  !                          each expansion d its derivatives of order
+  !                          1 to the order
+  !      gradient(:, p, c)   the gradient of the value in the jet at p,
+  !                          and its derivatives along d in d's columns
+  !      partial(i, c)       the partial in the design coordinate i at
+  !                          fixed state, by the reverse pass, and its
+  !                          derivatives along d; where the instants
+  !                          are pinned, the partials in each instant
+  !                          after
+  !      density(p)          the field at node p, of any measure, zero
+  !                          at a node of another image
+  !      density_jet(p, c)   the field at node p, in every column
+  !
+  ! By the jet arithmetic each component of the point's tuple enters as
+  ! the quantity whose k-th derivative along d is the solution's column
+  ! of order k along d, the coordinates as the quantities with the
+  ! seed's derivatives. The derivatives of the gradient and of the
+  ! partial come from one more direction, seeded on the component or
+  ! the coordinate varied.
+  !
+  !      direction    1 ... order        order + 1
+  !      seeded by    the expansion d    a component, or a coordinate
+  !
+  !      coefficient(r, 2**o - 1)              order o along d
+  !      coefficient(r, 2**o - 1 + 2**order)   order o along d, and
+  !                                            once along the seed
+  !
+  ! The sum runs over the quadrature nodes where the solution stores
+  ! them, each with its weight, and over the points with their measure
+  ! otherwise. Over a face at an instant the measure is the point's
+  ! within the face, zero off it: J = u(T)^2 / 2 is the integral of
+  ! that field over the face at T. Where an expansion moves the
+  ! instants, the node's weight moves with them, and each derivative is
+  ! of the product. A solution retained over checkpoints alone returns
+  ! the value of its residual's objective, and integrates no other
+  ! functional.
   !===================================================================!
 
   subroutine functional_over(this, solution, total, gradient, partial, density, density_jet)
 
-    class(continuous_field), intent(in)  :: this
-    type(discrete_field)   , intent(in)  :: solution
-    real(dp), allocatable  , intent(out) :: total(:)
-    real(dp), allocatable  , intent(out) :: gradient(:,:,:)
-    real(dp), allocatable  , intent(out) :: partial(:,:)
+    class(continuous_field), intent(in)            :: this
+    type(discrete_field)   , intent(in)            :: solution
+    real(dp), allocatable  , intent(out)           :: total(:)
+    real(dp), allocatable  , intent(out)           :: gradient(:,:,:)
+    real(dp), allocatable  , intent(out)           :: partial(:,:)
     real(dp), allocatable  , intent(out), optional :: density(:)
     real(dp), allocatable  , intent(out), optional :: density_jet(:,:)
 
-    real(dp), allocatable :: q(:), g(:), gd(:), values(:), unit(:), seed(:), position(:)
-    integer , allocatable :: slot(:)
+    real(dp), allocatable               :: q(:), g(:), gd(:), values(:), unit(:), seed(:), position(:)
+    integer , allocatable               :: slot(:)
     type(derivative_terms), allocatable :: jets(:), varied(:), nu(:), along(:), design(:)
-    type(derivative_terms) :: r
-    type(expansion) :: expanded
-    real(dp) :: value, measure
-    integer :: p, k, o, i, d, order, ns, nnodes, stride, first, nv, npin, l
-    logical :: over_nodes, moving
-    type(expression_view) :: view
-    type(expression) :: integrand
+    type(derivative_terms)              :: r
+    type(expansion)                     :: expanded
+    real(dp)                            :: value, measure
+    integer                             :: p, k, o, i, d, order, ns, nnodes, stride, first, nv, npin, l
+    logical                             :: over_nodes, moving
+    type(expression_view)               :: view
+    type(expression)                    :: integrand
 
     if (.not. this % is_integral()) then
        error stop 'operation_field: a functional is the integral of a field over its manifold'
@@ -679,8 +818,8 @@ contains
        error stop 'operation_field: a functional is evaluated on the solution of a residual, which &
             &stores the jet at every point'
     end if
-    ! a solution retained over checkpoints: the objective's value, summed
-    ! by its residual segment by segment; no other functional
+    ! a solution retained over checkpoints: the objective's value,
+    ! summed by its residual segment by segment; no other functional
     if (allocated(solution % objective_value)) then
        view = expression_view(integrand)
        if (view % formula() /= solution % objective_formula) then
@@ -804,8 +943,8 @@ contains
                 density_jet(p, first + o - 1) = coefficient(r, 2**o - 1)
              end do
           end if
-          ! the instants' partials along d: the derivatives of the weight's
-          ! derivative in the instant times those of the field
+          ! the instants' partials along d: the derivatives of the
+          ! weight's derivative in the instant times those of the field
           if (npin > 0) then
              do l = 1, size(solution % node_instant, 1)
                 if (solution % node_instant(l, p) < 1) cycle
@@ -863,39 +1002,61 @@ contains
 
   contains
 
-    ! the jet at a node or a point, in the column c
+    !-----------------------------------------------------------------!
+    ! Returns the jet at a node or a point, in the column c
+    !-----------------------------------------------------------------!
+
     pure real(dp) function jet_of(row, n, c)
+
       integer, intent(in) :: row, n, c
+
       if (over_nodes) then
          jet_of = solution % node_jet(row, n, c + 1)
       else
          jet_of = solution % jet(row, n, c + 1)
       end if
+
     end function jet_of
 
-    ! the derivatives of orders 1 to the order, along the expansion
-    ! whose columns begin at first, of node p's weight times the
-    ! quantity of value base whose k-th derivative is the coefficient
-    ! of r on the first k directions with the subset shift: the
-    ! Leibniz sum, the binomial coefficient by its recurrence
+    !-----------------------------------------------------------------!
+    ! Returns the derivatives of orders 1 to the order, along the
+    ! expansion whose columns begin at first, of node p's weight times
+    ! the quantity of value base whose k-th derivative is the
+    ! coefficient of r on the first k directions with the subset shift
+    !-----------------------------------------------------------------!
+
     function weighted(base, r, shift) result(derivatives)
+
       real(dp)              , intent(in) :: base
       type(derivative_terms), intent(in) :: r
       integer               , intent(in) :: shift
-      real(dp) :: derivatives(order)
-      integer  :: o
+      real(dp)                           :: derivatives(order)
+
+      integer :: o
+
       derivatives = leibniz([measure, solution % node_weight_derivative(p, first:first + order - 1)], &
            & [base, (coefficient(r, 2**o - 1 + shift), o = 1, order)])
+
     end function weighted
 
-    ! the derivatives of orders 1 to the order of the product of two
-    ! quantities whose derivatives of orders 0 to the order are w and
-    ! f: the Leibniz sum, the binomial coefficient by its recurrence
+    !-----------------------------------------------------------------!
+    ! Returns the derivatives of orders 1 to the order of the product
+    ! of two quantities whose derivatives of orders 0 to the order are
+    ! w and f: the Leibniz sum, the binomial coefficient by its
+    ! recurrence
+    !
+    !      (w f)^(o) = C(o, 0) w(0) f(o) + C(o, 1) w(1) f(o - 1) + ...
+    !                + C(o, o) w(o) f(0)
+    !-----------------------------------------------------------------!
+
     pure function leibniz(w, f) result(derivatives)
+
       real(dp), intent(in) :: w(0:), f(0:)
-      real(dp) :: derivatives(order)
+      real(dp)             :: derivatives(order)
+
       real(dp) :: binomial
       integer  :: o, j
+
       do o = 1, order
          derivatives(o) = 0.0_dp
          binomial = 1.0_dp
@@ -904,26 +1065,27 @@ contains
             binomial = binomial * real(o - j, dp) / real(j + 1, dp)
          end do
       end do
+
     end function leibniz
 
   end subroutine functional_over
 
   !===================================================================!
-  ! THE SMOOTH MAXIMUM ON A SOLUTION in every column of the expansion
-  ! of order one: m the largest component at the nodes, or at the
-  ! points, of positive measure; I the integral of the sum of exp(rho
-  ! (f_i - m)), in every column; the value m + log(I) / rho and its
-  ! derivative along each expansion I' / (rho I).
+  ! Returns the smooth maximum on a solution in every column of the
+  ! expansion of order one: m the largest component at the nodes, or
+  ! at the points, of nonzero measure; I the integral of the sum of
+  ! exp(rho (f_i - m)), in every column; the value m + log(I) / rho and
+  ! its derivative along each expansion I' / (rho I)
   !===================================================================!
 
   function maximum_over(this, solution) result(total)
 
     class(continuous_field), intent(in) :: this
     type(discrete_field)   , intent(in) :: solution
-    real(dp), allocatable :: total(:)
+    real(dp), allocatable               :: total(:)
 
     real(dp), allocatable :: gradient(:,:,:), partial(:,:)
-    real(dp) :: m
+    real(dp)              :: m
 
     call maximum_parts(this, solution, m, total, gradient, partial)
     total(2:) = total(2:) / (this % weight * total(1))
@@ -931,24 +1093,28 @@ contains
 
   end function maximum_over
 
-  ! the largest component m, and the integral I of the shifted
+  !===================================================================!
+  ! Returns the largest component m, and the integral I of the shifted
   ! exponentials with its differential, in every column; density, the
-  ! shifted exponentials at the nodes
+  ! shifted exponentials at the nodes. The largest is taken over the
+  ! images.
+  !===================================================================!
+
   subroutine maximum_parts(this, solution, m, total, gradient, partial, density)
 
-    class(continuous_field), intent(in)  :: this
-    type(discrete_field)   , intent(in)  :: solution
-    real(dp)               , intent(out) :: m
-    real(dp), allocatable  , intent(out) :: total(:), gradient(:,:,:), partial(:,:)
+    class(continuous_field), intent(in)            :: this
+    type(discrete_field)   , intent(in)            :: solution
+    real(dp)               , intent(out)           :: m
+    real(dp), allocatable  , intent(out)           :: total(:), gradient(:,:,:), partial(:,:)
     real(dp), allocatable  , intent(out), optional :: density(:)
 
     type(continuous_field) :: shifted
-    type(expression) :: summed, g
-    real(dp), allocatable :: q(:), w(:), values(:), gd(:), position(:)
-    integer , allocatable :: slot(:)
-    real(dp) :: value, measure
-    integer  :: i, p, k, nnodes
-    logical  :: over_nodes
+    type(expression)       :: summed, g
+    real(dp), allocatable  :: q(:), w(:), values(:), gd(:), position(:)
+    integer , allocatable  :: slot(:)
+    real(dp)               :: value, measure
+    integer                :: i, p, k, nnodes
+    logical                :: over_nodes
 
     if (solution % on % expansion % order > 1) then
        error stop 'operation_field: a smooth maximum is evaluated along the design to the first order'
@@ -1019,15 +1185,15 @@ contains
   end subroutine maximum_parts
 
   !===================================================================!
-  ! THE EXPANSION A FIELD'S JET IS ALONG: the support's, to the order
-  ! the jet stores; for the derivative along one expansion, that
-  ! expansion alone, from the derivative's own column on.
+  ! Returns the expansion a field's jet is along: the support's, to
+  ! the order the jet stores; for the derivative along one expansion,
+  ! that expansion alone, from the derivative's own column on
   !===================================================================!
 
   function jet_expansion(this) result(expanded)
 
     type(discrete_field), intent(in) :: this
-    type(expansion) :: expanded
+    type(expansion)                  :: expanded
 
     real(dp), allocatable :: seed(:)
 
@@ -1040,10 +1206,16 @@ contains
 
   end function jet_expansion
 
-  ! the quadrature nodes of a solution, copied to a field read from it
+  !===================================================================!
+  ! Copies the quadrature nodes of a solution, and the objective a
+  ! solution retained over checkpoints stores, to a field read from it
+  !===================================================================!
+
   subroutine nodes_copied(from, to)
+
     type(discrete_field), intent(in)    :: from
     type(discrete_field), intent(inout) :: to
+
     if (allocated(from % node_weight)) then
        to % node_jet      = from % node_jet
        if (allocated(from % node_rule)) to % node_rule = from % node_rule
@@ -1054,46 +1226,60 @@ contains
           to % node_instant_weight = from % node_instant_weight
           to % pinned_instants     = from % pinned_instants
        end if
-       to % node_position = from % node_position
+       to % node_position    = from % node_position
        to % node_face_weight = from % node_face_weight
-       to % node_image    = from % node_image
+       to % node_image       = from % node_image
     end if
     if (allocated(from % objective_value)) then
        to % objective_value   = from % objective_value
        to % objective_formula = from % objective_formula
     end if
+
   end subroutine nodes_copied
 
-  ! the weight of node p within the face at the instant given: its
-  ! weight within the face of its own instant there, zero elsewhere
+  !===================================================================!
+  ! Returns the weight of node p within the face at the instant given:
+  ! its weight within the face of its own instant where its time is
+  ! the instant, to a relative 1e-12, zero elsewhere
+  !===================================================================!
+
   pure real(dp) function face_weight(solution, p, time)
+
     type(discrete_field), intent(in) :: solution
     integer             , intent(in) :: p
     real(dp)            , intent(in) :: time
+
     face_weight = 0.0_dp
     if (abs(solution % node_position(1, p) - time) <= 1.0e-12_dp * max(1.0_dp, abs(time))) then
        face_weight = solution % node_face_weight(p)
     end if
+
   end function face_weight
 
   !===================================================================!
-  ! THE DERIVATIVE ALONG TIME AND SPACE of an unknown read from a
-  ! solution: the component its jet stores of the orders the
-  ! multi-index names along the first coordinate and along at most
-  ! one later coordinate, with its columns along the design. Nothing
-  ! is computed. Invalid input: a field of several components, or not
-  ! read from a solution, or a multiplier; a solution under a
-  ! checkpoint or snapshot schedule, whose jet keeps the values alone;
-  ! two later coordinates; an order the jet does not store.
+  ! Returns the derivative along time and space of an unknown read
+  ! from a solution: the component its jet stores of the orders the
+  ! multi-index names along the first coordinate and along at most one
+  ! later coordinate, with its columns along the design. Nothing is
+  ! computed.
+  !
+  !      [t, t]   the row of u_tt in the rule's tuple
+  !      [t, x]   the row of the mixed u_tx
+  !      [x, y]   refused: two later coordinates
+  !
+  ! Invalid input: a field of several components, or not read from a
+  ! solution, or a multiplier; a solution under a checkpoint or
+  ! snapshot schedule, whose jet keeps the values alone; two later
+  ! coordinates; an order the jet does not store.
   !===================================================================!
 
   function stored_component(this, along) result(d)
 
     class(discrete_field)  , intent(in) :: this
     type(continuous_field) , intent(in) :: along(:)
-    type(discrete_field) :: d
+    type(discrete_field)                :: d
 
-    integer :: k, f, field, first, later, coordinate, row
+    integer           :: k, f, field, first, later, coordinate, row
     character(len=32) :: name
 
     if (size(this % value, 2) /= 1) then
@@ -1160,40 +1346,49 @@ contains
   end function stored_component
 
   !===================================================================!
-  ! THE DERIVATIVE OF A DISCRETE FIELD. Along time and space, the
-  ! component the jet of a solution stores, read and not computed;
-  ! the entries of the multi-index along time and space come before
-  ! those along the design, which are then read from that component's
-  ! columns, as below.
+  ! Returns the derivative of a discrete field along a multi-index.
   !
-  ! Along the design: the
-  ! multi-index names design coordinates or directions, and the
-  ! derivative is read from the columns stored - along the expansion
-  ! whose seed is the coordinate's unit vector or the direction's
-  ! vector, for a multi-index repeating one entry: the field whose
-  ! values are the column of that order, with the columns of that
-  ! expansion after it and those of the other expansions dropped. A mixed
-  ! derivative along two coordinates, [nu, mu], is the polarization
-  ! (u_ww - u_nunu - u_mumu) / 2 of the second derivatives along nu,
-  ! mu and w = nu + mu, and requires the expansions along all three;
-  ! it stores no jet of its own. Invalid input: an entry that is not
-  ! a design coordinate or direction, an expansion not stored, a
-  ! coordinate other than the one the field is already a derivative
-  ! along, an order past the expansion's, a mixed derivative of an
-  ! order other than two, or a component with no jet.
+  ! Along time and space, the component the jet of a solution stores,
+  ! read and not computed; the entries of the multi-index along time
+  ! and space come before those along the design, which are then read
+  ! from that component's columns, as below.
+  !
+  ! Along the design, the multi-index names design coordinates or
+  ! directions, and the derivative is read from the columns stored:
+  ! along the expansion whose seed is the coordinate's unit vector or
+  ! the direction's vector, for a multi-index repeating one entry, the
+  ! field whose values are the column of that order, with the columns
+  ! of that expansion after it and those of the other expansions
+  ! dropped.
+  !
+  !      [nu, nu]   value  column(e, 2) of the expansion e along e_nu
+  !                 jet    column(e, 2) ... column(e, order)
+  !
+  ! A mixed derivative along two coordinates is the polarization of the
+  ! second derivatives along nu, mu and w = nu + mu, and requires the
+  ! expansions along all three; its jet is the polarized jet alone, of
+  ! no column along the design.
+  !
+  !      [nu, mu]   u_numu = (u_ww - u_nunu - u_mumu) / 2
+  !
+  ! Invalid input: an entry that is not a design coordinate or
+  ! direction, an expansion not stored, a coordinate other than the one
+  ! the field is already a derivative along, an order past the
+  ! expansion's, a mixed derivative of an order other than two, or a
+  ! component with no jet.
   !===================================================================!
 
   recursive function discrete_derivative(this, along) result(d)
 
     class(discrete_field)  , intent(in) :: this
     type(continuous_field) , intent(in) :: along(:)
-    type(discrete_field) :: d
+    type(discrete_field)                :: d
 
-    type(expansion) :: expanded
+    type(expansion)       :: expanded
     real(dp), allocatable :: seed(:), other(:), both(:)
-    integer :: n, k, order, npts, e, second, third, c, m
-    logical :: mixed
-    character(len=250) :: message
+    integer               :: n, k, order, npts, e, second, third, c, m
+    logical               :: mixed
+    character(len=250)    :: message
 
     ! along time and space: the stored component, then its columns
     ! along the design
@@ -1302,12 +1497,19 @@ contains
 
   contains
 
-    ! the seed a coordinate or a direction names: the unit vector of
-    ! the coordinate over the design coordinates, or the vector
+    !-----------------------------------------------------------------!
+    ! Returns the seed a coordinate or a direction names: the unit
+    ! vector of the coordinate over the design coordinates, or the
+    ! vector
+    !-----------------------------------------------------------------!
+
     function seed_of(entry) result(s)
+
       type(continuous_field), intent(in) :: entry
-      real(dp), allocatable :: s(:)
+      real(dp), allocatable              :: s(:)
+
       integer :: nd
+
       if (allocated(entry % direction)) then
          s = entry % direction
          return
@@ -1318,19 +1520,33 @@ contains
          error stop 'operation_field: the design coordinate named is not one of the solution''s manifold'
       end if
       s(entry % coordinate) = 1.0_dp
+
     end function seed_of
 
+    !-----------------------------------------------------------------!
+    ! Returns whether two seeds are equal, to a relative 1e-12
+    !-----------------------------------------------------------------!
+
     pure logical function same_seed(a, b)
+
       real(dp), intent(in) :: a(:), b(:)
+
       same_seed = size(a) == size(b)
       if (same_seed) same_seed = all(abs(a - b) <= 1.0e-12_dp * max(1.0_dp, maxval(abs(a))))
+
     end function same_seed
 
-    ! the expansion stored along a seed, zero when none is; one that
-    ! moves the instants is along no direction in the design alone
+    !-----------------------------------------------------------------!
+    ! Returns the expansion stored along a seed, zero when none is; one
+    ! that moves the instants is along no direction in the design alone
+    !-----------------------------------------------------------------!
+
     integer function expansion_of(s)
+
       real(dp), intent(in) :: s(:)
+
       integer :: e
+
       expansion_of = 0
       do e = 1, this % on % expansion % num_expansions()
          if (allocated(this % on % expansion % instants)) then
@@ -1338,40 +1554,60 @@ contains
          end if
          if (same_seed(s, this % on % expansion % seed(e))) expansion_of = e
       end do
+
     end function expansion_of
 
+    !-----------------------------------------------------------------!
+    ! Requires the three expansions a mixed derivative polarizes
+    !-----------------------------------------------------------------!
+
     subroutine require_columns(a, b, c)
+
       integer, intent(in) :: a, b, c
+
       if (a == 0 .or. b == 0 .or. c == 0) then
          error stop 'operation_field: a mixed derivative along nu and mu requires the expansions along nu, &
               &along mu and along nu + mu: expansion(order=2, along=[e_nu, e_mu, e_nu + e_mu])'
       end if
+
     end subroutine require_columns
 
+    !-----------------------------------------------------------------!
+    ! Requires a jet of the component k
+    !-----------------------------------------------------------------!
+
     subroutine require_jet(k)
+
       integer, intent(in) :: k
+
       if (this % slot(k) == 0) then
          error stop 'operation_field: component ' // trim(this % name(k)) // ' has no jet along the design'
       end if
+
     end subroutine require_jet
 
   end function discrete_derivative
 
   !===================================================================!
-  ! The slot in the rule's jet of each component an expression reads:
-  ! the value and the derivatives along the first coordinate of each
-  ! field, then its derivatives along each later coordinate, the two
-  ! expressions laying their tuples out by their own degrees. A field
-  ! or a derivative the expression reads and the rule does not store
-  ! is invalid input.
+  ! Returns the slot in the rule's jet of each component an expression
+  ! reads: the value and the derivatives along the first coordinate of
+  ! each field, then its derivatives along each later coordinate, the
+  ! two expressions laying their tuples out by their own degrees.
+  !
+  !      g's tuple      u  u_t  u_tt        | v  v_t
+  !      rule's tuple   u  u_t  u_tt  u_ttt | v  v_t  v_tt
+  !      slot           1  2    3           | 5  6
+  !
+  ! A field or a derivative the expression reads and the rule does not
+  ! store is invalid input.
   !===================================================================!
 
   subroutine jet_slots(g, rule, slot)
 
-    type(expression), intent(in)  :: g, rule
+    type(expression)    , intent(in)  :: g, rule
     integer, allocatable, intent(out) :: slot(:)
 
-    integer :: f, d, c, o, a, fields
+    integer            :: f, d, c, o, a, fields
     character(len=250) :: message
 
     allocate(slot(0:g % num_components() - 1), source=0)
@@ -1418,39 +1654,80 @@ contains
 
   end subroutine jet_slots
 
+  !===================================================================!
+  ! Returns the count of components
+  !===================================================================!
+
   pure integer function field_num_components(this)
+
     class(continuous_field), intent(in) :: this
+
     field_num_components = size(this % component)
+
   end function field_num_components
 
+  !===================================================================!
+  ! Returns the expression of the k-th component
+  !===================================================================!
+
   function field_graph(this, k) result(g)
+
     class(continuous_field), intent(in) :: this
     integer                , intent(in) :: k
-    type(expression) :: g
+    type(expression)                    :: g
+
     g = this % component(k)
+
   end function field_graph
 
+  !===================================================================!
+  ! Returns whether every component is an unknown of the manifold
+  !===================================================================!
+
   pure logical function is_unknown(this)
+
     class(continuous_field), intent(in) :: this
+
     is_unknown = all(this % index > 0)
+
   end function is_unknown
 
+  !===================================================================!
+  ! Returns whether the field is a coordinate function
+  !===================================================================!
+
   pure logical function is_coordinate(this)
+
     class(continuous_field), intent(in) :: this
+
     is_coordinate = this % coordinate > 0
+
   end function is_coordinate
 
+  !===================================================================!
+  ! Returns whether the field is an integral over a factor
+  !===================================================================!
+
   pure logical function is_integral(this)
+
     class(continuous_field), intent(in) :: this
+
     is_integral = this % integrated_over % declared()
+
   end function is_integral
 
   !===================================================================!
-  ! THE DERIVATIVE along a multi-index of coordinate functions: each
-  ! entry one order along that coordinate, an operator stored in the law
-  ! until jet_form replaces it by the jet components it denotes. An
-  ! unknown along a coordinate it is not a function of has the zero
-  ! derivative. Invalid input: a field of several components, an empty
+  ! Returns the derivative along a multi-index of coordinate
+  ! functions: each entry one order along that coordinate, an operator
+  ! stored in the law until jet_form replaces it by the jet components
+  ! it denotes. An unknown along a coordinate it is not a function of
+  ! has the zero derivative. Of a field with an integral over the
+  ! region, along time, the derivative of its terms and the integral of
+  ! the integrand's.
+  !
+  !      u % derivative([t, x])  =  D_x D_t u,   replaced by u_tx
+  !
+  ! Invalid input: a field of several components, an empty
   ! multi-index, or an entry that is not a time or space coordinate of
   ! the field's manifold.
   !===================================================================!
@@ -1459,7 +1736,7 @@ contains
 
     class(continuous_field), intent(in) :: this
     type(continuous_field) , intent(in) :: along(:)
-    type(continuous_field) :: d
+    type(continuous_field)              :: d
 
     integer :: k
 
@@ -1505,14 +1782,14 @@ contains
   end function field_derivative
 
   !===================================================================!
-  ! The field with every derivative operator of its components replaced
-  ! by the jet components it denotes.
+  ! Returns the field with every derivative operator of its components
+  ! and its integrand replaced by the jet components it denotes
   !===================================================================!
 
   function field_jet_form(this) result(form)
 
     class(continuous_field), intent(in) :: this
-    type(continuous_field) :: form
+    type(continuous_field)              :: form
 
     integer :: k
 
@@ -1529,24 +1806,28 @@ contains
   end function field_jet_form
 
   !===================================================================!
-  ! THE JET COMPONENT of an unknown along a multi-index of
+  ! Returns the jet component of an unknown along a multi-index of
   ! coordinate functions: each entry one order along that coordinate.
   ! Along a coordinate the unknown is not a function of, one outside
   ! its arguments, the component is the zero field. A multi-index of
   ! the first coordinate and one later coordinate names a mixed
-  ! component, the entries commuting. Invalid input: a field that is
-  ! not a scalar unknown, an entry that is not a coordinate of the
-  ! same manifold, or two distinct later coordinates, whose mixed
-  ! components the jet does not store.
+  ! component, the entries commuting.
+  !
+  !      [t, t]      u_tt    component(u, 2)
+  !      [x, t, x]   u_txx   component_along(u, x, 2, 1)
+  !
+  ! Invalid input: a field that is not a scalar unknown, an entry that
+  ! is not a coordinate of the same manifold, or two distinct later
+  ! coordinates, whose mixed components the jet does not store.
   !===================================================================!
 
   function field_jet_component(this, along) result(d)
 
     class(continuous_field), intent(in) :: this
     type(continuous_field) , intent(in) :: along(:)
-    type(continuous_field) :: d
+    type(continuous_field)              :: d
 
-    integer :: k, c, mixed_order
+    integer            :: k, c, mixed_order
     character(len=250) :: message
 
     if (size(this % component) /= 1 .or. this % index(1) < 1) then
@@ -1597,18 +1878,21 @@ contains
   end function field_jet_component
 
   !===================================================================!
-  ! THE REPRESENTATION LAWS of an unknown along a coordinate, to an
-  ! order: for k = 1 to the order, the derivative of order k of u less
-  ! the component of its jet the derivative denotes, d^k u - u_(k).
-  ! The concretion along the coordinate states each as its rows; stated
-  ! as a residual, each is paired with a multiplier. Invalid input: an
-  ! order below one.
+  ! Returns the representation laws of an unknown along a coordinate,
+  ! to an order: for k = 1 to the order, the derivative of order k of
+  ! u less the component of its jet the derivative denotes,
+  ! d^k u - u_(k). The concretion along the coordinate states each as
+  ! its rows; stated as a residual, each is paired with a multiplier.
+  !
+  !      order 2 along t   [ D_t u - u_(1),  D_t D_t u - u_(2) ]
+  !
+  ! Invalid input: an order below one.
   !===================================================================!
 
   function representation(u, along, order) result(laws)
 
-    type(continuous_field), intent(in) :: u, along
-    integer               , intent(in) :: order
+    type(continuous_field), intent(in)  :: u, along
+    integer               , intent(in)  :: order
     type(continuous_field), allocatable :: laws(:)
 
     integer :: k, j
@@ -1622,10 +1906,10 @@ contains
   end function representation
 
   !===================================================================!
-  ! THE PARTIAL DERIVATIVE of a scalar field in a component of the
-  ! jet of an unknown - u, or u % derivative([t]) - or in a design
-  ! coordinate, every other leaf unchanged: the symbolic derivative as a
-  ! field on the same manifold. Invalid input: a field of several
+  ! Returns the partial derivative of a scalar field in a component of
+  ! the jet of an unknown (u, or u % derivative([t])) or in a design
+  ! coordinate, every other leaf unchanged: the symbolic derivative as
+  ! a field on the same manifold. Invalid input: a field of several
   ! components, or an argument that is neither a jet component of an
   ! unknown nor a design coordinate.
   !===================================================================!
@@ -1634,7 +1918,7 @@ contains
 
     class(continuous_field), intent(in) :: this
     type(continuous_field) , intent(in) :: in
-    type(continuous_field) :: d
+    type(continuous_field)              :: d
 
     type(expression) :: leaf
 
@@ -1665,22 +1949,24 @@ contains
   end function field_partial
 
   !===================================================================!
-  ! THE STATIONARITY of a scalar field in an unknown along a
-  ! coordinate: the Euler-Lagrange derivative, the sum over the
-  ! orders o of (-1)^o times the o-th total derivative along the
-  ! coordinate of the partial in the component of order o - the
-  ! interior equation of the stationarity of the integral of the
-  ! field, the boundary terms of the integration by parts aside.
-  ! Invalid input: a field of several components, an argument that
-  ! is not a scalar unknown, or a coordinate that is not of the
-  ! manifold.
+  ! Returns the stationarity of a scalar field in an unknown along a
+  ! coordinate: the Euler-Lagrange derivative, the sum over the orders
+  ! o of (-1)^o times the o-th total derivative along the coordinate of
+  ! the partial in the component of order o; the interior equation of
+  ! the stationarity of the integral of the field, the boundary terms
+  ! of the integration by parts aside.
+  !
+  !      E_u(f) = df/du - D (df/du_(1)) + D^2 (df/du_(2)) - ...
+  !
+  ! Invalid input: a field of several components, an argument that is
+  ! not a scalar unknown, or a coordinate that is not of the manifold.
   !===================================================================!
 
   function field_stationarity(this, in, along) result(d)
 
     class(continuous_field), intent(in) :: this
     type(continuous_field) , intent(in) :: in, along
-    type(continuous_field) :: d
+    type(continuous_field)              :: d
 
     if (size(this % component) /= 1) then
        error stop 'operation_field: the stationarity is of a scalar field'
@@ -1698,24 +1984,29 @@ contains
   end function field_stationarity
 
   !===================================================================!
-  ! ALONG SEVERAL COORDINATES: the partial in the value, and for each
-  ! coordinate and each order o the density reads along it, (-1)^o
-  ! times the o-th derivative along it of the partial in the component
-  ! of that order, each derivative an operator of the field, replaced
-  ! when the law is discretized - so that a projection on the cells
-  ! reads the outer derivatives along space as fluxes. Invalid input
-  ! as for one coordinate.
+  ! Returns the stationarity along several coordinates: the partial in
+  ! the value, and for each coordinate and each order o the density
+  ! reads along it, (-1)^o times the o-th derivative along it of the
+  ! partial in the component of that order, each derivative an
+  ! operator of the field, replaced when the law is discretized, so
+  ! that a projection on the cells reads the outer derivatives along
+  ! space as fluxes.
+  !
+  !      along [t, x]   df/du - D_t (df/du_t) - D_x (df/du_x)
+  !                           + D_x D_x (df/du_xx) + ...
+  !
+  ! Invalid input as for one coordinate.
   !===================================================================!
 
   function field_stationarity_along(this, in, along) result(d)
 
     class(continuous_field), intent(in) :: this
     type(continuous_field) , intent(in) :: in, along(:)
-    type(continuous_field) :: d
+    type(continuous_field)              :: d
 
     type(continuous_field) :: term
-    type(expression) :: form
-    integer :: k, o, top
+    type(expression)       :: form
+    integer                :: k, o, top
 
     if (size(this % component) /= 1) then
        error stop 'operation_field: the stationarity is of a scalar field'
@@ -1744,22 +2035,28 @@ contains
   end function field_stationarity_along
 
   !===================================================================!
-  ! THE BOUNDARY TERMS of the stationarity of a scalar field in an
-  ! unknown along a coordinate: the fields whose vanishing at the far
-  ! end of the coordinate are the natural conditions of the
+  ! Returns the boundary terms of the stationarity of a scalar field in
+  ! an unknown along a coordinate: the fields whose vanishing at the
+  ! far end of the coordinate are the natural conditions of the
   ! stationarity of the integral, one per order of the unknown below
   ! the highest, terms(k + 1) the coefficient of the variation of the
-  ! k-th derivative. Invalid input as for the stationarity.
+  ! k-th derivative.
+  !
+  !      f(u, u_t, u_tt)
+  !        terms(1) = df/du_t - D (df/du_tt)   coefficient of delta u
+  !        terms(2) = df/du_tt                 coefficient of delta u_t
+  !
+  ! Invalid input as for the stationarity.
   !===================================================================!
 
   function field_boundary_terms(this, in, along) result(terms)
 
-    class(continuous_field), intent(in) :: this
-    type(continuous_field) , intent(in) :: in, along
-    type(continuous_field), allocatable :: terms(:)
+    class(continuous_field), intent(in)  :: this
+    type(continuous_field) , intent(in)  :: in, along
+    type(continuous_field) , allocatable :: terms(:)
 
     type(expression), allocatable :: graphs(:)
-    integer :: k
+    integer                       :: k
 
     if (size(this % component) /= 1) then
        error stop 'operation_field: the boundary terms are of a scalar field'
@@ -1781,16 +2078,18 @@ contains
   end function field_boundary_terms
 
   !===================================================================!
-  ! THE DISCRETE IMAGE: the field sampled at the points. Invalid
-  ! input: a discretization of another manifold, or a field that
-  ! reads an unknown, which has no value to sample.
+  ! Returns the discrete image: the field sampled at the points.
+  ! Invalid input: a discretization of another manifold, or a field
+  ! that reads an unknown, which has no value to sample.
+  !
+  !      value(p, k) = component k at position(p)
   !===================================================================!
 
   function field_discretize(this, on) result(sampled)
 
     class(continuous_field), intent(in) :: this
     class(discrete_support), intent(in) :: on
-    type(discrete_field) :: sampled
+    type(discrete_field)                :: sampled
 
     integer :: p, k
 
@@ -1810,16 +2109,16 @@ contains
   end function field_discretize
 
   !===================================================================!
-  ! THE DISCRETE FIELD from values: value(p, k) at point p, component
-  ! k, named per component.
+  ! Creates the discrete field from values: value(p, k) at point p,
+  ! component k, named per component
   !===================================================================!
 
   function create_discrete(on, value, name) result(this)
 
-    class(discrete_support), intent(in) :: on
-    real(dp)               , intent(in) :: value(:,:)
+    class(discrete_support), intent(in)           :: on
+    real(dp)               , intent(in)           :: value(:,:)
     character(len=*)       , intent(in), optional :: name(:)
-    type(discrete_field) :: this
+    type(discrete_field)                          :: this
 
     character(len=250) :: message
 
@@ -1836,30 +2135,53 @@ contains
 
   end function create_discrete
 
+  !===================================================================!
+  ! Returns the count of points
+  !===================================================================!
+
   pure integer function discrete_num_points(this)
+
     class(discrete_field), intent(in) :: this
+
     discrete_num_points = size(this % value, 1)
+
   end function discrete_num_points
 
+  !===================================================================!
+  ! Returns the count of components
+  !===================================================================!
+
   pure integer function discrete_num_components(this)
+
     class(discrete_field), intent(in) :: this
+
     discrete_num_components = size(this % value, 2)
+
   end function discrete_num_components
 
-  ! the instant of point p: its first coordinate, time on a manifold of
-  ! time, at the points the field was solved on
+  !===================================================================!
+  ! Returns the instant of point p: its first coordinate, time on a
+  ! manifold of time, at the points the field was solved on
+  !===================================================================!
+
   pure real(dp) function discrete_instant(this, p)
+
     class(discrete_field), intent(in) :: this
     integer              , intent(in) :: p
+
     real(dp), allocatable :: x(:)
+
     x = this % on % position(p)
     discrete_instant = x(1)
+
   end function discrete_instant
 
   !===================================================================!
-  ! The values in the order of the points, each point's components
-  ! together. An array of another size than points times components
-  ! is invalid input.
+  ! Returns the values in v in the order of the points, each point's
+  ! components together. An array of another size than points times
+  ! components is invalid input.
+  !
+  !      v = [ value(1, 1) ... value(1, nc) | value(2, 1) ... | ... ]
   !===================================================================!
 
   subroutine values(this, v)
@@ -1867,7 +2189,7 @@ contains
     class(discrete_field), intent(in)  :: this
     real(dp)             , intent(out) :: v(:)
 
-    integer :: p, k, nc
+    integer            :: p, k, nc
     character(len=250) :: message
 
     nc = size(this % value, 2)
@@ -1885,24 +2207,28 @@ contains
   end subroutine values
 
   !===================================================================!
-  ! The components named, in the order named, every component of a
-  ! name in its order - the components of a multiplier share its
-  ! name. The jet is retained. A design coordinate of the support
-  ! that no component is named after is read as the component whose
-  ! value at every point is the design the support is at, and whose
-  ! jet, a row after the field's, is that of the coordinate: its
-  ! value, the entry of each seed at order one, zero above. A name
-  ! present as neither stops the program.
+  ! Returns the components named, in the order named, every component
+  ! of a name in its order: the components of a multiplier share its
+  ! name. The jet is retained. A design coordinate of the support that
+  ! no component is named after is read as the component whose value
+  ! at every point is the design the support is at, and whose jet, a
+  ! row after the field's, is that of the coordinate: its value, the
+  ! entry of each seed at order one, zero above. A name present as
+  ! neither stops the program.
+  !
+  !      fields(['u', 'lambda', 'nu'])   u, every component of the
+  !                                      multiplier lambda, and the
+  !                                      design coordinate nu
   !===================================================================!
 
   function fields(this, names) result(chosen)
 
     class(discrete_field), intent(in) :: this
     character(len=*)     , intent(in) :: names(:)
-    type(discrete_field) :: chosen
+    type(discrete_field)              :: chosen
 
     integer, allocatable :: slot(:), design(:)
-    integer :: k, j, count, nrow, d
+    integer              :: k, j, count, nrow, d
 
     allocate(chosen % on, source=this % on)
     count = 0
@@ -1958,32 +2284,50 @@ contains
 
   contains
 
+    !-----------------------------------------------------------------!
+    ! Returns the count of the components of a name
+    !-----------------------------------------------------------------!
+
     pure integer function count_named(name)
+
       character(len=*), intent(in) :: name
+
       integer :: j
+
       count_named = 0
       do j = 1, size(this % name)
          if (trim(this % name(j)) == trim(name)) count_named = count_named + 1
       end do
+
     end function count_named
 
-    ! the design coordinate of the support named so, zero for none
+    !-----------------------------------------------------------------!
+    ! Returns the design coordinate of the support named so, zero for
+    ! none
+    !-----------------------------------------------------------------!
+
     pure integer function design_index(name)
+
       character(len=*), intent(in) :: name
+
       integer :: i
+
       design_index = 0
       if (.not. allocated(this % on % expansion % name)) return
       do i = 1, size(this % on % expansion % name)
          if (trim(this % on % expansion % name(i)) == trim(name)) design_index = i
       end do
+
     end function design_index
 
   end function fields
 
   !===================================================================!
-  ! The root mean square over the manifold: the sum over the points
-  ! of the measure at the point times the sum of the squares of the
-  ! components, divided by the total measure, under the root.
+  ! Returns the root mean square over the manifold: the sum over the
+  ! points of the measure at the point times the sum of the squares of
+  ! the components, divided by the total measure, under the root
+  !
+  !      norm^2 = (m_1 |v_1|^2 + m_2 |v_2|^2 + ...) / (m_1 + m_2 + ...)
   !===================================================================!
 
   pure real(dp) function norm(this)
@@ -1991,7 +2335,7 @@ contains
     class(discrete_field), intent(in) :: this
 
     real(dp) :: weighted, total
-    integer :: p
+    integer  :: p
 
     weighted = 0.0_dp
     total    = 0.0_dp
@@ -2004,14 +2348,14 @@ contains
   end function norm
 
   !===================================================================!
-  ! The difference of two discrete fields on one support with equal
-  ! component counts; the names are the left field's.
+  ! Returns the difference of two discrete fields on one support with
+  ! equal extents; the names are the left field's
   !===================================================================!
 
   function discrete_minus(a, b) result(d)
 
     type(discrete_field), intent(in) :: a, b
-    type(discrete_field) :: d
+    type(discrete_field)             :: d
 
     if (.not. a % on % identity % matches(b % on % identity)) then
        error stop 'operation_field: a difference requires discrete fields of one manifold'
@@ -2026,8 +2370,8 @@ contains
   end function discrete_minus
 
   !===================================================================!
-  ! THE OPERATORS, on scalar fields of one manifold. A tuple as an
-  ! operand, or operands of two manifolds, stops the program.
+  ! Requires a scalar operand: the operators act on scalar fields of
+  ! one manifold, and a tuple as an operand stops the program
   !===================================================================!
 
   subroutine require_scalar(a, symbol)
@@ -2041,6 +2385,10 @@ contains
 
   end subroutine require_scalar
 
+  !===================================================================!
+  ! Requires operands of one manifold
+  !===================================================================!
+
   subroutine require_one_manifold(a, b, symbol)
 
     type(continuous_field), intent(in) :: a, b
@@ -2052,32 +2400,53 @@ contains
 
   end subroutine require_one_manifold
 
+  !===================================================================!
+  ! Returns the field of one expression on the support of a
+  !===================================================================!
+
   function composed(a, g) result(this)
+
     type(continuous_field), intent(in) :: a
     type(expression)      , intent(in) :: g
-    type(continuous_field) :: this
+    type(continuous_field)             :: this
+
     this % on        = a % on
     this % name      = ''
     this % component = [g]
     this % index     = [0]
+
   end function composed
 
   !===================================================================!
-  ! THE TWO PARTS OF A SCALAR FIELD: the field itself and no integral,
-  ! or, for the integral over the space factor of a manifold of time
-  ! and space or a field with such an integral, its terms of time and
-  ! the integrand over the region. A field with an integral is
-  ! composed of both parts.
+  ! Returns whether a scalar field has an integral over the region:
+  ! the integral over the space factor of a manifold of time and
+  ! space, or a field with such an integral, composed of both parts
+  !
+  !      a = terms(t) + integral over the region of integrand(t, x)
   !===================================================================!
 
   logical function with_integral(a)
+
     type(continuous_field), intent(in) :: a
+
     with_integral = allocated(a % integrand) .or. (a % is_integral() .and. a % integrated_part == SPACE_FACTOR)
+
   end function with_integral
 
+  !===================================================================!
+  ! Returns the two parts of a scalar field: its terms of time and the
+  ! integrand over the region
+  !
+  !      a field with an integral   terms        integrand
+  !      the integral alone         0            the field
+  !      a field with no integral   the field    0
+  !===================================================================!
+
   subroutine parts(a, terms, integrand)
+
     type(continuous_field), intent(in)  :: a
     type(expression)      , intent(out) :: terms, integrand
+
     if (allocated(a % integrand)) then
        terms     = a % component(1)
        integrand = a % integrand(1)
@@ -2088,28 +2457,53 @@ contains
        terms     = a % component(1)
        integrand = constant(0.0_dp)
     end if
+
   end subroutine parts
 
+  !===================================================================!
+  ! Returns the field of two parts on the support of a
+  !===================================================================!
+
   function composed_parts(a, terms, integrand) result(this)
+
     type(continuous_field), intent(in) :: a
     type(expression)      , intent(in) :: terms, integrand
-    type(continuous_field) :: this
+    type(continuous_field)             :: this
+
     this = composed(a, terms)
     this % integrand = [integrand]
+
   end function composed_parts
 
+  !===================================================================!
+  ! Requires a field with no integral over the region: such an
+  ! integral enters a field linearly, and no other operator takes it
+  !===================================================================!
+
   subroutine require_linear(a, symbol)
+
     type(continuous_field), intent(in) :: a
     character(len=*)      , intent(in) :: symbol
+
     if (with_integral(a)) then
        error stop 'operation_field: an integral over the region enters a field linearly, not through ' // symbol
     end if
+
   end subroutine require_linear
 
+  !===================================================================!
+  ! Returns a + b, part by part where either has an integral
+  !
+  !      (ta + I ia) + (tb + I ib) = (ta + tb) + I (ia + ib)
+  !===================================================================!
+
   function plus(a, b) result(this)
+
     type(continuous_field), intent(in) :: a, b
-    type(continuous_field) :: this
+    type(continuous_field)             :: this
+
     type(expression) :: ta, ia, tb, ib
+
     call require_scalar(a, '+'); call require_scalar(b, '+'); call require_one_manifold(a, b, '+')
     if (with_integral(a) .or. with_integral(b)) then
        call parts(a, ta, ia); call parts(b, tb, ib)
@@ -2117,13 +2511,21 @@ contains
        return
     end if
     this = composed(a, a % component(1) + b % component(1))
+
   end function plus
 
+  !===================================================================!
+  ! Returns x + b
+  !===================================================================!
+
   function real_plus(x, b) result(this)
+
     real(dp)              , intent(in) :: x
     type(continuous_field), intent(in) :: b
-    type(continuous_field) :: this
+    type(continuous_field)             :: this
+
     type(expression) :: tb, ib
+
     call require_scalar(b, '+')
     if (with_integral(b)) then
        call parts(b, tb, ib)
@@ -2131,21 +2533,36 @@ contains
        return
     end if
     this = composed(b, x + b % component(1))
+
   end function real_plus
 
+  !===================================================================!
+  ! Returns a + x
+  !===================================================================!
+
   function plus_real(a, x) result(this)
+
     type(continuous_field), intent(in) :: a
     real(dp)              , intent(in) :: x
-    type(continuous_field) :: this
+    type(continuous_field)             :: this
+
     call require_scalar(a, '+')
     this = real_plus(x, a)
     if (.not. with_integral(a)) this = composed(a, a % component(1) + x)
+
   end function plus_real
 
+  !===================================================================!
+  ! Returns a - b, part by part where either has an integral
+  !===================================================================!
+
   function minus(a, b) result(this)
+
     type(continuous_field), intent(in) :: a, b
-    type(continuous_field) :: this
+    type(continuous_field)             :: this
+
     type(expression) :: ta, ia, tb, ib
+
     call require_scalar(a, '-'); call require_scalar(b, '-'); call require_one_manifold(a, b, '-')
     if (with_integral(a) .or. with_integral(b)) then
        call parts(a, ta, ia); call parts(b, tb, ib)
@@ -2153,13 +2570,21 @@ contains
        return
     end if
     this = composed(a, a % component(1) - b % component(1))
+
   end function minus
 
+  !===================================================================!
+  ! Returns x - b
+  !===================================================================!
+
   function real_minus(x, b) result(this)
+
     real(dp)              , intent(in) :: x
     type(continuous_field), intent(in) :: b
-    type(continuous_field) :: this
+    type(continuous_field)             :: this
+
     type(expression) :: tb, ib
+
     call require_scalar(b, '-')
     if (with_integral(b)) then
        call parts(b, tb, ib)
@@ -2167,13 +2592,21 @@ contains
        return
     end if
     this = composed(b, x - b % component(1))
+
   end function real_minus
 
+  !===================================================================!
+  ! Returns a - x
+  !===================================================================!
+
   function minus_real(a, x) result(this)
+
     type(continuous_field), intent(in) :: a
     real(dp)              , intent(in) :: x
-    type(continuous_field) :: this
+    type(continuous_field)             :: this
+
     type(expression) :: ta, ia
+
     call require_scalar(a, '-')
     if (with_integral(a)) then
        call parts(a, ta, ia)
@@ -2181,12 +2614,20 @@ contains
        return
     end if
     this = composed(a, a % component(1) - x)
+
   end function minus_real
 
+  !===================================================================!
+  ! Returns -a
+  !===================================================================!
+
   function negated(a) result(this)
+
     type(continuous_field), intent(in) :: a
-    type(continuous_field) :: this
+    type(continuous_field)             :: this
+
     type(expression) :: ta, ia
+
     call require_scalar(a, '-')
     if (with_integral(a)) then
        call parts(a, ta, ia)
@@ -2194,14 +2635,24 @@ contains
        return
     end if
     this = composed(a, -a % component(1))
+
   end function negated
 
-  ! a field with an integral times a field of time alone: both parts
-  ! times it
+  !===================================================================!
+  ! Returns a * b: a field with an integral times a field of time
+  ! alone, both parts times it; two fields with integrals stop the
+  ! program
+  !
+  !      (ta + I ia) g = (ta g) + I (ia g)
+  !===================================================================!
+
   function times(a, b) result(this)
+
     type(continuous_field), intent(in) :: a, b
-    type(continuous_field) :: this
+    type(continuous_field)             :: this
+
     type(expression) :: ta, ia
+
     call require_scalar(a, '*'); call require_scalar(b, '*'); call require_one_manifold(a, b, '*')
     if (with_integral(a) .and. with_integral(b)) call require_linear(a, '*')
     if (with_integral(a)) then
@@ -2214,13 +2665,21 @@ contains
        return
     end if
     this = composed(a, a % component(1) * b % component(1))
+
   end function times
 
+  !===================================================================!
+  ! Returns x * b
+  !===================================================================!
+
   function real_times(x, b) result(this)
+
     real(dp)              , intent(in) :: x
     type(continuous_field), intent(in) :: b
-    type(continuous_field) :: this
+    type(continuous_field)             :: this
+
     type(expression) :: tb, ib
+
     call require_scalar(b, '*')
     if (with_integral(b)) then
        call parts(b, tb, ib)
@@ -2228,13 +2687,21 @@ contains
        return
     end if
     this = composed(b, x * b % component(1))
+
   end function real_times
 
+  !===================================================================!
+  ! Returns a * x
+  !===================================================================!
+
   function times_real(a, x) result(this)
+
     type(continuous_field), intent(in) :: a
     real(dp)              , intent(in) :: x
-    type(continuous_field) :: this
+    type(continuous_field)             :: this
+
     type(expression) :: ta, ia
+
     call require_scalar(a, '*')
     if (with_integral(a)) then
        call parts(a, ta, ia)
@@ -2242,12 +2709,20 @@ contains
        return
     end if
     this = composed(a, a % component(1) * x)
+
   end function times_real
 
+  !===================================================================!
+  ! Returns a / b; a divisor with an integral stops the program
+  !===================================================================!
+
   function over(a, b) result(this)
+
     type(continuous_field), intent(in) :: a, b
-    type(continuous_field) :: this
+    type(continuous_field)             :: this
+
     type(expression) :: ta, ia
+
     call require_scalar(a, '/'); call require_scalar(b, '/'); call require_one_manifold(a, b, '/')
     call require_linear(b, '/')
     if (with_integral(a)) then
@@ -2256,21 +2731,36 @@ contains
        return
     end if
     this = composed(a, a % component(1) / b % component(1))
+
   end function over
 
+  !===================================================================!
+  ! Returns x / b
+  !===================================================================!
+
   function real_over(x, b) result(this)
+
     real(dp)              , intent(in) :: x
     type(continuous_field), intent(in) :: b
-    type(continuous_field) :: this
+    type(continuous_field)             :: this
+
     call require_scalar(b, '/'); call require_linear(b, '/')
     this = composed(b, x / b % component(1))
+
   end function real_over
 
+  !===================================================================!
+  ! Returns a / x
+  !===================================================================!
+
   function over_real(a, x) result(this)
+
     type(continuous_field), intent(in) :: a
     real(dp)              , intent(in) :: x
-    type(continuous_field) :: this
+    type(continuous_field)             :: this
+
     type(expression) :: ta, ia
+
     call require_scalar(a, '/')
     if (with_integral(a)) then
        call parts(a, ta, ia)
@@ -2278,65 +2768,121 @@ contains
        return
     end if
     this = composed(a, a % component(1) / x)
+
   end function over_real
 
+  !===================================================================!
+  ! Returns a ** n
+  !===================================================================!
+
   function to_integer(a, n) result(this)
+
     type(continuous_field), intent(in) :: a
     integer               , intent(in) :: n
-    type(continuous_field) :: this
+    type(continuous_field)             :: this
+
     call require_scalar(a, '**'); call require_linear(a, '**')
     this = composed(a, a % component(1) ** n)
+
   end function to_integer
 
+  !===================================================================!
+  ! Returns a ** p
+  !===================================================================!
+
   function to_real(a, p) result(this)
+
     type(continuous_field), intent(in) :: a
     real(dp)              , intent(in) :: p
-    type(continuous_field) :: this
+    type(continuous_field)             :: this
+
     call require_scalar(a, '**'); call require_linear(a, '**')
     this = composed(a, a % component(1) ** p)
+
   end function to_real
 
+  !===================================================================!
+  ! Returns sin(a)
+  !===================================================================!
+
   function sine_of(a) result(this)
+
     type(continuous_field), intent(in) :: a
-    type(continuous_field) :: this
+    type(continuous_field)             :: this
+
     call require_scalar(a, 'sin'); call require_linear(a, 'sin')
     this = composed(a, sin(a % component(1)))
+
   end function sine_of
 
+  !===================================================================!
+  ! Returns cos(a)
+  !===================================================================!
+
   function cosine_of(a) result(this)
+
     type(continuous_field), intent(in) :: a
-    type(continuous_field) :: this
+    type(continuous_field)             :: this
+
     call require_scalar(a, 'cos'); call require_linear(a, 'cos')
     this = composed(a, cos(a % component(1)))
+
   end function cosine_of
 
+  !===================================================================!
+  ! Returns exp(a)
+  !===================================================================!
+
   function exponential_of(a) result(this)
+
     type(continuous_field), intent(in) :: a
-    type(continuous_field) :: this
+    type(continuous_field)             :: this
+
     call require_scalar(a, 'exp'); call require_linear(a, 'exp')
     this = composed(a, exp(a % component(1)))
+
   end function exponential_of
 
+  !===================================================================!
+  ! Returns log(a)
+  !===================================================================!
+
   function logarithm_of(a) result(this)
+
     type(continuous_field), intent(in) :: a
-    type(continuous_field) :: this
+    type(continuous_field)             :: this
+
     call require_scalar(a, 'log'); call require_linear(a, 'log')
     this = composed(a, log(a % component(1)))
+
   end function logarithm_of
 
+  !===================================================================!
+  ! Returns sqrt(a)
+  !===================================================================!
+
   function root_of(a) result(this)
+
     type(continuous_field), intent(in) :: a
-    type(continuous_field) :: this
+    type(continuous_field)             :: this
+
     call require_scalar(a, 'sqrt'); call require_linear(a, 'sqrt')
     this = composed(a, sqrt(a % component(1)))
+
   end function root_of
 
-  ! the step H(a), of the coordinates alone
+  !===================================================================!
+  ! Returns the step H(a), of the coordinates alone
+  !===================================================================!
+
   function step_of(a) result(this)
+
     type(continuous_field), intent(in) :: a
-    type(continuous_field) :: this
+    type(continuous_field)             :: this
+
     call require_scalar(a, 'heaviside'); call require_linear(a, 'heaviside')
     this = composed(a, heaviside(a % component(1)))
+
   end function step_of
 
 end module operation_field

@@ -1,19 +1,22 @@
 !=====================================================================!
-! SET MAP
-!
-! Which representation describes which set. Keyed on graph identity,
-! stored outside the graph, and outside the representation:
+! Module that states the set map: which representation describes
+! which set. It is keyed on graph identity, and stored outside the
+! graph and outside the representation:
 !
 !     set graph  ->  set representation
 !
-! A graph identifies WHICH SET. A representation specifies HOW ITS
-! MEMBERS ARE STORED. This map is the association between them, and it
-! is the only module where the two are combined.
+!   rows                    extents
+!   at 1   id(S1)   ---->   S1's representation, how its members are stored
+!   at 2   id(S2)   ---->   S2's representation
+!   ...
 !
-!        THE MAP RETURNS NO REFERENCES, SO ITS STORAGE IS SIMPLE
+! A graph identifies which set; a representation specifies how its
+! members are stored. This map is the association between them, and
+! it is the only module where the two are combined.
 !
-! Every query is returned by VALUE. No caller receives a pointer
-! into this map's storage, so:
+! The map returns no references, so its storage is simple. Every query
+! is returned by value. No caller receives a pointer into this map's
+! storage, so:
 !
 !     rows may store their representation as an ALLOCATABLE component
 !     the row array may grow by move_alloc and relocate freely
@@ -24,39 +27,37 @@
 ! into its rows; this map needs none of it because it returns none.
 ! Returning no reference is what removes the lifetime problem.
 !
-! If a caller needs a non-owning representation, that is a new lifetime
-! check to be written and measured FIRST - not an accessor to be added
-! without one.
+! If a caller needs a non-owning representation, that is a new
+! lifetime check to be written and measured first, not an accessor to
+! be added without one.
 !
-!                AND THE MAP REFERENCES NOTHING EITHER
-!
-! Returning no reference OUTWARD was only half the law. This map once
-! keyed its rows on
+! And the map references nothing either. Returning no reference
+! outward was only half the law. This map once keyed its rows on
 !
 !     type(graph), pointer :: element
 !
-! which references the caller's graph INWARD, in order to identify it
+! which references the caller's graph inward, in order to identify it
 ! later. Then the map outlived its own key: with the binder's graph
 ! deallocated, every lookup scanned freed storage, and the native
-! allocator returned CORRECT values - 170 invalid reads under
-! valgrind, in every lookup and so in all six queries and in bind itself.
-! A value that is correct because the page has not been reused yet is
-! not a valid result.
+! allocator returned correct values, with 170 invalid reads under
+! valgrind, in every lookup and so in all six queries and in bind
+! itself. A value that is correct because the page has not been reused
+! yet is not a valid result.
 !
-! A row now stores a COPY of the identity:
+! A row now stores a copy of the identity:
 !
-!     identity map owns its keys by value;
+!     an identity map owns its keys by value;
 !     it references no graph object in order to identify it.
 !
-! A token is all that identification needs - matches is the one
+! A token is all that identification needs: matches is the one
 ! comparison, and it reads nothing outside this map. So bind no longer
 ! requires TARGET, and a map may outlive every graph variable that
-! built it, which is what an association stored OUTSIDE both objects
+! built it, which is what an association stored outside both objects
 ! means.
 !
 ! The token is infrastructure and stays here: nothing in the set view
 ! takes or returns one. A caller names a set with a type(graph), as
-! before - a copy of a graph stores its token, so a copy is the same
+! before. A copy of a graph stores its token, so a copy is the same
 ! set, and that is exactly why the key may be copied.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
@@ -64,37 +65,43 @@
 
 module map_set
 
-  use graph_fractal          , only : graph
-  use map_token_rows         , only : identity_rows
+  use graph_fractal         , only : graph
+  use map_token_rows        , only : identity_rows
   use map_set_representation, only : set_representation
 
   implicit none
 
   private
+
   public :: set_map
 
-  !===================================================================!
-  ! The extent of one set: how its members are stored. The extents run
-  ! parallel to the table's keys, and each stores its own kind of
-  ! representation.
-  !===================================================================!
+  !-------------------------------------------------------------------!
+  ! Type that models the extent of one set: how its members are
+  ! stored. The extents run parallel to the table's keys, and each
+  ! stores its own kind of representation.
+  !-------------------------------------------------------------------!
 
   type :: extent
      class(set_representation), allocatable :: representation
   end type extent
 
+  !-------------------------------------------------------------------!
+  ! Type that models the set map: rows keyed on identity, an extent per
+  ! row
+  !-------------------------------------------------------------------!
+
   type :: set_map
 
-     type(identity_rows)       , private :: rows
-     type(extent), allocatable , private :: extents(:)
+     type(identity_rows)      , private :: rows
+     type(extent), allocatable, private :: extents(:)
 
    contains
 
      procedure :: bind
 
      !----------------------------------------------------------------!
-     ! The dispatched queries. Each finds the row by identity and
-     ! calls the representation, returning a value.
+     ! The dispatched queries. Each finds the row by identity and calls
+     ! the representation, returning a value.
      !----------------------------------------------------------------!
 
      procedure :: describes
@@ -105,10 +112,10 @@ module map_set
      procedure :: index_in
 
      !----------------------------------------------------------------!
-     ! The extent itself, COPIED. This is how a compiled representation
-     ! - a CSR relation's row numbering - takes the coordinates it will
-     ! need for its whole lifetime, at the one point where a map is in
-     ! scope.
+     ! The extent itself, copied. This is how a compiled
+     ! representation, a CSR relation's row numbering, takes the
+     ! coordinates it will need for its whole lifetime, at the one
+     ! point where a map is in scope.
      !
      ! It is not the non-owning accessor the header describes: the
      ! result is a newly allocated copy, so the caller owns it and the
@@ -124,7 +131,7 @@ module map_set
 contains
 
   !===================================================================!
-  ! Bind a representation to a set. A set is described once: a second
+  ! Binds a representation to a set. A set is described once: a second
   ! binding would leave two representations for one key.
   !===================================================================!
 
@@ -135,13 +142,13 @@ contains
     class(set_representation), intent(in)    :: representation
 
     type(extent), allocatable :: extended_extents(:)
-    integer :: n, at
+    integer                   :: n, at
 
     at = this % rows % append(element % id(), &
          & 'map_set: a set map is keyed on assigned identity', &
          & 'map_set: a set is described once')
 
-    ! the payload doubles its capacity, so a bind costs amortised
+    ! The extents double their capacity, so a bind costs amortised
     ! constant time rather than a copy of every representation
     if (.not. allocated(this % extents)) allocate(this % extents(max(at, 8)))
     if (at > size(this % extents)) then
@@ -154,6 +161,10 @@ contains
 
   end subroutine bind
 
+  !===================================================================!
+  ! Returns whether a representation describes the set
+  !===================================================================!
+
   pure logical function describes(this, element)
 
     class(set_map), intent(in) :: this
@@ -164,9 +175,11 @@ contains
   end function describes
 
   !===================================================================!
-  ! The dispatch. A set with no representation is not a set this map
-  ! can evaluate, and the program stops rather than fabricating an
-  ! extent.
+  ! Returns the number of the set's members.
+  !
+  ! In this and every query below, a set with no representation is not
+  ! a set this map can evaluate, and the program stops rather than
+  ! fabricating an extent.
   !===================================================================!
 
   integer function num_members_of(this, element)
@@ -182,6 +195,10 @@ contains
 
   end function num_members_of
 
+  !===================================================================!
+  ! Returns the member at a position of the set
+  !===================================================================!
+
   integer function member_of(this, element, position)
 
     class(set_map), intent(in) :: this
@@ -195,6 +212,10 @@ contains
     member_of = this % extents(at) % representation % member(position)
 
   end function member_of
+
+  !===================================================================!
+  ! Returns every member of the set, in its order
+  !===================================================================!
 
   subroutine members_of(this, element, values)
 
@@ -210,6 +231,10 @@ contains
 
   end subroutine members_of
 
+  !===================================================================!
+  ! Returns whether the set has a value as a member
+  !===================================================================!
+
   logical function has(this, element, value)
 
     class(set_map), intent(in) :: this
@@ -224,6 +249,10 @@ contains
 
   end function has
 
+  !===================================================================!
+  ! Returns a copy of the set's representation, owned by the caller
+  !===================================================================!
+
   subroutine extent_of(this, element, extent)
 
     class(set_map)                        , intent(in)  :: this
@@ -237,6 +266,11 @@ contains
     allocate(extent, source=this % extents(at) % representation)
 
   end subroutine extent_of
+
+  !===================================================================!
+  ! Returns the position of a value within the set, as its
+  ! representation numbers it
+  !===================================================================!
 
   integer function index_in(this, element, value)
 

@@ -1,23 +1,38 @@
 !=====================================================================!
-! What a run consumes, attributed to where it was consumed.
+! Module that tallies what a run consumes, attributed to where it was
+! consumed.
 !
 ! An amount is recorded under three indices: the level of the
 ! hierarchy the computation was inside, the derivative order being
 ! computed, and the kind of amount. That triple is the whole of the
 ! structure, and a matrix over any two of its axes is derived from it
-! without any further data being stored.
+! without any further data being stored:
+!
+!   amounts(level, order, event)
+!
+!            order 0     order 1    ...
+!   level 1  [ events ]  [ events ]
+!   level 2  [ events ]  [ events ]
+!   ...
 !
 ! The level is a scope, not an argument. A caller descending the
 ! hierarchy opens a level and closes it again, and every amount
-! recorded in between - including amounts recorded far below, inside a
-! minimizer that has no record of the caller's levels - is recorded
+! recorded in between, including amounts recorded far below, inside a
+! minimizer that has no record of the caller's levels, is recorded
 ! under it. That is how a module which stores nothing of the caller's
 ! hierarchy records into it: the module names the amount, and the
 ! scope names the level. The hierarchy itself is the caller's: its
 ! levels are declared, outermost first, when the tally is opened.
 !
-! Levels nest, so a level's elapsed time includes the time of the levels
-! opened inside it.
+!   call t % open(1, ['march ', 'block ', 'newton'])
+!   call t % enter(1)                      march open
+!   call t % enter(2)                      block open, inside it
+!   ... record(linear_solves) ...          counted under block
+!   call t % leave()                       block's time added
+!   call t % leave()                       march's time added
+!
+! Levels nest, so a level's elapsed time includes the time of the
+! levels opened inside it.
 !
 ! A tally is a value owned by the execution whose amounts it records:
 ! two executions record into two tallies, and a caller sums its
@@ -37,7 +52,7 @@
 module util_tally
 
   use iso_fortran_env, only : int64
-  use util_precision  , only : dp
+  use util_precision , only : dp
 
   implicit none
 
@@ -46,14 +61,11 @@ module util_tally
   public :: tally
   public :: tally_num_events, tally_event_name, tally_event_of
 
-  !-------------------------------------------------------------------!
   ! The levels an amount can be recorded under are the caller's,
   ! declared outermost first at open; the kinds of amount are named
-  ! here so a caller records by name and not by a number the caller
-  ! has to maintain.
-  !-------------------------------------------------------------------!
-
-  integer, parameter, public :: elapsed_time      = 1
+  ! here so that a caller records by name and not by a number it has
+  ! to maintain
+  integer, parameter, public :: elapsed_time   = 1
   integer, parameter, public :: primal_loops   = 2
   integer, parameter, public :: tangent_loops  = 3
   integer, parameter, public :: adjoint_loops  = 4
@@ -68,25 +80,26 @@ module util_tally
        &  'adjoint_loops ', 'newton_solves ', 'linear_solves ', &
        &  'factorisations']
 
+  ! The deepest stack of open levels
   integer, parameter :: deepest = 32
 
   !-------------------------------------------------------------------!
-  ! One tally per execution: the declared levels, the amounts by
-  ! (level, order, event), the order now being computed and the stack
-  ! of open levels with the instant each was opened at.
+  ! Type that models one tally per execution: the declared levels, the
+  ! amounts by (level, order, event), the order now being computed,
+  ! and the stack of open levels with the instant each was opened at
   !-------------------------------------------------------------------!
 
   type :: tally
      private
-     integer :: levels_declared = 0
+     integer                       :: levels_declared = 0
      character(len=:), allocatable :: level_named(:)
-     logical  :: on = .false.
-     real(dp), allocatable :: amounts(:,:,:)
-     integer  :: highest = 0
-     integer  :: order_now = 0
-     integer  :: level_now(deepest) = 0
-     real(dp) :: entered_at(deepest) = 0.0_dp
-     integer  :: depth = 0
+     logical                       :: on = .false.
+     real(dp), allocatable         :: amounts(:,:,:)
+     integer                       :: highest = 0
+     integer                       :: order_now = 0
+     integer                       :: level_now(deepest) = 0
+     real(dp)                      :: entered_at(deepest) = 0.0_dp
+     integer                       :: depth = 0
    contains
      procedure :: open
      procedure :: close
@@ -104,9 +117,10 @@ module util_tally
 contains
 
   !===================================================================!
-  ! Start recording, with storage for orders zero to highest_order, over
-  ! the caller's levels, outermost first. A negative highest order, no
-  ! levels, or more levels than the stack contains stops the program.
+  ! Starts recording, with storage for orders zero to highest_order,
+  ! over the caller's levels, outermost first. A negative highest
+  ! order, no levels, or more levels than the stack contains stops the
+  ! program.
   !===================================================================!
 
   subroutine open(this, highest_order, levels)
@@ -142,7 +156,7 @@ contains
   end subroutine open
 
   !===================================================================!
-  ! Stop recording. The recorded amounts remain readable, so a caller
+  ! Stops recording. The recorded amounts remain readable, so a caller
   ! closes before printing.
   !===================================================================!
 
@@ -154,6 +168,10 @@ contains
 
   end subroutine close
 
+  !===================================================================!
+  ! Returns the number of levels declared
+  !===================================================================!
+
   pure integer function num_levels(this) result(n)
 
     class(tally), intent(in) :: this
@@ -162,25 +180,37 @@ contains
 
   end function num_levels
 
+  !===================================================================!
+  ! Returns the number of kinds of amount
+  !===================================================================!
+
   pure integer function tally_num_events() result(n)
 
     n = num_events
 
   end function tally_num_events
 
+  !===================================================================!
+  ! Returns the name of a declared level
+  !===================================================================!
+
   pure function level_name(this, level) result(named)
 
-    class(tally), intent(in) :: this
-    integer     , intent(in) :: level
+    class(tally)    , intent(in)  :: this
+    integer         , intent(in)  :: level
     character(len=:), allocatable :: named
 
     named = trim(this % level_named(level))
 
   end function level_name
 
+  !===================================================================!
+  ! Returns the name of a kind of amount
+  !===================================================================!
+
   pure function tally_event_name(event) result(named)
 
-    integer, intent(in) :: event
+    integer         , intent(in)  :: event
     character(len=:), allocatable :: named
 
     named = trim(event_named(event))
@@ -188,7 +218,8 @@ contains
   end function tally_event_name
 
   !===================================================================!
-  ! The event a name denotes, or zero where no event has that name.
+  ! Returns the event a name denotes, or zero where no event has that
+  ! name
   !===================================================================!
 
   pure integer function tally_event_of(named) result(event)
@@ -205,7 +236,7 @@ contains
   end function tally_event_of
 
   !===================================================================!
-  ! Which derivative order the amounts that follow belong to.
+  ! Sets which derivative order the amounts that follow belong to
   !===================================================================!
 
   subroutine order(this, derivative_order)
@@ -220,9 +251,9 @@ contains
   end subroutine order
 
   !===================================================================!
-  ! Open a level. A depth beyond the stack, or a level that is not
-  ! one of those declared, stops the program: recording under the
-  ! wrong level is less useful than not recording.
+  ! Opens a level. A depth beyond the stack, or a level that is not one
+  ! of those declared, stops the program: recording under the wrong
+  ! level is less useful than not recording.
   !===================================================================!
 
   subroutine enter(this, level)
@@ -252,8 +283,8 @@ contains
   end subroutine enter
 
   !===================================================================!
-  ! Close the innermost level, recording the time it was open. Closing
-  ! one that was never opened stops the program.
+  ! Closes the innermost level, recording the time it was open.
+  ! Closing one that was never opened stops the program.
   !===================================================================!
 
   subroutine leave(this)
@@ -279,7 +310,7 @@ contains
   end subroutine leave
 
   !===================================================================!
-  ! Record one event under the level now open.
+  ! Records one event under the level now open
   !===================================================================!
 
   subroutine record(this, event)
@@ -305,8 +336,8 @@ contains
   end subroutine record
 
   !===================================================================!
-  ! The recorded amount. An index outside the extent open allocated
-  ! stops the program.
+  ! Returns the recorded amount. An index outside the extent open
+  ! allocated stops the program.
   !===================================================================!
 
   pure real(dp) function amount(this, level, order, event) result(elapsed)
@@ -332,15 +363,15 @@ contains
   end function amount
 
   !===================================================================!
-  ! A tally over the same levels and orders, recording if this one
-  ! is, with zero amounts and no level open: the tally an execution
-  ! begins with, whose amounts its caller adds into this one.
+  ! Returns a tally over the same levels and orders, recording if this
+  ! one is, with zero amounts and no level open: the tally an execution
+  ! begins with, whose amounts its caller adds into this one
   !===================================================================!
 
   function restarted(this) result(initial)
 
     class(tally), intent(in) :: this
-    type(tally) :: initial
+    type(tally)              :: initial
 
     initial = this
     initial % order_now  = 0
@@ -352,9 +383,9 @@ contains
   end function restarted
 
   !===================================================================!
-  ! Add another tally's amounts into this one, cell by cell. A tally
-  ! that was never opened adds nothing; one opened over other levels
-  ! or orders stops the program, since its cells name other scopes.
+  ! Adds another tally's amounts into this one, cell by cell. A tally
+  ! that was never opened adds nothing; one opened over other levels or
+  ! orders stops the program, since its cells name other scopes.
   !===================================================================!
 
   subroutine add(this, other)
@@ -380,7 +411,7 @@ contains
   end subroutine add
 
   !===================================================================!
-  ! Seconds, from the system clock.
+  ! Returns the seconds of the system clock
   !===================================================================!
 
   real(dp) function clock() result(s)

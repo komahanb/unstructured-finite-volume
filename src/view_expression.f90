@@ -1,25 +1,51 @@
 !=====================================================================!
-! THE PRINTED FORMS OF AN EXPRESSION. The vertex table of an
-! expression is read once and written as a tree from the root down,
-! as a diagram with operands centred under their operator, as a
-! formula in infix notation, as nested brackets, and as a digraph in
-! the DOT language.
+! Module that writes the printed forms of an expression.
 !
-! A leaf is written by the application's own component names: q<f>
-! for a field's value, one t per order along the instants, one x, y
-! or z per order along a spatial coordinate, nu for the design,
-! lambda<j> for a multiplier; a constant by its value; an operator by
-! its symbol. A view given the names of the unknowns and of the
-! design coordinates writes those in place of q<f> and nu. The vertex
-! index printed is the one root() reports.
+! The vertex table of an expression is read once and written five
+! ways: as a tree from the root down, as a diagram with operands
+! centred under their operator, as a formula in infix notation, as
+! nested brackets, and as a digraph in the DOT language. For a table
 !
-! THE COMPOSITION OF VIEWS. Every vertex is written when its view is
+!      1  q1        2  x        3  sin(2)        4  *(1, 3)
+!
+! the five read:
+!
+!      tree             diagram          formula      brackets
+!         4  *             *             q1*sin(x)    [* [q1] [sin [x]]]
+!         1  ├── q1     ┌──┴──┐
+!         3  └── sin    q1   sin         digraph
+!         2      └── x        │          v3 -> v2;  v4 -> v1;  v4 -> v3;
+!                             x
+!
+! Leaves. A leaf is written by the application's own component names,
+! a constant by its value and an operator by its symbol:
+!
+!      a field's value, field f       q<f>
+!      its derivatives                one t per order along the instants,
+!                                     one x, y or z per spatial order: q1tx
+!      the design                     nu
+!      a multiplier j                 lambda<j>
+!      a coordinate                   t, x, y, z, then c<n>
+!      a time map along a coordinate  x_map
+!      a constant                     2.0, 0.333333
+!      an operator                    +  -  *  /  **2  sin  dx
+!
+! A view given the names of the unknowns and of the design coordinates
+! writes those in place of q<f> and nu. The vertex index printed is
+! the one root() reports.
+!
+! The composition of views. Every vertex is written when its view is
 ! formed, so that views of expressions named differently compose into
 ! one: the sum and the product of two views, and a vertex of text over
 ! no view (a leaf), over one (an operator written before its operand,
-! integral over t of), or over two (a separator written after the
+! "integral over t of"), or over two (a separator written after the
 ! first operand, a comma). The vertices of the operands come first,
-! the new root last.
+! the new root last:
+!
+!      first       1 .. n1
+!      second      1 .. n2      renumbered n1+1 .. n1+n2
+!      composed    1 .. n1 | n1+1 .. n1+n2 | n1+n2+1
+!                  first's   second's        the new root
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -38,11 +64,17 @@ module view_expression
   implicit none
 
   private
+
   public :: expression_view, operator(+), operator(*)
 
-  ! a vertex of a view that no expression has, written by its text;
+  ! A vertex of a view that no expression has, written by its text;
   ! the kinds of an expression's vertices are positive
   integer, parameter :: VERTEX_TEXT = 0
+
+  !-------------------------------------------------------------------!
+  ! Type that models a view: the vertex table of an expression and
+  ! the text of each vertex, written once when the view is formed
+  !-------------------------------------------------------------------!
 
   type :: expression_view
 
@@ -51,6 +83,7 @@ module view_expression
 
    contains
 
+     ! The five printed forms
      procedure :: tree
      procedure :: diagram
      procedure :: formula
@@ -74,11 +107,16 @@ module view_expression
 
 contains
 
+  !===================================================================!
+  ! Creates the view of an expression, its leaves named by the names
+  ! of the unknowns and of the design coordinates where given
+  !===================================================================!
+
   function create(e, unknowns, designs) result(this)
 
-    type(expression), intent(in) :: e
-    character(len=*), intent(in), optional :: unknowns(:), designs(:)
-    type(expression_view) :: this
+    type(expression)     , intent(in)           :: e
+    character(len=*)     , intent(in), optional :: unknowns(:), designs(:)
+    type(expression_view)                       :: this
 
     integer :: i
 
@@ -90,46 +128,61 @@ contains
 
   end function create
 
+  !===================================================================!
+  ! Creates a vertex of text over no view, one or two
+  !===================================================================!
+
   function text_view(text, first, second) result(this)
 
-    character(len=*)     , intent(in) :: text
+    character(len=*)     , intent(in)           :: text
     type(expression_view), intent(in), optional :: first, second
-    type(expression_view) :: this
+    type(expression_view)                       :: this
 
     this = composition(VERTEX_TEXT, text, first, second)
 
   end function text_view
 
+  !===================================================================!
+  ! Returns the sum of two views
+  !===================================================================!
+
   function view_sum(a, b) result(this)
 
     type(expression_view), intent(in) :: a, b
-    type(expression_view) :: this
+    type(expression_view)             :: this
 
     this = composition(VERTEX_SUM, '+', a, b)
 
   end function view_sum
 
+  !===================================================================!
+  ! Returns the product of two views
+  !===================================================================!
+
   function view_product(a, b) result(this)
 
     type(expression_view), intent(in) :: a, b
-    type(expression_view) :: this
+    type(expression_view)             :: this
 
     this = composition(VERTEX_PRODUCT, '*', a, b)
 
   end function view_product
 
-  ! the vertices of first, those of second numbered after them, and a
-  ! root of the kind and text given over the two roots
+  !===================================================================!
+  ! Returns the vertices of first, those of second numbered after
+  ! them, and a root of the kind and text given over the two roots
+  !===================================================================!
+
   function composition(kind, text, first, second) result(this)
 
-    integer              , intent(in) :: kind
-    character(len=*)     , intent(in) :: text
+    integer              , intent(in)           :: kind
+    character(len=*)     , intent(in)           :: text
     type(expression_view), intent(in), optional :: first, second
-    type(expression_view) :: this
+    type(expression_view)                       :: this
 
-    type(expression_vertex) :: root
+    type(expression_vertex)              :: root
     type(expression_vertex), allocatable :: w(:)
-    integer :: n
+    integer                              :: n
 
     root % kind = kind
     allocate(this % v(0), this % label(0))
@@ -153,14 +206,14 @@ contains
   end function composition
 
   !===================================================================!
-  ! The text of one vertex of an expression.
+  ! Returns the text of one vertex of an expression
   !===================================================================!
 
   function vertex_label(u, unknowns, designs) result(text)
 
-    type(expression_vertex), intent(in) :: u
+    type(expression_vertex), intent(in)           :: u
     character(len=*)       , intent(in), optional :: unknowns(:), designs(:)
-    character(len=:), allocatable :: text
+    character(len=:)       , allocatable          :: text
 
     select case (u % kind)
     case (VERTEX_LEAF)
@@ -210,14 +263,17 @@ contains
 
   end function vertex_label
 
-  ! the name of index i among the names given; the default where no
-  ! names are given or i is beyond them
+  !===================================================================!
+  ! Returns the name of index i among the names given; the default
+  ! where no names are given or i is beyond them
+  !===================================================================!
+
   pure function leaf_name(names, i, default) result(text)
 
     character(len=*), intent(in), optional :: names(:)
-    integer         , intent(in) :: i
-    character(len=*), intent(in) :: default
-    character(len=:), allocatable :: text
+    integer         , intent(in)           :: i
+    character(len=*), intent(in)           :: default
+    character(len=:), allocatable          :: text
 
     text = default
     if (.not. present(names)) return
@@ -225,11 +281,14 @@ contains
 
   end function leaf_name
 
-  ! the letter of a coordinate: t for the first, x, y, z for the next
-  ! three, c<n> beyond
+  !===================================================================!
+  ! Returns the letter of a coordinate: t for the first, x, y, z for
+  ! the next three, c<n> beyond
+  !===================================================================!
+
   pure function axis(coordinate) result(letter)
 
-    integer, intent(in) :: coordinate
+    integer         , intent(in)  :: coordinate
     character(len=:), allocatable :: letter
 
     select case (coordinate - FIRST_COORDINATE)
@@ -242,9 +301,13 @@ contains
 
   end function axis
 
+  !===================================================================!
+  ! Returns an integer written without padding
+  !===================================================================!
+
   pure function written(n) result(text)
 
-    integer, intent(in) :: n
+    integer         , intent(in)  :: n
     character(len=:), allocatable :: text
 
     character(len=12) :: buffer
@@ -254,10 +317,14 @@ contains
 
   end function written
 
-  ! an integral value with one decimal, any other to six digits
+  !===================================================================!
+  ! Returns a real written as an integral value with one decimal, 2.0,
+  ! or any other to six digits, 0.333333
+  !===================================================================!
+
   pure function number(x) result(text)
 
-    real(dp), intent(in) :: x
+    real(dp)        , intent(in)  :: x
     character(len=:), allocatable :: text
 
     character(len=32) :: buffer
@@ -272,14 +339,14 @@ contains
   end function number
 
   !===================================================================!
-  ! THE TREE from the root down, one vertex per line, each operand
-  ! indented below its operator, the vertex index at the left.
+  ! Returns the tree from the root down, one vertex per line, each
+  ! operand indented below its operator, the vertex index at the left
   !===================================================================!
 
   function tree(this) result(text)
 
-    class(expression_view), intent(in) :: this
-    character(len=:), allocatable :: text
+    class(expression_view), intent(in)  :: this
+    character(len=:)      , allocatable :: text
 
     text = ''
     call tree_lines(this, size(this % v), '', '', '', text)
@@ -287,11 +354,18 @@ contains
 
   end function tree
 
+  !===================================================================!
+  ! Appends the line of vertex i and those of its operands below it.
+  ! The branch is the connector of this line; the continuation is the
+  ! prefix of its operands' lines, a bar where a later sibling
+  ! follows and spaces where none does.
+  !===================================================================!
+
   recursive subroutine tree_lines(this, i, prefix, branch, continuation, text)
 
-    class(expression_view), intent(in)    :: this
-    integer               , intent(in)    :: i
-    character(len=*)      , intent(in)    :: prefix, branch, continuation
+    class(expression_view)       , intent(in)    :: this
+    integer                      , intent(in)    :: i
+    character(len=*)             , intent(in)    :: prefix, branch, continuation
     character(len=:), allocatable, intent(inout) :: text
 
     character(len=6) :: column
@@ -308,19 +382,19 @@ contains
   end subroutine tree_lines
 
   !===================================================================!
-  ! THE DIAGRAM from the root down, operands centred under their
-  ! operator. The drawing is built as cells of one visual column each,
-  ! so that the box characters, three bytes wide, align with the
+  ! Returns the diagram from the root down, operands centred under
+  ! their operator. The drawing is built as cells of one visual column
+  ! each, so that the box characters, three bytes wide, align with the
   ! letters.
   !===================================================================!
 
   function diagram(this) result(text)
 
-    class(expression_view), intent(in) :: this
-    character(len=:), allocatable :: text
+    class(expression_view), intent(in)  :: this
+    character(len=:)      , allocatable :: text
 
     character(len=3), allocatable :: cells(:,:)
-    integer :: centre, r, c, n
+    integer                       :: centre, r, c, n
 
     call drawn(this, size(this % v), cells, centre)
     text = ''
@@ -338,17 +412,32 @@ contains
 
   end function diagram
 
+  !===================================================================!
+  ! Returns the cells of the drawing of vertex i and the column of its
+  ! centre. A leaf is its text. One operand is drawn below its
+  ! operator, joined by a bar. Two are drawn side by side, three
+  ! columns apart, and the operator is centred over the midpoint of
+  ! their centres:
+  !
+  !            op            the operator's text, centred on m
+  !         ┌──┴──┐          m = (cl + cr) / 2
+  !       left   right       gap of three columns between the blocks
+  !
+  ! Where the text is wider than what it is centred over, every column
+  ! is shifted right by the offset that keeps the first in the drawing.
+  !===================================================================!
+
   recursive subroutine drawn(this, i, cells, centre)
 
-    class(expression_view), intent(in)  :: this
-    integer               , intent(in)  :: i
+    class(expression_view)       , intent(in)  :: this
+    integer                      , intent(in)  :: i
     character(len=3), allocatable, intent(out) :: cells(:,:)
-    integer               , intent(out) :: centre
+    integer                      , intent(out) :: centre
 
     character(len=3), allocatable :: left(:,:), right(:,:), below(:,:)
     character(len=:), allocatable :: text
-    integer, parameter :: gap = 3
-    integer :: cl, cr, wl, wr, hl, hr, w, h, m, k, offset, start
+    integer, parameter            :: gap = 3
+    integer                       :: cl, cr, wl, wr, hl, hr, w, h, m, k, offset, start
 
     text = this % label(i) % str
 
@@ -408,35 +497,52 @@ contains
   end subroutine drawn
 
   !===================================================================!
-  ! THE FORMULA in infix notation, parenthesized only where the tree
-  ! requires it: a sum or difference under a product, quotient or
-  ! power; a product or quotient under a power; the right operand of
-  ! a difference or quotient at its own level. A vertex of text with
-  ! an operand binds below every operator, so that it is
-  ! parenthesized under each; its operand is parenthesized as that of
-  ! a product, a separator's operands never.
+  ! Returns the formula in infix notation, parenthesized only where
+  ! the tree requires it: a sum or difference under a product, quotient
+  ! or power; a product or quotient under a power; the right operand of
+  ! a difference or quotient at its own level. A vertex of text with an
+  ! operand binds below every operator, so that it is parenthesized
+  ! under each; its operand is parenthesized as that of a product, a
+  ! separator's operands never.
+  !
+  ! Each vertex has a level, and each operand is written with the
+  ! level it must reach; one below it is parenthesized:
+  !
+  !      level   vertex                  operand must reach
+  !        5     leaf, constant          -
+  !        4     function, derivative    0, already in parentheses
+  !        3     power                   4
+  !        2     product, quotient       2; the right of a quotient 3
+  !        1     sum, difference         1; the right of a difference 2
+  !        0     text over operands      2 for one, 0 for a separator's
+  !
+  !      (q1 + q2)*x        q1 - (q2 - x)        (q1*x)**2
   !===================================================================!
 
   function formula(this) result(text)
 
-    class(expression_view), intent(in) :: this
-    character(len=:), allocatable :: text
+    class(expression_view), intent(in)  :: this
+    character(len=:)      , allocatable :: text
 
     text = infix(this, size(this % v), 0)
 
   end function formula
 
-  ! the operands are written into locals before the concatenation:
-  ! gfortran overwrites the result of a nested call to a recursive
-  ! function of deferred length within one expression
+  !===================================================================!
+  ! Returns vertex i in infix notation, parenthesized where its level
+  ! is below above. The operands are written into locals before the
+  ! concatenation: gfortran overwrites the result of a nested call to a
+  ! recursive function of deferred length within one expression.
+  !===================================================================!
+
   recursive function infix(this, i, above) result(text)
 
-    class(expression_view), intent(in) :: this
-    integer               , intent(in) :: i, above
-    character(len=:), allocatable :: text
+    class(expression_view), intent(in)  :: this
+    integer               , intent(in)  :: i, above
+    character(len=:)      , allocatable :: text
 
     character(len=:), allocatable :: first, second, operator
-    integer :: level
+    integer                       :: level
 
     operator = this % label(i) % str
     select case (this % v(i) % kind)
@@ -480,24 +586,28 @@ contains
   end function infix
 
   !===================================================================!
-  ! THE BRACKETS: each vertex as [label operand operand], the input
-  ! syntax of a forest figure.
+  ! Returns the brackets: each vertex as [label operand operand], the
+  ! input syntax of a forest figure
   !===================================================================!
 
   function brackets(this) result(text)
 
-    class(expression_view), intent(in) :: this
-    character(len=:), allocatable :: text
+    class(expression_view), intent(in)  :: this
+    character(len=:)      , allocatable :: text
 
     text = bracketed(this, size(this % v))
 
   end function brackets
 
+  !===================================================================!
+  ! Returns vertex i and its operands in brackets
+  !===================================================================!
+
   recursive function bracketed(this, i) result(text)
 
-    class(expression_view), intent(in) :: this
-    integer               , intent(in) :: i
-    character(len=:), allocatable :: text
+    class(expression_view), intent(in)  :: this
+    integer               , intent(in)  :: i
+    character(len=:)      , allocatable :: text
 
     character(len=:), allocatable :: operand
 
@@ -515,15 +625,21 @@ contains
   end function bracketed
 
   !===================================================================!
-  ! THE DIGRAPH in the DOT language: one node per vertex, named by its
-  ! index and labelled by its text, one arc from each operator to
-  ! each operand.
+  ! Returns the digraph in the DOT language: one node per vertex,
+  ! named by its index and labelled by its text, then one arc from each
+  ! operator to each operand
+  !
+  !      digraph expression {
+  !        v1 [label="q1"];
+  !        ...
+  !        v4 -> v1;
+  !      }
   !===================================================================!
 
   function digraph(this) result(text)
 
-    class(expression_view), intent(in) :: this
-    character(len=:), allocatable :: text
+    class(expression_view), intent(in)  :: this
+    character(len=:)      , allocatable :: text
 
     integer :: i
 

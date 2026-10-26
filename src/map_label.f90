@@ -1,62 +1,52 @@
 !=====================================================================!
-! LABEL MAP
-!
-! What a set is NAMED. Keyed on graph identity, stored outside the
-! graph:
+! Module that states the label map: what a set is named. It is keyed
+! on graph identity and stored outside the graph:
 !
 !     set graph  ->  character label
 !
-! The third association of the family, and the smallest. A graph
-! determines WHICH object; a representation determines HOW ITS
-! MEMBERS ARE STORED; this map determines WHAT IT IS NAMED, and
+! It is the third association of the family, and the smallest. A
+! graph determines which object; a representation determines how its
+! members are stored; this map determines what it is named, and
 ! nothing here is ever read to decide the first.
 !
-!                    A LABEL IS NOT AN IDENTITY
-!
-! Two graphs may have the same label and remain two sets, exactly as
-! two graphs with equal extensions remain two sets. So this map is
-! searched BY IDENTITY and never by name: there is no lookup from a
-! label back to a graph, by design, because such a lookup would have
-! to return one graph for a string that names two. Naming is not
-! addressing.
+! A label is not an identity. Two graphs may have the same label and
+! remain two sets, as two graphs with equal extensions remain two
+! sets. So this map is searched by identity and never by name: there
+! is no lookup from a label back to a graph, by design, because such a
+! lookup would have to return one graph for a string that names two.
+! Naming is not addressing.
 !
 !     same label, different graph   ->  still different
 !     copied token, same graph      ->  same label
 !
-!                    WHY THIS MAP EXISTS
-!
-! The domain capability audit found one requirement the re-rooted
-! domain law could not satisfy. type(graph) by design stores no name -
-! the kernel type is branch(2) and a private token - yet production
-! code names a derived subset after the domain it is derived from:
+! Why this map exists. The domain capability audit found one
+! requirement the re-rooted domain law could not satisfy. type(graph)
+! stores no name by design, its kernel being branch(2) and a private
+! token, yet production code names a derived subset after the domain
+! it is derived from:
 !
 !     sg = subset_set(dom % name(), global_carrier, members(1:n))
 !
 ! That is metadata, and metadata belongs beside the mathematics rather
-! than inside it. Putting a label in graph_fractal would add to the
-! core a component it does not need; putting one in set_representation
-! would make two descriptions of one set disagree about its name. So
-! the label is stored here, orthogonal to both, and a consumer that
-! names nothing never allocates this map.
+! than inside it. A label in graph_fractal would add to the core a
+! component it does not need; a label in set_representation would let
+! two descriptions of one set disagree about its name. So the label is
+! stored here, orthogonal to both, and a consumer that names nothing
+! never allocates this map.
 !
-! This is a LABEL map and not an attribute system. One noun, one role.
+! This is a label map and not an attribute system: one noun, one role.
 ! When a second kind of metadata is required it will be measured and
 ! named separately, not added through a generalization.
 !
-!                        THE UNNAMED RESULT
+! The unnamed result. An unbound graph is not an error but a set with
+! no name: label_of returns the empty string, as the carriers already
+! do (name() returns '' when no name was set). Binding is the strict
+! half: a set is named once, and an undeclared token is rejected,
+! because both would leave two results for one query.
 !
-! An unbound graph is not an error - it is a set with no name.
-! label_of returns the empty string, matching the metadata convention
-! the carriers already follow (name() returns '' when no name was
-! set). Binding is the strict half: a set is named ONCE, and an
-! undeclared token is rejected, because both would leave two results
-! for one query.
-!
-!                          THE STORAGE LAW
-!
-! Rows key on type(token), copied at bind. This map references no
-! graph object to recognise it, so it may outlive every variable that
-! built it, and bind requires no TARGET.
+! The storage law. Rows key on type(token), copied at bind. The map
+! references no graph object to recognise it, so it may outlive every
+! variable that built it, and bind requires no TARGET.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -70,16 +60,23 @@ module map_label
   implicit none
 
   private
+
   public :: label_map
 
-  !===================================================================!
-  ! The labels run parallel to the table's keys: labels(at) is the
-  ! label of the set whose token the table stores at row at.
-  !===================================================================!
+  !-------------------------------------------------------------------!
+  ! Type that models the label map. The labels run parallel to the
+  ! table's keys: labels(at) is the label of the set whose token the
+  ! table stores at row at.
+  !
+  !   rows            labels
+  !   at 1   token -> 'domain'
+  !   at 2   token -> 'boundary'
+  !   ...
+  !-------------------------------------------------------------------!
 
   type :: label_map
 
-     type(identity_rows)         , private :: rows
+     type(identity_rows)      , private :: rows
      type(string), allocatable, private :: labels(:)
 
    contains
@@ -93,7 +90,7 @@ module map_label
 contains
 
   !===================================================================!
-  ! Name a set. A set is named once: a second binding would leave two
+  ! Names a set. A set is named once: a second binding would leave two
   ! results for one query, and the later one would replace the first
   ! without an error.
   !===================================================================!
@@ -105,15 +102,18 @@ contains
     character(len=*), intent(in)    :: label
 
     type(string), allocatable :: extended_labels(:)
-    integer :: n, at
+    integer                   :: n, at
 
     at = this % rows % append(element % id(), &
          & 'map_label: a label map is keyed on assigned identity', &
          & 'map_label: a set is named once')
 
-    ! type(string) is finalizable, so the array-constructor grow is
-    ! not admitted under -std=f2023; the payload grows by move_alloc,
-    ! doubling its capacity so a bind costs amortised constant time.
+    ! type(string) is finalizable, so growing by an array constructor is
+    ! not admitted under -std=f2023. The labels grow by move_alloc
+    ! instead, doubling their capacity so that a bind costs amortised
+    ! constant time:
+    !
+    !   capacity   8 -> 16 -> 32 -> ...
     if (.not. allocated(this % labels)) allocate(this % labels(max(at, 8)))
     if (at > size(this % labels)) then
        n = size(this % labels)
@@ -125,6 +125,10 @@ contains
 
   end subroutine bind_label
 
+  !===================================================================!
+  ! Returns whether a name was bound to the set
+  !===================================================================!
+
   pure logical function labelled(this, element)
 
     class(label_map), intent(in) :: this
@@ -135,9 +139,9 @@ contains
   end function labelled
 
   !===================================================================!
-  ! The set's name, as a value; '' when no name was bound. The
-  ! unnamed result is not a rejection, because an absent name is not
-  ! a contradiction - metadata may be absent.
+  ! Returns the set's name, as a value, or '' when no name was bound.
+  ! The unnamed result is not a rejection, because an absent name is
+  ! not a contradiction: metadata may be absent.
   !===================================================================!
 
   pure function label_of(this, element) result(label)

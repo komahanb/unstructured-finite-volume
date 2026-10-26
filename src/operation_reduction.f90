@@ -1,18 +1,14 @@
 !=====================================================================!
-! Concrete graph reductions.
+! Module that states the concrete graph reductions.
 !
 ! A reduction maps a field on a support to one number. There is a
 ! single concrete type here storing a rule, rather than one class per
-! rule, for the same reason there is one concrete field per side: a
-! caller can then store reductions in a plain array, and adding a new
-! rule requires a case rather than a class.
+! rule, for the same reason there is one concrete field: a caller can
+! then store reductions in a plain array, and adding a new rule
+! requires a case rather than a class.
 !
-!=====================================================================!
-!
-!                          WHY FOUR STEPS
-!
-! Summation appears to need one procedure. It needs four, because the
-! graph may be partitioned:
+! Why four steps. Summation appears to need one procedure. It needs
+! four, because the graph may be partitioned:
 !
 !   part 1  [2 2 2]  --accumulate-->  (sum 6, count 3) --+
 !                                                        +--> combine
@@ -35,13 +31,9 @@
 ! not. The four steps add no operations for the first group and are
 ! required by the second, so every rule uses them.
 !
-!=====================================================================!
-!
-!                        THE MEASURE
-!
-! Pass a measure and a bare sum becomes an integral. Weight each cell
-! by its volume, or each face by its area, and the result no longer
-! depends on the mesh resolution:
+! The measure. Pass a measure and a bare sum becomes an integral.
+! Weight each cell by its volume, or each face by its area, and the
+! result no longer depends on the mesh resolution:
 !
 !      sum        J = sum q_i
 !      integral   J = sum q_i V_i          <- measure is the volume
@@ -55,21 +47,23 @@
 ! reduced with measure v returns the sum of q times v, the product
 ! <q, v>.
 !
-!=====================================================================!
+! Which kinds. Summing works on real and on complex values, and the
+! complex case is required: a complex-step objective is a weighted
+! sum, and its derivative is the imaginary part. Without it the reason
+! the functional stores complex values is removed.
 !
-!                        WHICH KINDS
-!
-! Summing works on real and on complex values, and the complex case is
-! required: a complex-step objective is a weighted sum, and its
-! derivative is the imaginary part. Without it the reason the
-! functional stores complex values is removed.
-!
-! Ordering rules - minimum, maximum, norm - are real only, because
-! the complex numbers are not ordered.
+! Ordering rules (minimum, maximum, norm) are real only, because the
+! complex numbers are not ordered.
 !
 ! All and any work on logical fields. They let a predicate such as
 ! "this graph is acyclic" evaluate to true or false rather than to a
 ! one or a zero.
+!
+! The transpose. A broadcast fills a field from one value, and is the
+! transpose of a reduction:
+!
+!      J --copy-->   [ J    J    ...  J   ]  --average-->  J
+!      J --share-->  [ J/n  J/n  ...  J/n ]  --sum------>  J
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -79,10 +73,10 @@ module operation_reduction
   use util_precision  , only : dp
   use view_directed   , only : directed_graph
   use field_calculus  , only : field
-  use graph_fractal      , only : graph
+  use graph_fractal   , only : graph
   use field_calculus  , only : FIELD_REAL, FIELD_COMPLEX
   use field_calculus  , only : FIELD_LOGICAL
-  use operation_action  , only : operation, contract
+  use operation_action, only : operation, contract
   use operation_action, only : binding, bound_value
   use operation_action, only : emit
   use field_calculus  , only : functional
@@ -93,12 +87,14 @@ module operation_reduction
   implicit none
 
   private
+
   public :: reduction
   public :: REDUCE_SUM, REDUCE_AVERAGE, REDUCE_MINIMUM, REDUCE_MAXIMUM
   public :: REDUCE_NORM, REDUCE_COUNT, REDUCE_ALL, REDUCE_ANY
   public :: broadcast
   public :: BROADCAST_COPY, BROADCAST_SHARE
 
+  ! The rules of a reduction
   integer, parameter :: REDUCE_SUM     = 1
   integer, parameter :: REDUCE_AVERAGE = 2
   integer, parameter :: REDUCE_MINIMUM = 3
@@ -108,17 +104,20 @@ module operation_reduction
   integer, parameter :: REDUCE_ALL     = 7
   integer, parameter :: REDUCE_ANY     = 8
 
+  ! The rules of a broadcast
   integer, parameter :: BROADCAST_COPY  = 1   ! transpose of a sum
   integer, parameter :: BROADCAST_SHARE = 2   ! transpose of an average
 
-  !===================================================================!
-  ! REDUCTION. Many values become one: field -> functional, storing
-  ! the rule it follows. Four staged steps so a partitioned run
-  ! combines partial states before finishing once - a mean of
-  ! part-means is not the mean - plus the one-call form. The measure
-  ! argument turns a bare sum into an integral and is the inner
+  !-------------------------------------------------------------------!
+  ! Type that models the reduction: many values become one, field ->
+  ! functional, storing the rule it follows. Four staged steps so a
+  ! partitioned run combines partial states before finishing once (a
+  ! mean of part-means is not the mean), plus the one-call form. The
+  ! measure argument turns a bare sum into an integral and is the inner
   ! product's second field.
-  !===================================================================!
+  !
+  !      initialize --> accumulate (each part) --> combine --> finalize
+  !-------------------------------------------------------------------!
 
   type, extends(operation) :: reduction
 
@@ -137,7 +136,7 @@ module operation_reduction
    contains
 
      !----------------------------------------------------------------!
-     ! Initialize, accumulate values, combine two parts, finalize once.
+     ! Initialize, accumulate values, combine two parts, finalize once
      !----------------------------------------------------------------!
 
      procedure :: initialize
@@ -146,14 +145,14 @@ module operation_reduction
      procedure :: finalize
 
      !----------------------------------------------------------------!
-     ! All four steps in one call, for a caller with the whole field.
+     ! All four steps in one call, for a caller with the whole field
      !----------------------------------------------------------------!
 
      procedure :: reduce
 
      !----------------------------------------------------------------!
      ! The operation interface: the field reduced over its own domain,
-     ! the measure passed as the second input field.
+     ! the measure passed as the second input field
      !----------------------------------------------------------------!
 
      procedure :: domain => reduction_domain
@@ -161,10 +160,7 @@ module operation_reduction
 
   end type reduction
 
-  !===================================================================!
   ! Constructor. Specify the rule; the power is read only for a norm.
-  !===================================================================!
-
   interface reduction
      module procedure create
   end interface reduction
@@ -173,13 +169,13 @@ module operation_reduction
      module procedure create_broadcast
   end interface broadcast
 
-  !===================================================================!
-  ! The reduction's transpose: one value fills a field. Copy is the
-  ! transpose of a sum, share the transpose of an average, and the
-  ! identity reduce(broadcast(J)) = J fixes them. The constructor
-  ! broadcast(BROADCAST_SHARE) builds one and declares its one
-  ! argument.
-  !===================================================================!
+  !-------------------------------------------------------------------!
+  ! Type that models the reduction's transpose: one value fills a
+  ! field. Copy is the transpose of a sum, share the transpose of an
+  ! average, and the identity reduce(broadcast(J)) = J fixes them. The
+  ! constructor broadcast(BROADCAST_SHARE) builds one and declares its
+  ! one argument.
+  !-------------------------------------------------------------------!
 
   type, extends(operation) :: broadcast
 
@@ -190,19 +186,24 @@ module operation_reduction
      procedure :: broadcast => broadcast_functional
 
      !----------------------------------------------------------------!
-     ! The operation interface: the functional is the one input
-     ! field, and the filled field is returned on the graph's own
-     ! vertices.
+     ! The operation interface: the functional is the one input field,
+     ! and the filled field is returned on the graph's own vertices
      !----------------------------------------------------------------!
 
-     procedure :: apply  => broadcast_apply
+     procedure :: apply => broadcast_apply
 
   end type broadcast
 
 contains
 
   !===================================================================!
-  ! Build a reduction that follows one rule.
+  ! Creates a reduction that follows one rule, and declares its two
+  ! readable positions, the values and the measure, of the kinds the
+  ! rule reads:
+  !
+  !      all, any                logical
+  !      sum, average            real or complex
+  !      every other rule        real
   !===================================================================!
 
   type(reduction) function create(rule, power) result(this)
@@ -218,7 +219,7 @@ contains
 
     call this % result_domain % declare()
 
-    ! two readable positions, the values and the measure; a call may
+    ! Two readable positions, the values and the measure; a call may
     ! pass one or none
     select case (rule)
     case (REDUCE_ALL, REDUCE_ANY)
@@ -233,8 +234,8 @@ contains
   end function create
 
   !===================================================================!
-  ! Build a broadcast that follows one rule: one argument, the
-  ! functional it distributes.
+  ! Creates a broadcast that follows one rule: one argument, the
+  ! functional it distributes
   !===================================================================!
 
   type(broadcast) function create_broadcast(rule) result(this)
@@ -248,18 +249,25 @@ contains
   end function create_broadcast
 
   !===================================================================!
-  ! The initial state of a reduction. Zero for a sum, huge() for a
-  ! minimum, true for an "all".
+  ! Returns the initial state of a reduction:
+  !
+  !      rule                     state starts at
+  !      sum                      0
+  !      average, norm, count     tally 0, weight 0
+  !      minimum                  huge
+  !      maximum                  -huge
+  !      all                      true
+  !      any                      false
   !
   ! Summing starts real. If the first field is complex, accumulate
-  ! promotes the state - a complex zero and a real zero are the same
+  ! promotes the state: a complex zero and a real zero are the same
   ! number, so either start is exact.
   !===================================================================!
 
   pure subroutine initialize(this, state)
 
-    class(reduction), intent(in)                            :: this
-    class(functional), allocatable, intent(inout)     :: state
+    class(reduction)              , intent(in)    :: this
+    class(functional), allocatable, intent(inout) :: state
 
     if (allocated(state)) deallocate(state)
     allocate(stored_functional :: state)
@@ -288,14 +296,16 @@ contains
   end subroutine initialize
 
   !===================================================================!
-  ! Add one part's values into the running state.
+  ! Adds one part's values into the running state, each entry weighted
+  ! by its measure where one is given. Minimum and maximum read the
+  ! values alone.
   !===================================================================!
 
   pure subroutine accumulate(this, values, state, measure)
 
-    class(reduction)       , intent(in)    :: this
-    class(field)     , intent(in)    :: values
-    class(functional), intent(inout) :: state
+    class(reduction) , intent(in)           :: this
+    class(field)     , intent(in)           :: values
+    class(functional), intent(inout)        :: state
     class(field)     , intent(in), optional :: measure
 
     real(dp)   , allocatable :: v(:), m(:)
@@ -307,8 +317,8 @@ contains
     logical     :: lacc, weighted
     integer     :: i, c, k, num_components, nentry
 
-    num_components  = values % num_components()
-    nentry = values % num_entries()
+    num_components = values % num_components()
+    nentry         = values % num_entries()
 
     call weights_of(measure, nentry, m, weighted)
 
@@ -334,9 +344,9 @@ contains
 
     case default
 
-       ! Complex values follow the complex branch; all others the
-       ! real branch. Only summing is defined for complex values,
-       ! since the complex numbers are not ordered.
+       ! Complex values follow the complex branch; all others the real
+       ! branch. Only summing is defined for complex values, since the
+       ! complex numbers are not ordered.
        if (values % value_kind() == FIELD_COMPLEX) then
 
           call values % complex_vector(cv)
@@ -371,7 +381,7 @@ contains
 
           case (REDUCE_AVERAGE, REDUCE_NORM)
              ! Both store a running total and a running weight, and
-             ! both divide or take the root only at finalize.
+             ! both divide or take the root only at finalize
              select type (state)
              type is (stored_functional)
                 do i = 1, nentry
@@ -414,19 +424,20 @@ contains
   end subroutine accumulate
 
   !===================================================================!
-  ! One weight per entry: the measure if there is one, otherwise one.
+  ! Returns one weight per entry: the measure if there is one,
+  ! otherwise one
   !===================================================================!
 
   pure subroutine weights_of(measure, nentry, m, weighted)
 
-    class(field), intent(in), optional :: measure
-    integer           , intent(in)           :: nentry
-    real(dp), allocatable, intent(out)       :: m(:)
-    logical              , intent(out)       :: weighted
+    class(field)         , intent(in), optional :: measure
+    integer              , intent(in)           :: nentry
+    real(dp), allocatable, intent(out)          :: m(:)
+    logical              , intent(out)          :: weighted
 
     real(dp), allocatable :: measure_values(:)
 
-    ! an absent measure weights every entry by one; that is a property
+    ! An absent measure weights every entry by one; that is a property
     ! of the reduction, so no vector of ones is allocated and read
     weighted = .false.
     if (present(measure)) then
@@ -443,16 +454,22 @@ contains
   end subroutine weights_of
 
   !===================================================================!
-  ! Combine two partial results. The result must not depend on the
-  ! order of the parts; otherwise a parallel run would depend on
-  ! which image finishes first.
+  ! Combines two partial results. The result must not depend on the
+  ! order of the parts; otherwise a parallel run would depend on which
+  ! image finishes first.
+  !
+  !      rule                     left (+) right
+  !      sum                      a + b, complex if either is
+  !      average, norm, count     tallies add, weights add
+  !      minimum, maximum         min(a, b), max(a, b)
+  !      all, any                 a .and. b, a .or. b
   !===================================================================!
 
   pure subroutine combine(this, left, right, combined)
 
-    class(reduction)       , intent(in)    :: this
-    class(functional), intent(in)    :: left
-    class(functional), intent(in)    :: right
+    class(reduction)              , intent(in)    :: this
+    class(functional)             , intent(in)    :: left
+    class(functional)             , intent(in)    :: right
     class(functional), allocatable, intent(inout) :: combined
 
     real(dp)    :: a, b
@@ -476,8 +493,8 @@ contains
 
     case (REDUCE_AVERAGE, REDUCE_NORM, REDUCE_COUNT)
 
-       ! The running totals add; the division and the root are
-       ! deferred to finalize.
+       ! The running totals add; the division and the root are deferred
+       ! to finalize
        select type (combined)
        type is (stored_functional)
           select type (left)
@@ -503,7 +520,7 @@ contains
     case default
 
        ! Summing, in the complex or the real branch according to the
-       ! parts' value kinds.
+       ! parts' value kinds
        if (left % value_kind() == FIELD_COMPLEX .or. &
             & right % value_kind() == FIELD_COMPLEX) then
           call left % complex_value(ca)
@@ -520,15 +537,20 @@ contains
   end subroutine combine
 
   !===================================================================!
-  ! Finalize, once, after every part has been combined. Here an
-  ! average divides and a norm takes its root; doing either earlier
-  ! is the error the four steps prevent.
+  ! Finalizes, once, after every part has been combined. Here an
+  ! average divides and a norm takes its root; doing either earlier is
+  ! the error the four steps prevent.
+  !
+  !      average    tally / weight, zero for no weight
+  !      norm       tally^(1/p), zero for no tally
+  !      count      nint(tally), an integer
+  !      the rest   the state as it is
   !===================================================================!
 
   pure subroutine finalize(this, state, scalar)
 
-    class(reduction)       , intent(in) :: this
-    class(functional), intent(in) :: state
+    class(reduction)              , intent(in)    :: this
+    class(functional)             , intent(in)    :: state
     class(functional), allocatable, intent(inout) :: scalar
 
     if (allocated(scalar)) deallocate(scalar)
@@ -570,7 +592,8 @@ contains
   end subroutine finalize
 
   !===================================================================!
-  ! All four steps for a caller with the whole graph.
+  ! Reduces in one call: all four steps, for a caller with the whole
+  ! graph.
   !
   ! Not pure. This is the one procedure where a reduction distributed
   ! across images may communicate with the other images, and a
@@ -579,10 +602,10 @@ contains
 
   subroutine reduce(this, values, scalar, measure)
 
-    class(reduction)    , intent(in) :: this
-    class(field)  , intent(in) :: values
-    class(functional), allocatable, intent(inout) :: scalar
-    class(field)  , intent(in), optional :: measure
+    class(reduction)              , intent(in)           :: this
+    class(field)                  , intent(in)           :: values
+    class(functional), allocatable, intent(inout)        :: scalar
+    class(field)                  , intent(in), optional :: measure
 
     class(functional), allocatable :: state
 
@@ -593,37 +616,41 @@ contains
   end subroutine reduce
 
   !===================================================================!
-  ! The reduction's operation interface. The field is reduced over
-  ! its own domain; a second input field is the measure; the
-  ! functional is returned as the output, since a functional IS a
-  ! field.
+  ! Returns the result's domain: this reduction's own one-entry domain
   !===================================================================!
 
   subroutine reduction_domain(this, input_graph, domain, num_entries)
 
-    class(reduction), intent(in)           :: this
-    class(directed_graph), intent(in)               :: input_graph
-    type(graph), intent(out) :: domain
-    integer        , intent(out) :: num_entries
+    class(reduction)     , intent(in)  :: this
+    class(directed_graph), intent(in)  :: input_graph
+    type(graph)          , intent(out) :: domain
+    integer              , intent(out) :: num_entries
 
     associate (u1 => input_graph); end associate
 
-    ! The result's domain is this reduction's own one-entry domain.
-    domain   = this % result_domain
+    ! The result's domain is this reduction's own one-entry domain
+    domain      = this % result_domain
     num_entries = 1
 
   end subroutine reduction_domain
 
+  !===================================================================!
+  ! Applies the reduction's operation interface. The field is reduced
+  ! over its own domain; a second input field is the measure; the
+  ! functional is returned as the output, since a functional is a
+  ! field. With no inputs the initial state is returned.
+  !===================================================================!
+
   subroutine reduction_apply(this, input_graph, inputs, output)
 
-    class(reduction), intent(in)                   :: this
-    class(directed_graph), intent(in)                       :: input_graph
-    type(binding), intent(in), optional       :: inputs(:)
-    class(field), allocatable, intent(inout) :: output
+    class(reduction)         , intent(in)           :: this
+    class(directed_graph)    , intent(in)           :: input_graph
+    type(binding)            , intent(in), optional :: inputs(:)
+    class(field), allocatable, intent(inout)        :: output
 
     class(functional), allocatable :: reduced
-    class(field), allocatable :: values, measure
-    character(len=250) :: message
+    class(field)     , allocatable :: values, measure
+    character(len=250)             :: message
 
     associate (u1 => input_graph); end associate
 
@@ -650,16 +677,20 @@ contains
 
   end subroutine reduction_apply
 
-  ! A separate procedure so the measure is passed to a required dummy
-  ! argument: gfortran crashes (gfc_get_descriptor_field; verified on
-  ! 11.4, 13.4, 15.2, and 16.0 trunk) when an optional class dummy is
-  ! passed a polymorphic array element. Delete when the compiler
-  ! compiles the direct call without crashing.
+  !===================================================================!
+  ! Reduces with a measure. A separate procedure so the measure is
+  ! passed to a required dummy argument: gfortran crashes
+  ! (gfc_get_descriptor_field; verified on 11.4, 13.4, 15.2, and 16.0
+  ! trunk) when an optional class dummy is passed a polymorphic array
+  ! element. Delete when the compiler compiles the direct call without
+  ! crashing.
+  !===================================================================!
+
   subroutine reduce_measured(this, u, v, image)
 
-    class(reduction), intent(in)   :: this
-    class(field), intent(in) :: u
-    class(field), intent(in) :: v
+    class(reduction)              , intent(in)    :: this
+    class(field)                  , intent(in)    :: u
+    class(field)                  , intent(in)    :: v
     class(functional), allocatable, intent(inout) :: image
 
     call this % reduce(u, image, measure=v)
@@ -667,19 +698,19 @@ contains
   end subroutine reduce_measured
 
   !===================================================================!
-  ! The broadcast's operation interface: the transpose of the
+  ! Applies the broadcast's operation interface: the transpose of the
   ! reduction's. The one input field must be a functional; the filled
   ! field is returned on the graph's vertices.
   !===================================================================!
 
   subroutine broadcast_apply(this, input_graph, inputs, output)
 
-    class(broadcast), intent(in)                   :: this
-    class(directed_graph), intent(in)                       :: input_graph
-    type(binding), intent(in), optional       :: inputs(:)
-    class(field), allocatable, intent(inout) :: output
+    class(broadcast)         , intent(in)           :: this
+    class(directed_graph)    , intent(in)           :: input_graph
+    type(binding)            , intent(in), optional :: inputs(:)
+    class(field), allocatable, intent(inout)        :: output
 
-    type(stored_field) :: out
+    type(stored_field)        :: out
     class(field), allocatable :: value
 
     out = stored_field('broadcast', input_graph % vertex_set(), input_graph % num_vertices())
@@ -700,17 +731,17 @@ contains
   end subroutine broadcast_apply
 
   !===================================================================!
-  ! Fill every stored value of the field from the functional's one.
+  ! Fills every stored value of the field from the functional's one.
   ! Copy assigns each value J; share assigns each value J divided by
-  ! the count of stored values, so a subsequent sum returns J. A real
-  ! J fills a real field; a complex J fills a complex field and
-  ! transports a complex-step seed; any other kind fills zeros,
-  ! following the value-kind rule the fields declare.
+  ! the count of stored values, so a subsequent sum returns J. A real J
+  ! fills a real field; a complex J fills a complex field and transports
+  ! a complex-step seed; any other kind fills zeros, following the
+  ! value-kind rule the fields declare.
   !===================================================================!
 
   pure subroutine broadcast_functional(this, scalar, values)
 
-    class(broadcast)       , intent(in)    :: this
+    class(broadcast) , intent(in)    :: this
     class(functional), intent(in)    :: scalar
     class(field)     , intent(inout) :: values
 

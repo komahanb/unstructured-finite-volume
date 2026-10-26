@@ -1,27 +1,29 @@
 !=====================================================================!
-! The face coefficient of a material or a velocity: a form in the
-! face normal.
+! Module that states the face coefficient of a material or a
+! velocity: a form in the face normal.
 !
-! LEVEL 3 OF THE STRATIFICATION. One law stores one form in the unit
-! normal n of a face, of degree zero, one or two - the rank of the
-! stored coefficient is the number of times n enters, n.n = 1 for
-! the unit normal contracting it away at degree zero,
+! This is level 3 of the stratification. One law stores one form in
+! the unit normal n of a face, of degree zero, one or two. The rank of
+! the stored coefficient is the number of times n enters, n.n = 1 for
+! the unit normal contracting it away at degree zero:
 !
-!      conduction(k)    k          isotropic material, K = k * I
-!      advection(v)     v.n        the speed through the face
-!      conduction(K)    n^T K n    the tensor material
+!             n
+!             ^
+!     cell    |    cell        conduction(k)    k          isotropic, K = k * I
+!   ----------+----------      advection(v)     v.n        the speed through the face
+!            face              conduction(K)    n^T K n    the tensor material
 !
-! and supplies two coefficient arrays, one entry per face, from the
+! It supplies two coefficient arrays, one entry per face, from the
 ! mesh's own normals and areas:
 !
 !      normal_value        the form at the face normal
 !      edge_coefficients   the form times the face area, zero on the
-!                          headless faces when requested - a boundary
+!                          headless faces when requested: a boundary
 !                          face takes its closure from its condition
 !
 ! The scheme is not part of the law. An advection coefficient passed
-! to the calculus with one_sided true upwinds - the sign of v.n
-! selects the upstream end; with one_sided false the term is the
+! to the calculus with one_sided true upwinds, the sign of v.n
+! selecting the upstream end; with one_sided false the term is the
 ! central average:
 !
 !      upwind    wp = max(vn, 0)   wn = min(vn, 0)
@@ -34,20 +36,26 @@
 
 module operation_conduction
 
-  use util_precision  , only : dp
-  use view_mesh , only : mesh, values_of
+  use util_precision, only : dp
+  use view_mesh     , only : mesh, values_of
 
   implicit none
 
   private
+
   public :: conduction, advection
+
+  !-------------------------------------------------------------------!
+  ! Type that models a face coefficient: a number, a vector or a
+  ! tensor, contracted with the face normal
+  !-------------------------------------------------------------------!
 
   type :: conduction
 
-     ! exactly one of the three is the form: the number for an
-     ! isotropic material, the vector for a velocity, the tensor with
-     ! the dimension of the mesh's space otherwise
-     real(dp) :: scalar = 0.0_dp
+     ! Exactly one of the three is the form: the number for an
+     ! isotropic material, the vector for a velocity, and otherwise the
+     ! tensor, of the dimension of the mesh's space
+     real(dp)              :: scalar = 0.0_dp
      real(dp), allocatable :: vector(:)
      real(dp), allocatable :: tensor(:,:)
 
@@ -65,8 +73,7 @@ module operation_conduction
 contains
 
   !===================================================================!
-  ! The three ways to state the law: one number for an isotropic
-  ! material, one velocity, the full tensor otherwise.
+  ! Creates the law of an isotropic material, one number
   !===================================================================!
 
   pure type(conduction) function isotropic(k) result(this)
@@ -77,6 +84,10 @@ contains
 
   end function isotropic
 
+  !===================================================================!
+  ! Creates the law of a velocity
+  !===================================================================!
+
   pure type(conduction) function advection(velocity) result(this)
 
     real(dp), intent(in) :: velocity(:)
@@ -84,6 +95,11 @@ contains
     this % vector = velocity
 
   end function advection
+
+  !===================================================================!
+  ! Creates the law of a material by its full tensor, which must be
+  ! square
+  !===================================================================!
 
   pure type(conduction) function tensor(k) result(this)
 
@@ -95,19 +111,19 @@ contains
   end function tensor
 
   !===================================================================!
-  ! The form at the normal, one entry per face. Invalid input: a
-  ! vector or tensor whose extent is not the mesh's dimension.
+  ! Returns the form at the normal, one entry per face. Invalid input:
+  ! a vector or a tensor whose extent is not the mesh's dimension.
   !===================================================================!
 
   subroutine normal_value(this, m, values)
 
-    class(conduction), intent(in)      :: this
-    type(mesh), intent(in)             :: m
+    class(conduction)    , intent(in)  :: this
+    type(mesh)           , intent(in)  :: m
     real(dp), allocatable, intent(out) :: values(:)
 
     real(dp), allocatable :: normals(:), n(:)
-    integer :: ne, e, d
-    character(len=250) :: message
+    integer               :: ne, e, d
+    character(len=250)    :: message
 
     call values_of(m % face_normal(), normals)
 
@@ -131,6 +147,7 @@ contains
        end if
     end if
 
+    ! The normals stored face after face, d components each
     do e = 1, ne
        n = normals(d * (e - 1) + 1 : d * e)
        if (allocated(this % tensor)) then
@@ -145,19 +162,19 @@ contains
   end subroutine normal_value
 
   !===================================================================!
-  ! The dictionary's coefficient: the form times the face area, and
-  ! zero on the headless faces when headless_zero is true.
+  ! Returns the coefficient the calculus reads: the form times the face
+  ! area, and zero on the headless faces when headless_zero is true
   !===================================================================!
 
   subroutine edge_coefficients(this, m, headless_zero, values)
 
-    class(conduction), intent(in)      :: this
-    type(mesh), intent(in)             :: m
-    logical   , intent(in)             :: headless_zero
+    class(conduction)    , intent(in)  :: this
+    type(mesh)           , intent(in)  :: m
+    logical              , intent(in)  :: headless_zero
     real(dp), allocatable, intent(out) :: values(:)
 
     real(dp), allocatable :: areas(:)
-    integer :: e
+    integer               :: e
 
     call this % normal_value(m, values)
     call values_of(m % face_area(), areas)

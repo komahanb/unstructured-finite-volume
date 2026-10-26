@@ -1,27 +1,28 @@
 !=====================================================================!
-! A continuous law in named coordinates, stored as data: a graph
-! whose vertices are typed operators and whose edges are the reads
-! between them.
+! Module that states a continuous law in named coordinates, stored as
+! data: a graph whose vertices are typed operators and whose edges are
+! the reads between them.
 !
-! The law itself has no point graph. Its domain is read from its
-! leaves: the fields, the highest derivative order of each field
-! along each coordinate, and the multipliers. A discrete domain
-! places the law on a directed graph when values are evaluated.
+! Domain. The law itself has no point graph. Its domain is read from
+! its leaves: the fields, the highest derivative order of each field
+! along each coordinate, and the multipliers. A discrete domain places
+! the law on a directed graph when values are evaluated.
 !
-!      input graph     the points where the law is evaluated
-!      state argument  the state, one field over those points with
-!                      num_components() components per point
-!      design argument the design, one value per point, so a design
-!                      that varies over the points needs no other shape
-!      output          one value per point
+!      input graph       the points where the law is evaluated
+!      state argument    the state, one field over those points with
+!                        num_components() components per point
+!      design argument   the design, num_designs() values per point,
+!                        so a design that varies over the points needs
+!                        no other shape
+!      output            one value per point
 !
-! A leaf reads a component of an argument - the state's component of
-! degree d, or the design - or a multiplier, or a coordinate of the
-! point's position, or stores a constant.
-! Every other vertex is an arithmetic operation, a power, or an
-! elementary function of the vertices it reads. The vertices are
-! stored in evaluation order, every read before its reader, and the
-! root is the last one.
+! Vertices. A leaf reads a component of an argument (the state's
+! component of degree d, or the design), or a multiplier, or a
+! coordinate of the point's position, or stores a constant. Every
+! other vertex is an arithmetic operation, a power, or an elementary
+! function of the vertices it reads. The vertices are stored in
+! evaluation order, every read before its reader, and the root is the
+! last one.
 !
 ! A rule is built by the intrinsic operators on expressions, so it
 ! reads as it is written and the compiler checks it:
@@ -34,53 +35,57 @@
 ! the derivatives are unknowns the scheme relates, so the vertex
 ! selects and does not differentiate. The state r reads stores the
 ! components of degree 0, 1 and 2: the highest degree any leaf names.
+! The rule component(q, 2) + nu * component(q, 1) is stored as
 !
-!             SEVERAL FIELDS
+!      vertex   kind        reads
+!      1        leaf q_2
+!      2        leaf nu
+!      3        leaf q_1
+!      4        product     2, 3
+!      5        sum         1, 4     the root, last
 !
-! unknown(i) is the i-th zeroth-order field; unknown() is the first.
-! A rule that reads fields 1..m is over m fields, the highest index
-! read. Along the first coordinate each field stores its own jet, to
-! the highest degree the rule names for it; along every later
-! coordinate the fields share the highest degree named there. A
+! Several fields. unknown(i) is the i-th zeroth-order field; unknown()
+! is the first. A rule that reads fields 1..m is over m fields, the
+! highest index read. Along the first coordinate each field stores its
+! own jet, to the highest degree the rule names for it; along every
+! later coordinate the fields share the highest degree named there. A
 ! point's tuple lists the fields in order, each field's components
 ! together.
 !
-!             THE LAGRANGIAN
+!      tuple   [ u  u_t  u_tt | u_x  u_xx | u_tx  u_txx ] [ v ... ]
+!                along t        along x     mixed           field 2
 !
-! A rule that reads multiplier(j), j = 1..k, is a Lagrangian, its
-! j-th multiplier paired with its j-th field, and the rules it
-! generates are its partials. euler_lagrange(l, j) is the
+! The Lagrangian. A rule that reads multiplier(j), j = 1..k, is a
+! Lagrangian, its j-th multiplier paired with its j-th field, and the
+! rules it generates are its partials. euler_lagrange(l, j) is the
 ! stationarity of l in its j-th multiplier, the coefficient of one
 ! direction seeded on that multiplier, and at_zero(l) is l with every
 ! multiplier at zero. A multiplier is not part of the tuple a rule
 ! reads, so the state contract excludes it; it is supplied inside the
 ! evaluation, zero in value, with its own direction when its
 ! stationarity is read. Nothing is rewritten: the same vertices are
-! evaluated with one more direction - but for a Lagrangian that is a
+! evaluated with one more direction, but for a Lagrangian that is a
 ! sum of terms, each a multiplier times a law free of multipliers,
 ! whose stationarity in a multiplier is the vertices of the law it
 ! multiplies, the same numbers without the vertices of the other
 ! laws.
 !
-!             THE PARTIALS
-!
-! The rule is evaluated over derivative_terms by one loop over the
-! vertices, so the value and every mixed partial in the directions
-! requested come from one pass and are exact; nothing is
+! The partials. The rule is evaluated over derivative_terms by one
+! loop over the vertices, so the value and every mixed partial in the
+! directions requested come from one pass and are exact; nothing is
 ! differentiated symbolically. A variation may name either argument,
-! so the Q-partials, the X-partials and the mixed Q-X partials all
-! come from one path and to any degree. A Newton block requires the
-! Q-partials as a row of numbers, which is one call per degree with a
-! direction that is one at that degree and zero elsewhere.
+! so the partials in the state, in the design and the mixed partials
+! all come from one path and to any degree. A Newton block requires
+! the partials in the state as a row of numbers, which is one call per
+! degree with a direction that is one at that degree and zero
+! elsewhere.
 !
-!             WHAT IS REJECTED
-!
-! A derivative of anything but the unknown, or of negative degree; a
-! state whose extent is not the instants times the components; a
-! design that is not one value per instant; a missing argument; a
-! variation naming neither argument; a function index outside those
-! defined; a stationarity in a multiplier the rule does not read.
-! Each stops the program.
+! What is rejected. A derivative of anything but the unknown, or of
+! negative degree; a state whose extent is not the points times the
+! components; a design that is not num_designs() values per point; a
+! missing argument; a variation naming neither argument; a function
+! index outside those defined; a stationarity in a multiplier the rule
+! does not read. Each stops the program.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -110,7 +115,7 @@ module operation_expression
   public :: operator(+), operator(-), operator(*), operator(/), operator(**)
   public :: sin, cos, exp, log, sqrt, heaviside
 
-  ! the vertex kinds
+  ! The vertex kinds
   integer, parameter, public :: VERTEX_LEAF          = 1
   integer, parameter, public :: VERTEX_CONSTANT      = 2
   integer, parameter, public :: VERTEX_SUM           = 3
@@ -124,13 +129,13 @@ module operation_expression
   ! an operator, replaced by jet components before the law is evaluated
   integer, parameter, public :: VERTEX_DERIVATIVE    = 10
 
-  ! THE COORDINATE A DERIVATIVE FOLLOWS, named by its place among the
+  ! The coordinate a derivative follows, named by its place among the
   ! coordinates the state is declared over. One is the first declared;
   ! nothing here specifies which that is, and nothing here limits how
   ! many there are.
   integer, parameter, public :: FIRST_COORDINATE = 1
 
-  ! the arguments a leaf reads, in the operation's order; a multiplier
+  ! The arguments a leaf reads, in the operation's order; a multiplier
   ! is read from no argument, and a coordinate from the position of
   ! the point, and the position names each
   integer, parameter, public :: ARGUMENT_STATE      = 1
@@ -143,10 +148,10 @@ module operation_expression
   ! the condition fixing each instant at its reference position
   integer, parameter, public :: ARGUMENT_TIME_MAP   = 5
 
-  ! the elementary functions; the step H(a), one where a >= 0 and zero
-  ! elsewhere, of a function of the coordinates alone: its derivative
-  ! along a coordinate a reads is a measure, not a function, and is
-  ! refused, and along any other zero
+  ! The elementary functions. The step H(a), one where a >= 0 and zero
+  ! elsewhere, is of a function of the coordinates alone: its
+  ! derivative along a coordinate a reads is a measure, not a
+  ! function, and is refused, and along any other zero.
   integer, parameter, public :: SINE        = 1
   integer, parameter, public :: COSINE      = 2
   integer, parameter, public :: EXPONENTIAL = 3
@@ -154,18 +159,26 @@ module operation_expression
   integer, parameter, public :: SQUARE_ROOT = 5
   integer, parameter, public :: UNIT_STEP   = 6
 
-  ! ONE VERTEX AS A VALUE, for a view: the kind, the two vertices
-  ! read (0 if none), a leaf's argument, field, order and coordinate,
-  ! and a constant or an exponent.
+  !-------------------------------------------------------------------!
+  ! Type that models one vertex as a value, for a view: the kind, the
+  ! two vertices read (0 if none), a leaf's argument, field, order and
+  ! coordinate, and a constant or an exponent
+  !-------------------------------------------------------------------!
+
   type, public :: expression_vertex
      integer  :: kind = 0, first = 0, second = 0
      integer  :: position = 0, field = 0, order = 0, along = FIRST_COORDINATE, mixed_order = 0
      real(dp) :: coefficient = 0.0_dp
   end type expression_vertex
 
+  !-------------------------------------------------------------------!
+  ! Type that models an expression: its vertex table in evaluation
+  ! order, and the domain read from its leaves
+  !-------------------------------------------------------------------!
+
   type, extends(operation) :: expression
 
-     ! THE DOMAIN, READ FROM THE LEAVES at every construction and
+     ! The domain, read from the leaves at every construction and
      ! stored so that evaluation indexes the tuple without a pass over
      ! the vertices: one degree per coordinate (the first includes the
      ! component of order zero, the state itself, so it stores
@@ -174,27 +187,28 @@ module operation_expression
      ! each with its degree along the first coordinate; the
      ! multipliers, absent from the tuple and zero in value; and
      ! varied, the multiplier whose stationarity the rule is, or zero.
-     integer, allocatable, private :: degrees(:)
-     integer, private :: fields      = 0
-     integer, private :: multipliers = 0
+     integer , allocatable, private :: degrees(:)
+     integer              , private :: fields      = 0
+     integer              , private :: multipliers = 0
      ! the designs the expression reads, one value per design at a
      ! point: the highest index named, one at least
-     integer, private :: designs     = 1
-     integer, private :: varied      = 0
+     integer              , private :: designs     = 1
+     integer              , private :: varied      = 0
      ! the coordinates the expression reads from the position of a
      ! point: the highest index named, zero when none is read
-     integer, private :: position_coordinates = 0
-     integer, allocatable, private :: field_degree(:)
+     integer              , private :: position_coordinates = 0
+     integer , allocatable, private :: field_degree(:)
      ! per field, the highest order along the first coordinate of a
      ! mixed component, zero when the field has none
-     integer, allocatable, private :: mixed_degree_of_field(:)
+     integer , allocatable, private :: mixed_degree_of_field(:)
      ! per field, its first component in the tuple, and after the last
      ! field the count of components
-     integer, allocatable, private :: field_offset(:)
-     ! per vertex, the component of the tuple a state or multiplier leaf
-     ! reads, formed with the domain; -1 for any other vertex
-     integer, allocatable, private :: leaf_component(:)
+     integer , allocatable, private :: field_offset(:)
+     ! per vertex, the component of the tuple a state or multiplier
+     ! leaf reads, formed with the domain; -1 for any other vertex
+     integer , allocatable, private :: leaf_component(:)
 
+     ! The vertex table, one entry per vertex in evaluation order
      integer , allocatable, private :: kind(:)
      integer , allocatable, private :: first(:), second(:)    ! the vertices read; 0 if none
      integer , allocatable, private :: position(:)            ! a leaf's argument
@@ -206,15 +220,18 @@ module operation_expression
 
    contains
 
-     procedure :: apply          => expression_apply
+     ! The operation's symbols and the evaluation
+     procedure :: apply           => expression_apply
      procedure :: defined_at_zero => expression_defined_at_zero
-     procedure :: partial_action => expression_partial_action
-     procedure :: at_instant     => expression_at_instant
+     procedure :: partial_action  => expression_partial_action
+     procedure :: at_instant      => expression_at_instant
      procedure, private :: evaluate => expression_evaluate
      procedure :: value_at
      procedure :: gradient_at
      procedure :: value_on
      procedure, private :: values_over
+
+     ! The queries of the leaves, the tuple and the domain
      procedure :: reads_state
      procedure :: reads_time_map
      procedure :: pins_instants
@@ -239,6 +256,9 @@ module operation_expression
      procedure :: degree_of_field
      procedure :: offset_of_field
      procedure :: mixed_degree
+
+     ! The layout of the tuple, the evaluation over derivative terms,
+     ! and the domain
      procedure, private :: leaf_at
      procedure, private :: components_per_field
      procedure, private :: stored_at
@@ -296,15 +316,16 @@ module operation_expression
 contains
 
   !===================================================================!
-  ! THE LEAVES.
+  ! Creates an expression of one vertex, a leaf or a constant, and
+  ! reads its domain
   !===================================================================!
 
   function vertex(kind, position, order, coefficient, along, field, mixed_order) result(this)
 
-    integer , intent(in) :: kind, position, order
-    real(dp), intent(in) :: coefficient
+    integer , intent(in)           :: kind, position, order
+    real(dp), intent(in)           :: coefficient
     integer , intent(in), optional :: along, field, mixed_order
-    type(expression) :: this
+    type(expression)               :: this
 
     this % kind        = [kind]
     this % first       = [0]
@@ -324,16 +345,16 @@ contains
   end function vertex
 
   !===================================================================!
-  ! The i-th zeroth-order field, the first when none is named. An
-  ! index below one stops the program.
+  ! Returns the i-th zeroth-order field, the first when none is named.
+  ! An index below one stops the program.
   !===================================================================!
 
   function unknown(i) result(this)
 
     integer, intent(in), optional :: i
-    type(expression) :: this
+    type(expression)              :: this
 
-    integer :: field
+    integer            :: field
     character(len=250) :: message
 
     field = 1
@@ -348,17 +369,17 @@ contains
   end function unknown
 
   !===================================================================!
-  ! The i-th design: read from the design of the point, a vector of
-  ! one value per design coordinate. An index below one stops the
-  ! program; the first when none is given.
+  ! Returns the i-th design: read from the design of the point, a
+  ! vector of one value per design coordinate. An index below one
+  ! stops the program; the first when none is given.
   !===================================================================!
 
   function design(field) result(this)
 
     integer, intent(in), optional :: field
-    type(expression) :: this
+    type(expression)              :: this
 
-    integer :: f
+    integer            :: f
     character(len=250) :: message
 
     f = 1
@@ -372,24 +393,29 @@ contains
 
   end function design
 
+  !===================================================================!
+  ! Returns the constant c
+  !===================================================================!
+
   function constant(c) result(this)
 
     real(dp), intent(in) :: c
-    type(expression) :: this
+    type(expression)     :: this
 
     this = vertex(VERTEX_CONSTANT, 0, 0, c)
 
   end function constant
 
   !===================================================================!
-  ! The j-th multiplier: read from no argument, zero in value unless
-  ! its stationarity is read. An index below one stops the program.
+  ! Returns the j-th multiplier: read from no argument, zero in value
+  ! unless its stationarity is read. An index below one stops the
+  ! program.
   !===================================================================!
 
   function multiplier(j) result(this)
 
     integer, intent(in) :: j
-    type(expression) :: this
+    type(expression)    :: this
 
     character(len=250) :: message
 
@@ -403,16 +429,20 @@ contains
   end function multiplier
 
   !===================================================================!
-  ! THE LAWS PAIRED WITH THEIR MULTIPLIERS, multiplier(1) * laws(1) +
-  ! multiplier(2) * laws(2) + ..., formed in one pass: the vertices
-  ! the products and the sums formed one at a time would have, in
-  ! their order, without the copy of the sum each would make.
+  ! Returns the laws paired with their multipliers, multiplier(1) *
+  ! laws(1) + multiplier(2) * laws(2) + ..., formed in one pass: the
+  ! vertices the products and the sums formed one at a time would
+  ! have, in their order, without the copy of the sum each would make.
+  !
+  !      lambda_1 | c_1 ... | x | lambda_2 | c_2 ... | x | + | ...
+  !                           ^                        ^   ^
+  !               lambda_1 c_1             lambda_2 c_2   their sum
   !===================================================================!
 
   function paired(laws) result(this)
 
     type(expression), intent(in) :: laws(:)
-    type(expression) :: this
+    type(expression)             :: this
 
     integer :: total, j, n, at, leaf, root
 
@@ -467,15 +497,15 @@ contains
   end function paired
 
   !===================================================================!
-  ! The c-th coordinate function: read from the position of the point
-  ! the expression is evaluated at. An index below one stops the
+  ! Returns the c-th coordinate function: read from the position of the
+  ! point the expression is evaluated at. An index below one stops the
   ! program.
   !===================================================================!
 
   function coordinate(c) result(this)
 
     integer, intent(in) :: c
-    type(expression) :: this
+    type(expression)    :: this
 
     character(len=250) :: message
 
@@ -488,15 +518,21 @@ contains
 
   end function coordinate
 
-  ! the time map t(tau), a function of the coordinate of time
+  !===================================================================!
+  ! Returns the time map t(tau), a function of the coordinate of time
+  !===================================================================!
+
   function time_map() result(this)
+
     type(expression) :: this
+
     this = vertex(VERTEX_LEAF, ARGUMENT_TIME_MAP, 0, 0.0_dp, field=FIRST_COORDINATE)
+
   end function time_map
 
   !===================================================================!
-  ! The component of degree d of the unknown. Anything but a bare
-  ! unknown, or a negative degree, stops the program: along the
+  ! Returns the component of degree d of the unknown. Anything but a
+  ! bare unknown, or a negative degree, stops the program: along the
   ! instants only the unknown has components.
   !===================================================================!
 
@@ -504,9 +540,9 @@ contains
 
     type(expression), intent(in) :: x
     integer         , intent(in) :: d
-    type(expression) :: this
+    type(expression)             :: this
 
-    integer :: n
+    integer            :: n
     character(len=250) :: message
 
     n = x % root()
@@ -527,22 +563,27 @@ contains
   end function component
 
   !===================================================================!
-  ! The same component named along any coordinate: which one is given
-  ! by its place among those declared, so a rule reads no differently
-  ! whether the coordinate is a time, a length or a sample. With a
-  ! mixed order the component is also of that order along the first
-  ! coordinate. Invalid input: a mixed order below zero, or one along
-  ! the first coordinate itself.
+  ! Returns the same component named along any coordinate: which one
+  ! is given by its place among those declared, so a rule reads no
+  ! differently whether the coordinate is a time, a length or a
+  ! sample. With a mixed order the component is also of that order
+  ! along the first coordinate.
+  !
+  !      component_along(u, x, 2)      u_xx
+  !      component_along(u, x, 2, 1)   u_txx, with t the first
+  !
+  ! Invalid input: a mixed order below zero, or one along the first
+  ! coordinate itself.
   !===================================================================!
 
   function component_along(x, coordinate, d, mixed_order) result(this)
 
-    type(expression), intent(in) :: x
-    integer         , intent(in) :: coordinate, d
+    type(expression), intent(in)           :: x
+    integer         , intent(in)           :: coordinate, d
     integer         , intent(in), optional :: mixed_order
-    type(expression) :: this
+    type(expression)                       :: this
 
-    integer :: n
+    integer            :: n
     character(len=250) :: message
 
     n = x % root()
@@ -574,18 +615,18 @@ contains
   end function component_along
 
   !===================================================================!
-  ! THE DERIVATIVE OPERATOR of an order along a coordinate, applied to
-  ! any expression and stored in the law as a vertex. The law is not
-  ! evaluated until jet_form has replaced every such vertex by the jet
-  ! components it denotes. Invalid input: an order below one, or a
-  ! coordinate before the first.
+  ! Returns the derivative operator of an order along a coordinate,
+  ! applied to any expression and stored in the law as a vertex. The
+  ! law is not evaluated until jet_form has replaced every such vertex
+  ! by the jet components it denotes. Invalid input: an order below
+  ! one, or a coordinate before the first.
   !===================================================================!
 
   function derivative(x, along, order) result(this)
 
     type(expression), intent(in) :: x
     integer         , intent(in) :: along, order
-    type(expression) :: this
+    type(expression)             :: this
 
     character(len=250) :: message
 
@@ -600,17 +641,20 @@ contains
   end function derivative
 
   !===================================================================!
-  ! THE JET FORM of a law: every derivative operator replaced by what
-  ! it denotes in the jet, the total derivative of the expression it
-  ! reads by the chain rule, order times along its coordinate. A law
-  ! with no operator is returned as it is. A mixed derivative of a
-  ! component stops the program, as the total derivative does.
+  ! Returns the jet form of a law: every derivative operator replaced
+  ! by what it denotes in the jet, the total derivative of the
+  ! expression it reads by the chain rule, order times along its
+  ! coordinate. A law with no operator is returned as it is. A mixed
+  ! derivative of a component stops the program, as the total
+  ! derivative does.
+  !
+  !      derivative(u_t * u, x, 1)   -->   u_tx u + u_t u_x
   !===================================================================!
 
   function jet_form(x) result(this)
 
     type(expression), intent(in) :: x
-    type(expression) :: this
+    type(expression)             :: this
 
     if (.not. any(x % kind == VERTEX_DERIVATIVE)) then
        this = x
@@ -621,23 +665,27 @@ contains
   end function jet_form
 
   !===================================================================!
-  ! THE COMPONENT A REPRESENTATION LAW DEFINES: for a law d^b(q) - p,
-  ! an operator applied to a jet component less the jet component the
-  ! operator denotes, the field, the order and the coordinate of p;
-  ! zeros for any other law. A law that is not the difference of
-  ! operators on a leaf and a leaf, whose jet form is not the
-  ! difference of two equal state components, or that has no operator,
-  ! is not a representation law; the shape is read before the jet
-  ! form, so that no other law is differentiated.
+  ! Returns the component a representation law defines: for a law
+  ! d^b(q) - p, an operator applied to a jet component less the jet
+  ! component the operator denotes, the field, the order and the
+  ! coordinate of p; zeros for any other law.
+  !
+  !      D_t u - u_(1)   -->   [field of u, 1, the first coordinate]
+  !
+  ! A law that is not the difference of operators on a leaf and a
+  ! leaf, whose jet form is not the difference of two equal state
+  ! components, or that has no operator, is not a representation law;
+  ! the shape is read before the jet form, so that no other law is
+  ! differentiated.
   !===================================================================!
 
   function represented_component(x) result(defined)
 
     type(expression), intent(in) :: x
-    integer :: defined(3)
+    integer                      :: defined(3)
 
     type(expression) :: form
-    integer :: r, a, b
+    integer          :: r, a, b
 
     defined = 0
     if (.not. any(x % kind == VERTEX_DERIVATIVE)) return
@@ -668,24 +716,28 @@ contains
   end function represented_component
 
   !===================================================================!
-  ! The stationarity of a Lagrangian in its j-th multiplier: the
-  ! partial of the rule along that multiplier, at zero. When the
+  ! Returns the stationarity of a Lagrangian in its j-th multiplier:
+  ! the partial of the rule along that multiplier, at zero. When the
   ! Lagrangian is a sum of terms, each a multiplier times a law free of
   ! multipliers, and the j-th multiplier is read in one term alone, the
   ! partial is that term's law: its vertices, on the domain and the
   ! arguments of the Lagrangian, so that it reads the Lagrangian's
   ! tuple. A multiplier the rule does not read stops the program.
+  !
+  !      L = lambda_1 c_1 + lambda_2 c_2
+  !      euler_lagrange(L, 2)   c_2, its own vertices on L's domain
+  !      any other form of L    L with lambda_2 varied, dL/dlambda_2
   !===================================================================!
 
   function euler_lagrange(lagrangian, multiplier, label) result(this)
 
-    type(expression), intent(in) :: lagrangian
-    integer         , intent(in) :: multiplier
+    type(expression), intent(in)           :: lagrangian
+    integer         , intent(in)           :: multiplier
     character(len=*), intent(in), optional :: label
-    type(expression) :: this
+    type(expression)                       :: this
 
     character(len=250) :: message
-    integer :: law, start
+    integer            :: law, start
 
     if (multiplier < 1 .or. multiplier > lagrangian % multipliers) then
        write(message,'(a,i0,a,i0)') 'operation_expression: the stationarity must be in a &
@@ -727,18 +779,21 @@ contains
 
   end function euler_lagrange
 
-  ! the vertex of the law the j-th multiplier multiplies, in a
-  ! Lagrangian whose terms are summed and the j-th multiplier read once,
-  ! as a factor of a term whose other factor reads no multiplier; zero
-  ! for a Lagrangian of any other form
+  !===================================================================!
+  ! Returns the vertex of the law the j-th multiplier multiplies, in a
+  ! Lagrangian whose terms are summed and the j-th multiplier read
+  ! once, as a factor of a term whose other factor reads no
+  ! multiplier; zero for a Lagrangian of any other form
+  !===================================================================!
+
   function factor_of(lagrangian, j) result(law)
 
     type(expression), intent(in) :: lagrangian
     integer         , intent(in) :: j
-    integer :: law
+    integer                      :: law
 
     integer, allocatable :: pending(:)
-    integer :: i, other, start
+    integer              :: i, other, start
 
     law = 0
     if (count(lagrangian % kind == VERTEX_LEAF .and. lagrangian % position == ARGUMENT_MULTIPLIER &
@@ -771,25 +826,31 @@ contains
 
   contains
 
+    !-----------------------------------------------------------------!
+    ! Returns whether vertex k is the j-th multiplier
+    !-----------------------------------------------------------------!
+
     logical function read_multiplier(k)
+
       integer, intent(in) :: k
+
       read_multiplier = lagrangian % kind(k) == VERTEX_LEAF .and. lagrangian % position(k) == ARGUMENT_MULTIPLIER &
            & .and. lagrangian % field(k) == j
+
     end function read_multiplier
 
   end function factor_of
 
   !===================================================================!
-  ! The Lagrangian with every multiplier at zero, which for a
-  ! Lagrangian linear in them is the functional beside the
-  ! constraints.
+  ! Returns the Lagrangian with every multiplier at zero, which for a
+  ! Lagrangian linear in them is the functional beside the constraints
   !===================================================================!
 
   function at_zero(lagrangian, label) result(this)
 
-    type(expression), intent(in) :: lagrangian
+    type(expression), intent(in)           :: lagrangian
     character(len=*), intent(in), optional :: label
-    type(expression) :: this
+    type(expression)                       :: this
 
     this = lagrangian
     this % varied = 0
@@ -798,16 +859,18 @@ contains
   end function at_zero
 
   !===================================================================!
-  ! COMPOSITION. A binary vertex reads two roots: the right operand's
-  ! vertices are appended after the left's and renumbered, and the
-  ! new root reads both. A unary vertex reads one.
+  ! Returns a binary vertex of kind reading two roots: the right
+  ! operand's vertices are appended after the left's and renumbered,
+  ! and the new root reads both
+  !
+  !      a: 1 .. na | b: na + 1 .. na + nb | root: reads na, na + nb
   !===================================================================!
 
   function joined(a, b, kind) result(this)
 
     type(expression), intent(in) :: a, b
     integer         , intent(in) :: kind
-    type(expression) :: this
+    type(expression)             :: this
 
     integer :: na, nb
 
@@ -829,38 +892,19 @@ contains
   end function joined
 
   !===================================================================!
-  ! SYMBOLIC DIFFERENTIATION: new expressions over the same leaves, by
-  ! recursion over the tree with the operators above, a zero or a one
-  ! met on the way absorbed.
-  !
-  !   partial_derivative(x, field, order, along)  the partial in the
-  !       state component of the field of that order along the
-  !       coordinate, every other leaf unchanged
-  !   partial_in_design(x, i)   the partial in the i-th design
-  !   total_derivative(x, along)   the total derivative along a
-  !       coordinate by the chain rule over every leaf: a state
-  !       component of order o along it becomes the component of
-  !       order o + 1, a component of order zero the first derivative
-  !       along it, the coordinate itself one, a design, a multiplier
-  !       or another coordinate zero; a component of positive order
-  !       along another coordinate is refused, a mixed derivative not
-  !       being a component of the jet
-  !   stationarity(x, field, along)   the Euler-Lagrange derivative in
-  !       the field: the sum over the orders o of (-1)^o times the
-  !       o-th total derivative along the coordinate of the partial
-  !       in the component of order o - the interior equation of the
-  !       stationarity of the integral of x, the boundary terms of the
-  !       integration by parts aside
+  ! Returns the copy of the subtree at i; resolved, every derivative
+  ! operator replaced by the total derivatives it denotes, as jet_form
+  ! requires. Symbolic differentiation forms new expressions over the
+  ! same leaves by recursion over the tree with the operators of this
+  ! module, a zero or a one met on the way absorbed.
   !===================================================================!
 
-  ! the copy of the subtree at i; resolved, every derivative operator
-  ! replaced by the total derivatives it denotes, as jet_form requires
   recursive function subtree(x, i, resolved) result(this)
 
-    type(expression), intent(in) :: x
-    integer         , intent(in) :: i
+    type(expression), intent(in)           :: x
+    integer         , intent(in)           :: i
     logical         , intent(in), optional :: resolved
-    type(expression) :: this
+    type(expression)                       :: this
 
     integer :: k, start
     logical :: jet
@@ -910,19 +954,31 @@ contains
 
   end function subtree
 
+  !===================================================================!
+  ! Returns whether x is the constant c alone
+  !===================================================================!
+
   pure logical function is_constant(x, c)
+
     type(expression), intent(in) :: x
     real(dp)        , intent(in) :: c
+
     is_constant = .false.
     if (x % root() == 1) then
        if (x % kind(1) == VERTEX_CONSTANT) is_constant = x % coefficient(1) == c
     end if
+
   end function is_constant
 
-  ! a b with a zero or a one absorbed
+  !===================================================================!
+  ! Returns a b with a zero or a one absorbed
+  !===================================================================!
+
   function product_of(a, b) result(this)
+
     type(expression), intent(in) :: a, b
-    type(expression) :: this
+    type(expression)             :: this
+
     if (is_constant(a, 0.0_dp) .or. is_constant(b, 0.0_dp)) then
        this = constant(0.0_dp)
     else if (is_constant(a, 1.0_dp)) then
@@ -932,11 +988,18 @@ contains
     else
        this = a * b
     end if
+
   end function product_of
 
+  !===================================================================!
+  ! Returns a + b with a zero absorbed
+  !===================================================================!
+
   function sum_of(a, b) result(this)
+
     type(expression), intent(in) :: a, b
-    type(expression) :: this
+    type(expression)             :: this
+
     if (is_constant(a, 0.0_dp)) then
        this = b
     else if (is_constant(b, 0.0_dp)) then
@@ -944,11 +1007,18 @@ contains
     else
        this = a + b
     end if
+
   end function sum_of
 
+  !===================================================================!
+  ! Returns a - b with a zero absorbed
+  !===================================================================!
+
   function difference_of(a, b) result(this)
+
     type(expression), intent(in) :: a, b
-    type(expression) :: this
+    type(expression)             :: this
+
     if (is_constant(b, 0.0_dp)) then
        this = a
     else if (is_constant(a, 0.0_dp)) then
@@ -956,23 +1026,33 @@ contains
     else
        this = a - b
     end if
+
   end function difference_of
 
-  ! the derivative of the subtree at i, the leaves differentiated by
-  ! the mode: 1 the partial in the state component (field, order,
-  ! along), 2 the partial in the design field, 3 the total derivative
-  ! along the coordinate along. A subtree that reads no leaf the mode
-  ! differentiates, reads(i) false, has the derivative zero, and an
-  ! operand is copied only into a term that is not zero.
+  !===================================================================!
+  ! Returns the derivative of the subtree at i, the leaves
+  ! differentiated by the mode
+  !
+  !      mode   the derivative
+  !      1      the partial in the state component (field, order,
+  !             along)
+  !      2      the partial in the design field
+  !      3      the total derivative along the coordinate along
+  !
+  ! A subtree that reads no leaf the mode differentiates, reads(i)
+  ! false, has the derivative zero, and an operand is copied only into
+  ! a term that is not zero.
+  !===================================================================!
+
   recursive function differentiated(x, i, mode, field, order, along, reads) result(this)
 
     type(expression), intent(in) :: x
     integer         , intent(in) :: i, mode, field, order, along
     logical         , intent(in) :: reads(:)
-    type(expression) :: this
+    type(expression)             :: this
 
-    type(expression) :: a, b, da, db
-    integer :: n
+    type(expression)   :: a, b, da, db
+    integer            :: n
     character(len=250) :: message
 
     if (.not. reads(i)) then
@@ -1115,12 +1195,17 @@ contains
 
   end function differentiated
 
+  !===================================================================!
+  ! Returns the partial in the state component of the field of that
+  ! order along the coordinate, every other leaf unchanged
+  !===================================================================!
+
   function partial_derivative(x, field, order, along) result(this)
 
-    type(expression), intent(in) :: x
-    integer         , intent(in) :: field, order
+    type(expression), intent(in)           :: x
+    integer         , intent(in)           :: field, order
     integer         , intent(in), optional :: along
-    type(expression) :: this
+    type(expression)                       :: this
 
     integer :: c
 
@@ -1130,33 +1215,58 @@ contains
 
   end function partial_derivative
 
+  !===================================================================!
+  ! Returns the partial in the i-th design
+  !===================================================================!
+
   function partial_in_design(x, field) result(this)
 
     type(expression), intent(in) :: x
     integer         , intent(in) :: field
-    type(expression) :: this
+    type(expression)             :: this
 
     this = differentiated(x, x % root(), 2, field, 0, FIRST_COORDINATE, leaves_read(x, 2, field, 0, FIRST_COORDINATE))
 
   end function partial_in_design
 
+  !===================================================================!
+  ! Returns the total derivative along a coordinate c by the chain
+  ! rule over every leaf
+  !
+  !      leaf                            its derivative along c
+  !      u, order 0                      u_c
+  !      order o along c                 order o + 1 along c
+  !      order o along the first,        order 1 along c, mixed o
+  !        c later
+  !      order o along c' later,         order o along c', mixed
+  !        c the first                   one more
+  !      along c' later, c later         refused: a mixed derivative of
+  !        and another                   two later coordinates is not a
+  !                                      component of the jet
+  !      the coordinate c                one
+  !      any other leaf                  zero
+  !===================================================================!
+
   function total_derivative(x, along) result(this)
 
     type(expression), intent(in) :: x
     integer         , intent(in) :: along
-    type(expression) :: this
+    type(expression)             :: this
 
     this = differentiated(x, x % root(), 3, 0, 0, along, leaves_read(x, 3, 0, 0, along))
 
   end function total_derivative
 
-  ! whether the subtree at each vertex reads a leaf that the mode of
-  ! differentiated differentiates to other than zero
+  !===================================================================!
+  ! Returns whether the subtree at each vertex reads a leaf that the
+  ! mode of differentiated differentiates to other than zero
+  !===================================================================!
+
   pure function leaves_read(x, mode, field, order, along) result(reads)
 
     type(expression), intent(in) :: x
     integer         , intent(in) :: mode, field, order, along
-    logical :: reads(x % num_vertices())
+    logical                      :: reads(x % num_vertices())
 
     integer :: i
 
@@ -1183,15 +1293,25 @@ contains
 
   end function leaves_read
 
+  !===================================================================!
+  ! Returns the Euler-Lagrange derivative in the field: the sum over
+  ! the orders o of (-1)^o times the o-th total derivative along the
+  ! coordinate of the partial in the component of order o; the
+  ! interior equation of the stationarity of the integral of x, the
+  ! boundary terms of the integration by parts aside
+  !
+  !      E_u(x) = dx/du - D (dx/du_(1)) + D^2 (dx/du_(2)) - ...
+  !===================================================================!
+
   function stationarity(x, field, along) result(this)
 
-    type(expression), intent(in) :: x
-    integer         , intent(in) :: field
+    type(expression), intent(in)           :: x
+    integer         , intent(in)           :: field
     integer         , intent(in), optional :: along
-    type(expression) :: this
+    type(expression)                       :: this
 
     type(expression) :: term
-    integer :: c, o, k, top
+    integer          :: c, o, k, top
 
     c = FIRST_COORDINATE
     if (present(along)) c = along
@@ -1219,26 +1339,29 @@ contains
   end function stationarity
 
   !===================================================================!
-  ! THE BOUNDARY TERMS of the stationarity of the integral of x in
-  ! the field along a coordinate: the first variation, integrated by
-  ! parts, leaves at the far end of the coordinate the sum over k of
+  ! Returns the boundary terms of the stationarity of the integral of
+  ! x in the field along a coordinate: the first variation, integrated
+  ! by parts, leaves at the far end of the coordinate the sum over k of
   ! terms(k + 1) times the variation of the k-th derivative of the
-  ! field, terms(k + 1) = sum over o > k of (-1)^(o - k - 1) times the
-  ! (o - k - 1)-th total derivative of the partial in the component
-  ! of order o. At the near end the same terms enter with the
-  ! opposite sign. Where no datum fixes the field's k-th derivative,
+  ! field, terms(k + 1) the sum over o > k of (-1)^(o - k - 1) times
+  ! the (o - k - 1)-th total derivative of the partial in the component
+  ! of order o. At the near end the same terms enter with the opposite
+  ! sign. Where no datum fixes the field's k-th derivative,
   ! terms(k + 1) = 0 is the natural condition there.
+  !
+  !      top 2   terms(1) = dx/du_(1) - D (dx/du_(2))   of delta u
+  !              terms(2) = dx/du_(2)                   of delta u_(1)
   !===================================================================!
 
   function boundary_terms(x, field, along) result(terms)
 
-    type(expression), intent(in) :: x
-    integer         , intent(in) :: field
+    type(expression), intent(in)           :: x
+    integer         , intent(in)           :: field
     integer         , intent(in), optional :: along
-    type(expression), allocatable :: terms(:)
+    type(expression), allocatable          :: terms(:)
 
     type(expression) :: term
-    integer :: c, o, k, i, top
+    integer          :: c, o, k, i, top
 
     c = FIRST_COORDINATE
     if (present(along)) c = along
@@ -1269,33 +1392,44 @@ contains
   end function boundary_terms
 
   !===================================================================!
-  ! THE FLUX FORM OF A LAW tested against its multiplier. The law is a
-  ! sum of terms, each times a constant; a term is the derivative of
-  ! some order along one coordinate of space of a flux, any expression
-  ! but a bare leaf, or any other expression. Integrated by parts, the
-  ! pairing of the multiplier with the derivative of order o of a flux
-  ! is (-1)^o times the pairing of the multiplier's derivative of that
-  ! order with the flux. The terms are grouped by the derivative of the
-  ! multiplier that tests them, of order(g) along coordinate(g), the
-  ! order zero the multiplier itself; flux(g) is the jet form of the
-  ! sum of the group's terms with their signs. The terms of the
-  ! integration by parts on the faces are left to the conditions there.
-  ! space is the first coordinate of space. A derivative of a bare
-  ! unknown is not a flux and stays on the unknown. Invalid input: a
-  ! flux differentiated along two coordinates.
+  ! Returns the flux form of a law tested against its multiplier. The
+  ! law is a sum of terms, each times a constant; a term is the
+  ! derivative of some order along one coordinate of space of a flux,
+  ! any expression but a bare leaf, or any other expression.
+  ! Integrated by parts, the pairing of the multiplier with the
+  ! derivative of order o of a flux is (-1)^o times the pairing of the
+  ! multiplier's derivative of that order with the flux. The terms are
+  ! grouped by the derivative of the multiplier that tests them, of
+  ! order(g) along coordinate(g), the order zero the multiplier itself;
+  ! flux(g) is the jet form of the sum of the group's terms with their
+  ! signs. The terms of the integration by parts on the faces are left
+  ! to the conditions there. space is the first coordinate of space. A
+  ! derivative of a bare unknown is not a flux and stays on the
+  ! unknown.
+  !
+  !      law     q_tt - D_x (k q_x) + f
+  !
+  !      g   tested by       flux(g)
+  !      1   lambda          q_tt + f
+  !      2   D_x lambda      k q_x       (-1)^1 times the term's -1
+  !
+  !      lambda law = lambda (q_tt + f) + D_x lambda (k q_x),
+  !                   less the terms on the faces
+  !
+  ! Invalid input: a flux differentiated along two coordinates.
   !===================================================================!
 
   subroutine flux_form(x, space, coordinate, order, flux)
 
-    type(expression), intent(in) :: x
-    integer         , intent(in) :: space
+    type(expression), intent(in)               :: x
+    integer         , intent(in)               :: space
     integer         , allocatable, intent(out) :: coordinate(:), order(:)
     type(expression), allocatable, intent(out) :: flux(:)
 
     integer , allocatable :: term(:), along(:), times(:)
     real(dp), allocatable :: factor(:)
-    type(expression) :: group
-    integer :: k, g
+    type(expression)      :: group
+    integer               :: k, g
 
     allocate(term(0), along(0), times(0), factor(0))
     call collect(x % root(), 1.0_dp)
@@ -1324,6 +1458,13 @@ contains
     end do
 
   contains
+
+    !-----------------------------------------------------------------!
+    ! Collects the terms of the subtree at i, each times c: through
+    ! sums, differences and products by a constant, and then each
+    ! term's derivatives along one coordinate of space peeled off its
+    ! flux
+    !-----------------------------------------------------------------!
 
     recursive subroutine collect(i, c)
 
@@ -1382,20 +1523,25 @@ contains
   end subroutine flux_form
 
   !===================================================================!
-  ! THE COEFFICIENTS A NODE STORES of every state field of x, as an
-  ! expression that reads each once: with time the first coordinate,
-  ! the orders along it that x stores, and along each coordinate of
-  ! space from space to last the orders one to order, each with every
-  ! order along time, the coefficient's own jet in time; without time,
-  ! the orders zero to order along the first coordinate and one to
-  ! order along the others. Its layout is the tuple of a node.
+  ! Returns the coefficients a node stores of every state field of x,
+  ! as an expression that reads each once. With time the first
+  ! coordinate: the orders along it that x stores, and along each
+  ! coordinate of space from space to last the orders one to order,
+  ! each with every order along time, the coefficient's own jet in
+  ! time. Without time: the orders zero to order along the first
+  ! coordinate and one to order along the others. Its layout is the
+  ! tuple of a node.
+  !
+  !      time and x, order 2, u of degree 1 in t
+  !      reads   u, u_t, u_x, u_tx, u_xx, u_txx
+  !      tuple   [ u  u_t | u_x  u_xx | u_tx  u_txx ]
   !===================================================================!
 
   function coefficient_form(x, space, last, order) result(this)
 
     type(expression), intent(in) :: x
     integer         , intent(in) :: space, last, order
-    type(expression) :: this
+    type(expression)             :: this
 
     integer :: f, a, c, k, top
 
@@ -1422,12 +1568,17 @@ contains
 
   end function coefficient_form
 
+  !===================================================================!
+  ! Returns a unary vertex of kind reading the root of a, with its
+  ! order and coefficient: a power, a function or a derivative
+  !===================================================================!
+
   function applied(a, kind, order, coefficient) result(this)
 
     type(expression), intent(in) :: a
     integer         , intent(in) :: kind, order
     real(dp)        , intent(in) :: coefficient
-    type(expression) :: this
+    type(expression)             :: this
 
     integer :: na
 
@@ -1447,10 +1598,15 @@ contains
 
   end function applied
 
+  !===================================================================!
+  ! Returns the reads of a vertex table moved by an offset, a read of
+  ! none left zero
+  !===================================================================!
+
   pure function shifted(reads, by) result(moved)
 
     integer, intent(in) :: reads(:), by
-    integer :: moved(size(reads))
+    integer             :: moved(size(reads))
 
     where (reads > 0)
        moved = reads + by
@@ -1461,21 +1617,21 @@ contains
   end function shifted
 
   !===================================================================!
-  ! THE DOMAIN, READ FROM THE LEAVES: the fields are those any unknown
-  ! names, one at least; a field's degree along the first coordinate
-  ! is the highest order named for it, zero when only its value is
-  ! named; along a later coordinate the degree is the highest order
-  ! named there by any field; the multipliers are those any
+  ! Sets the domain, read from the leaves: the fields are those any
+  ! unknown names, one at least; a field's degree along the first
+  ! coordinate is the highest order named for it, zero when only its
+  ! value is named; along a later coordinate the degree is the highest
+  ! order named there by any field; the multipliers are those any
   ! multiplier leaf names. The argument contracts follow, with the
   ! highest exact degree, one less for a stationarity.
   !===================================================================!
 
   subroutine derive_domain(this, label)
 
-    class(expression), intent(inout) :: this
+    class(expression), intent(inout)        :: this
     character(len=*) , intent(in), optional :: label
 
-    integer :: i, f, c, coordinates
+    integer              :: i, f, c, coordinates
     integer, allocatable :: along_degree(:)
 
     this % fields      = 1
@@ -1520,17 +1676,21 @@ contains
 
   end subroutine derive_domain
 
-  ! the argument contracts of the domain: a rule that reads a
-  ! coordinate takes the positions of the points as a third argument,
-  ! one value per coordinate read per point
+  !===================================================================!
+  ! Sets the layout of the tuple and the argument contracts of the
+  ! domain: the state, the design, and for a rule that reads a
+  ! coordinate the positions of the points as a third argument, one
+  ! value per coordinate read per point
+  !===================================================================!
+
   subroutine declare_domain(this, label)
 
-    class(expression), intent(inout) :: this
+    class(expression), intent(inout)        :: this
     character(len=*) , intent(in), optional :: label
 
     type(contract), allocatable :: contracts(:)
-    integer, allocatable :: offset(:)
-    integer :: f, i
+    integer, allocatable        :: offset(:)
+    integer                     :: f, i
 
     allocate(offset(this % fields + 1))
     offset(1) = 0
@@ -1553,16 +1713,16 @@ contains
   end subroutine declare_domain
 
   !===================================================================!
-  ! THE EXPRESSION ON THE DOMAIN OF ANOTHER that contains its own: x
-  ! read from the tuple, the designs and the positions of y, so that
-  ! two rules evaluated on one block index one tuple. Invalid input:
-  ! a domain that does not contain the expression's.
+  ! Returns the expression on the domain of another that contains its
+  ! own: x read from the tuple, the designs and the positions of y, so
+  ! that two rules evaluated on one block index one tuple. Invalid
+  ! input: a domain that does not contain the expression's.
   !===================================================================!
 
   function on_domain(x, y) result(this)
 
     type(expression), intent(in) :: x, y
-    type(expression) :: this
+    type(expression)             :: this
 
     integer :: f, c
 
@@ -1591,164 +1751,313 @@ contains
   end function on_domain
 
   !===================================================================!
-  ! THE OPERATORS.
+  ! Returns a + b
   !===================================================================!
 
   function plus(a, b) result(this)
+
     type(expression), intent(in) :: a, b
-    type(expression) :: this
+    type(expression)             :: this
+
     this = joined(a, b, VERTEX_SUM)
+
   end function plus
 
+  !===================================================================!
+  ! Returns x + b
+  !===================================================================!
+
   function real_plus(x, b) result(this)
+
     real(dp)        , intent(in) :: x
     type(expression), intent(in) :: b
-    type(expression) :: this
+    type(expression)             :: this
+
     this = joined(constant(x), b, VERTEX_SUM)
+
   end function real_plus
 
+  !===================================================================!
+  ! Returns a + x
+  !===================================================================!
+
   function plus_real(a, x) result(this)
+
     type(expression), intent(in) :: a
     real(dp)        , intent(in) :: x
-    type(expression) :: this
+    type(expression)             :: this
+
     this = joined(a, constant(x), VERTEX_SUM)
+
   end function plus_real
 
+  !===================================================================!
+  ! Returns a - b
+  !===================================================================!
+
   function minus(a, b) result(this)
+
     type(expression), intent(in) :: a, b
-    type(expression) :: this
+    type(expression)             :: this
+
     this = joined(a, b, VERTEX_DIFFERENCE)
+
   end function minus
 
+  !===================================================================!
+  ! Returns x - b
+  !===================================================================!
+
   function real_minus(x, b) result(this)
+
     real(dp)        , intent(in) :: x
     type(expression), intent(in) :: b
-    type(expression) :: this
+    type(expression)             :: this
+
     this = joined(constant(x), b, VERTEX_DIFFERENCE)
+
   end function real_minus
 
+  !===================================================================!
+  ! Returns a - x
+  !===================================================================!
+
   function minus_real(a, x) result(this)
+
     type(expression), intent(in) :: a
     real(dp)        , intent(in) :: x
-    type(expression) :: this
+    type(expression)             :: this
+
     this = joined(a, constant(x), VERTEX_DIFFERENCE)
+
   end function minus_real
 
+  !===================================================================!
+  ! Returns -a, as (-1) a
+  !===================================================================!
+
   function negated(a) result(this)
+
     type(expression), intent(in) :: a
-    type(expression) :: this
+    type(expression)             :: this
+
     this = joined(constant(-1.0_dp), a, VERTEX_PRODUCT)
+
   end function negated
 
+  !===================================================================!
+  ! Returns a * b
+  !===================================================================!
+
   function times(a, b) result(this)
+
     type(expression), intent(in) :: a, b
-    type(expression) :: this
+    type(expression)             :: this
+
     this = joined(a, b, VERTEX_PRODUCT)
+
   end function times
 
+  !===================================================================!
+  ! Returns x * b
+  !===================================================================!
+
   function real_times(x, b) result(this)
+
     real(dp)        , intent(in) :: x
     type(expression), intent(in) :: b
-    type(expression) :: this
+    type(expression)             :: this
+
     this = joined(constant(x), b, VERTEX_PRODUCT)
+
   end function real_times
 
+  !===================================================================!
+  ! Returns a * x
+  !===================================================================!
+
   function times_real(a, x) result(this)
+
     type(expression), intent(in) :: a
     real(dp)        , intent(in) :: x
-    type(expression) :: this
+    type(expression)             :: this
+
     this = joined(a, constant(x), VERTEX_PRODUCT)
+
   end function times_real
 
+  !===================================================================!
+  ! Returns a / b
+  !===================================================================!
+
   function over(a, b) result(this)
+
     type(expression), intent(in) :: a, b
-    type(expression) :: this
+    type(expression)             :: this
+
     this = joined(a, b, VERTEX_QUOTIENT)
+
   end function over
 
+  !===================================================================!
+  ! Returns x / b
+  !===================================================================!
+
   function real_over(x, b) result(this)
+
     real(dp)        , intent(in) :: x
     type(expression), intent(in) :: b
-    type(expression) :: this
+    type(expression)             :: this
+
     this = joined(constant(x), b, VERTEX_QUOTIENT)
+
   end function real_over
 
+  !===================================================================!
+  ! Returns a / x
+  !===================================================================!
+
   function over_real(a, x) result(this)
+
     type(expression), intent(in) :: a
     real(dp)        , intent(in) :: x
-    type(expression) :: this
+    type(expression)             :: this
+
     this = joined(a, constant(x), VERTEX_QUOTIENT)
+
   end function over_real
 
+  !===================================================================!
+  ! Returns a ** n
+  !===================================================================!
+
   function to_integer(a, n) result(this)
+
     type(expression), intent(in) :: a
     integer         , intent(in) :: n
-    type(expression) :: this
+    type(expression)             :: this
+
     this = applied(a, VERTEX_INTEGER_POWER, 0, real(n, dp))
+
   end function to_integer
 
+  !===================================================================!
+  ! Returns a ** p
+  !===================================================================!
+
   function to_real(a, p) result(this)
+
     type(expression), intent(in) :: a
     real(dp)        , intent(in) :: p
-    type(expression) :: this
+    type(expression)             :: this
+
     this = applied(a, VERTEX_REAL_POWER, 0, p)
+
   end function to_real
 
+  !===================================================================!
+  ! Returns sin(a)
+  !===================================================================!
+
   function sine_of(a) result(this)
+
     type(expression), intent(in) :: a
-    type(expression) :: this
+    type(expression)             :: this
+
     this = applied(a, VERTEX_FUNCTION, SINE, 0.0_dp)
+
   end function sine_of
 
+  !===================================================================!
+  ! Returns cos(a)
+  !===================================================================!
+
   function cosine_of(a) result(this)
+
     type(expression), intent(in) :: a
-    type(expression) :: this
+    type(expression)             :: this
+
     this = applied(a, VERTEX_FUNCTION, COSINE, 0.0_dp)
+
   end function cosine_of
 
+  !===================================================================!
+  ! Returns exp(a)
+  !===================================================================!
+
   function exponential_of(a) result(this)
+
     type(expression), intent(in) :: a
-    type(expression) :: this
+    type(expression)             :: this
+
     this = applied(a, VERTEX_FUNCTION, EXPONENTIAL, 0.0_dp)
+
   end function exponential_of
 
+  !===================================================================!
+  ! Returns log(a)
+  !===================================================================!
+
   function logarithm_of(a) result(this)
+
     type(expression), intent(in) :: a
-    type(expression) :: this
+    type(expression)             :: this
+
     this = applied(a, VERTEX_FUNCTION, LOGARITHM, 0.0_dp)
+
   end function logarithm_of
 
+  !===================================================================!
+  ! Returns sqrt(a)
+  !===================================================================!
+
   function root_of(a) result(this)
+
     type(expression), intent(in) :: a
-    type(expression) :: this
+    type(expression)             :: this
+
     this = applied(a, VERTEX_FUNCTION, SQUARE_ROOT, 0.0_dp)
+
   end function root_of
 
+  !===================================================================!
+  ! Returns the step H(a); a step of anything but the coordinates
+  ! stops the program
+  !===================================================================!
+
   function step_of(a) result(this)
+
     type(expression), intent(in) :: a
-    type(expression) :: this
+    type(expression)             :: this
+
     integer :: i
+
     do i = 1, a % num_vertices()
        if (a % kind(i) == VERTEX_LEAF .and. a % position(i) /= ARGUMENT_COORDINATE) then
           error stop 'operation_expression: a step is a function of the coordinates alone'
        end if
     end do
     this = applied(a, VERTEX_FUNCTION, UNIT_STEP, 0.0_dp)
+
   end function step_of
 
   !===================================================================!
-  ! EVALUATION: the loop over the vertices, over derivative_terms. A
-  ! state component past those given, or a function index outside
-  ! those defined, stops the program.
+  ! Returns the rule at one point over derivative terms: the loop over
+  ! the vertices. The tuple evaluated stores the state and then the
+  ! multipliers; a multiplier, read from no input, is zero, and the
+  ! varied one has one more direction, the highest, whose partial is
+  ! returned over the caller's directions. A state component past
+  ! those given, or a function index outside those defined, stops the
+  ! program.
   !===================================================================!
 
   pure function expression_at_instant(this, q, nu, position) result(r)
 
-    class(expression)     , intent(in) :: this
-    type(derivative_terms), intent(in) :: q(0:)
-    type(derivative_terms), intent(in) :: nu(:)
+    class(expression)     , intent(in)           :: this
+    type(derivative_terms), intent(in)           :: q(0:)
+    type(derivative_terms), intent(in)           :: nu(:)
     real(dp)              , intent(in), optional :: position(:)
-    type(derivative_terms) :: r
+    type(derivative_terms)                       :: r
 
     integer :: n
 
@@ -1772,10 +2081,10 @@ contains
   end function expression_at_instant
 
   !===================================================================!
-  ! The value at a position of an expression that reads no state and
-  ! no multiplier: a function of the coordinates and of constants
-  ! alone. Invalid input: an expression with a state or multiplier
-  ! leaf, which has no value until the state is given.
+  ! Returns the value at a position of an expression that reads no
+  ! state and no multiplier: a function of the coordinates and of
+  ! constants alone. Invalid input: an expression with a state or
+  ! multiplier leaf, which has no value until the state is given.
   !===================================================================!
 
   pure real(dp) function value_at(this, position)
@@ -1796,10 +2105,10 @@ contains
   end function value_at
 
   !===================================================================!
-  ! THE VALUES AT EVERY VERTEX, from the leaves to the root, for one
-  ! state q, one design nu and, when a coordinate is read, one
-  ! position: the evaluation of the graph in real arithmetic, with
-  ! the derivative dv of every value in the varied multiplier (zero
+  ! Returns the values at every vertex, from the leaves to the root,
+  ! for one state q, one design nu and, when a coordinate is read, one
+  ! position: the evaluation of the graph in real arithmetic, with the
+  ! derivative dv of every value in the varied multiplier (zero
   ! throughout when none is varied). The multipliers are zero, as in
   ! at_instant; the varied one has derivative one. The derivative
   ! arithmetic of evaluated_over reads the same leaves.
@@ -1807,13 +2116,13 @@ contains
 
   pure subroutine values_over(this, q, nu, position, v, dv)
 
-    class(expression), intent(in) :: this
-    real(dp)         , intent(in) :: q(0:)
-    real(dp)         , intent(in) :: nu(:)
-    real(dp)         , intent(in), optional :: position(:)
-    real(dp), allocatable, intent(out) :: v(:), dv(:)
+    class(expression)    , intent(in)           :: this
+    real(dp)             , intent(in)           :: q(0:)
+    real(dp)             , intent(in)           :: nu(:)
+    real(dp)             , intent(in), optional :: position(:)
+    real(dp), allocatable, intent(out)          :: v(:), dv(:)
 
-    integer :: i, at, f, s, n
+    integer  :: i, at, f, s, n
     real(dp) :: d
 
     if (size(nu) < this % designs) then
@@ -1899,31 +2208,15 @@ contains
   end subroutine values_over
 
   !===================================================================!
-  ! THE RULE'S VALUE AND ITS GRADIENT IN THE STATE by one reverse
-  ! pass: for a rule that is the stationarity in multiplier j, the
-  ! value is d(root)/d(lambda_j) and g(k) = d^2(root)/d(lambda_j)
-  ! d(q(k)); for a rule without a varied multiplier, the value is the
-  ! root and g(k) = d(root)/d(q(k)). The forward pass has every
-  ! value with its derivative in lambda_j; the adjoint of each vertex
-  ! is formed the same way from the root down, so that the
-  ! derivative part of the adjoint at a state leaf is the mixed
-  ! partial. The vertices are in evaluation order with the root last,
-  ! so the pass from the last vertex to the first visits every vertex
-  ! after all that read it. One pass gives every partial the jacobian
-  ! of a rule needs, where the derivative arithmetic gives one
-  ! direction per pass.
-  !===================================================================!
-
-  !===================================================================!
-  ! THE RULE'S VALUE on the real values of the state and the design, by
-  ! the forward pass of gradient_at alone.
+  ! Returns the rule's value on the real values of the state and the
+  ! design, by the forward pass of gradient_at alone
   !===================================================================!
 
   pure real(dp) function value_on(this, q, nu, position) result(value)
 
-    class(expression), intent(in) :: this
-    real(dp)         , intent(in) :: q(0:)
-    real(dp)         , intent(in) :: nu(:)
+    class(expression), intent(in)           :: this
+    real(dp)         , intent(in)           :: q(0:)
+    real(dp)         , intent(in)           :: nu(:)
     real(dp)         , intent(in), optional :: position(:)
 
     real(dp), allocatable :: v(:), dv(:)
@@ -1937,19 +2230,42 @@ contains
 
   end function value_on
 
+  !===================================================================!
+  ! Returns the rule's value and its gradient in the state by one
+  ! reverse pass: for a rule that is the stationarity in multiplier j,
+  ! the value is d(root)/d(lambda_j) and g(k) = d^2(root)/d(lambda_j)
+  ! d(q(k)); for a rule without a varied multiplier, the value is the
+  ! root and g(k) = d(root)/d(q(k)). The gradient in the design is
+  ! formed by the same pass when requested.
+  !
+  !      forward   v(i), dv(i) = dv(i)/dlambda_j      leaves to root
+  !      reverse   a(i)  = d(root)/dv(i)              root to leaves
+  !                da(i) = da(i)/dlambda_j
+  !      leaf q(k) g(k) += da(i) for a stationarity, a(i) otherwise
+  !
+  ! The forward pass has every value with its derivative in lambda_j;
+  ! the adjoint of each vertex is formed the same way from the root
+  ! down, so that the derivative part of the adjoint at a state leaf is
+  ! the mixed partial. The vertices are in evaluation order with the
+  ! root last, so the pass from the last vertex to the first visits
+  ! every vertex after all that read it. One pass gives every partial
+  ! the jacobian of a rule needs, where the derivative arithmetic gives
+  ! one direction per pass.
+  !===================================================================!
+
   pure subroutine gradient_at(this, q, nu, value, g, position, g_design)
 
-    class(expression), intent(in)  :: this
-    real(dp)         , intent(in)  :: q(0:)
-    real(dp)         , intent(in)  :: nu(:)
-    real(dp)         , intent(out) :: value
-    real(dp)         , intent(out) :: g(0:)
-    real(dp)         , intent(in), optional :: position(:)
+    class(expression), intent(in)            :: this
+    real(dp)         , intent(in)            :: q(0:)
+    real(dp)         , intent(in)            :: nu(:)
+    real(dp)         , intent(out)           :: value
+    real(dp)         , intent(out)           :: g(0:)
+    real(dp)         , intent(in), optional  :: position(:)
     real(dp)         , intent(out), optional :: g_design(:)
 
     real(dp), allocatable :: v(:), dv(:), a(:), da(:)
-    integer :: i, f, s, at, n
-    real(dp) :: d, dd, c, dc
+    integer               :: i, f, s, at, n
+    real(dp)              :: d, dd, c, dc
 
     call this % values_over(q, nu, position, v, dv)
     if (this % varied > 0) then
@@ -2042,7 +2358,7 @@ contains
   end subroutine gradient_at
 
   !===================================================================!
-  ! Whether any leaf reads the state or a multiplier.
+  ! Returns whether any leaf reads the state or a multiplier
   !===================================================================!
 
   pure logical function reads_state(this)
@@ -2062,21 +2378,36 @@ contains
 
   end function reads_state
 
-  ! whether any leaf reads the time map
+  !===================================================================!
+  ! Returns whether any leaf reads the time map
+  !===================================================================!
+
   pure logical function reads_time_map(this)
+
     class(expression), intent(in) :: this
+
     integer :: i
+
     reads_time_map = .false.
     do i = 1, this % num_vertices()
        if (this % kind(i) == VERTEX_LEAF .and. this % position(i) == ARGUMENT_TIME_MAP) reads_time_map = .true.
     end do
+
   end function reads_time_map
 
-  ! whether the expression is t(tau) - tau, the time map less the
-  ! coordinate of time: the pin of the instants
+  !===================================================================!
+  ! Returns whether the expression is t(tau) - tau, the time map less
+  ! the coordinate of time: the pin of the instants
+  !
+  !      vertex   1 t(tau)   2 tau   3 difference(1, 2)
+  !===================================================================!
+
   pure logical function pins_instants(this)
+
     class(expression), intent(in) :: this
+
     integer :: r, a, b
+
     pins_instants = .false.
     r = this % root()
     if (r /= 3) return
@@ -2086,17 +2417,22 @@ contains
     if (this % kind(a) /= VERTEX_LEAF .or. this % kind(b) /= VERTEX_LEAF) return
     pins_instants = this % position(a) == ARGUMENT_TIME_MAP .and. this % position(b) == ARGUMENT_COORDINATE &
          & .and. this % field(b) == FIRST_COORDINATE
+
   end function pins_instants
 
   !===================================================================!
-  ! WHETHER THE ZERO STATE LIES IN THE EXPRESSION'S DOMAIN. A vertex
-  ! reads the state when it is a state component or when either of
-  ! its operands does. The expression has a value at the zero state
-  ! unless such a vertex is a divisor, the base of a negative integer
-  ! power, the base of a real power below the first, or the argument
-  ! of a logarithm or a square root - each of which is singular, or
-  ! has a singular derivative, at zero. The design is an input of its
-  ! own and is not zeroed with the state.
+  ! Returns whether the zero state lies in the expression's domain. A
+  ! vertex reads the state when it is a state component or when either
+  ! of its operands does. The expression has a value at the zero state
+  ! unless such a vertex is
+  !
+  !      a divisor
+  !      the base of a negative integer power
+  !      the base of a real power of exponent below one
+  !      the argument of a logarithm or a square root
+  !
+  ! each of which is singular, or has a singular derivative, at zero.
+  ! The design is an input of its own and is not zeroed with the state.
   !===================================================================!
 
   pure logical function expression_defined_at_zero(this) result(defined)
@@ -2104,7 +2440,7 @@ contains
     class(expression), intent(in) :: this
 
     logical, allocatable :: reads_state(:)
-    integer :: i
+    integer              :: i
 
     allocate(reads_state(this % num_vertices()), source=.false.)
     defined = .true.
@@ -2139,25 +2475,32 @@ contains
   end function expression_defined_at_zero
 
   !===================================================================!
-  ! The loop over the vertices, on the stored tuple: the coefficients
-  ! of every vertex over n directions in one array, each rule of
-  ! util_derivative_terms applied to the coefficients of its operands.
-  ! A state leaf reads its component of q and a design leaf its design,
-  ! the directions either lacks zero; a multiplier is zero, the varied
-  ! one with the derivative one along the direction n.
+  ! Returns the rule over n directions by the loop over the vertices,
+  ! on the stored tuple: the coefficients of every vertex over the n
+  ! directions in one array, each rule of util_derivative_terms
+  ! applied to the coefficients of its operands. A state leaf reads its
+  ! component of q and a design leaf its design, the directions either
+  ! lacks zero; a multiplier is zero, the varied one with the
+  ! derivative one along the direction n.
+  !
+  !      v(s, i)         the coefficient of vertex i on the subset s of
+  !                      the directions, a set of bits
+  !      v(0, i)         the value
+  !      v(2**(k-1), i)  the partial along direction k alone
+  !      v(2**n - 1, i)  the mixed partial along all n
   !===================================================================!
 
   pure function evaluated_over(this, q, nu, n, position) result(r)
 
-    class(expression)     , intent(in) :: this
-    type(derivative_terms), intent(in) :: q(0:)
-    type(derivative_terms), intent(in) :: nu(:)
-    integer               , intent(in) :: n
+    class(expression)     , intent(in)           :: this
+    type(derivative_terms), intent(in)           :: q(0:)
+    type(derivative_terms), intent(in)           :: nu(:)
+    integer               , intent(in)           :: n
     real(dp)              , intent(in), optional :: position(:)
-    type(derivative_terms) :: r
+    type(derivative_terms)                       :: r
 
     real(dp), allocatable :: v(:,:)
-    integer :: i, at, f, s
+    integer               :: i, at, f, s
 
     allocate(v(0:2**n - 1, this % num_vertices()))
 
@@ -2238,15 +2581,15 @@ contains
   end function evaluated_over
 
   !===================================================================!
-  ! The highest order this rule names along one coordinate, and minus
-  ! one when it names none along it. One query serves every
+  ! Returns the highest order this rule names along one coordinate,
+  ! and minus one when it names none along it. One query serves every
   ! coordinate, so adding a coordinate requires no new procedure.
   !===================================================================!
 
   pure integer function highest_degree_along(this, coordinate, field)
 
-    class(expression), intent(in) :: this
-    integer          , intent(in) :: coordinate
+    class(expression), intent(in)           :: this
+    integer          , intent(in)           :: coordinate
     integer          , intent(in), optional :: field
 
     integer :: i
@@ -2265,10 +2608,10 @@ contains
   end function highest_degree_along
 
   !===================================================================!
-  ! The highest order along the first coordinate at which this rule
-  ! reads a field - a component along a later coordinate at the order
-  ! along the first it is mixed with - and minus one when it reads
-  ! none of the field.
+  ! Returns the highest order along the first coordinate at which this
+  ! rule reads a field (a component along a later coordinate at the
+  ! order along the first it is mixed with), and minus one when it
+  ! reads none of the field
   !===================================================================!
 
   pure integer function highest_order_read(this, field)
@@ -2292,9 +2635,9 @@ contains
   end function highest_order_read
 
   !===================================================================!
-  ! The components of the tuple the rule reads, each once, in
+  ! Returns the components of the tuple the rule reads, each once, in
   ! increasing order: the state leaves' components, a multiplier's
-  ! excluded since the tuple does not store it.
+  ! excluded since the tuple does not store it
   !===================================================================!
 
   subroutine read_components(this, components)
@@ -2303,7 +2646,7 @@ contains
     integer, allocatable, intent(out) :: components(:)
 
     logical, allocatable :: read(:)
-    integer :: i, at
+    integer              :: i, at
 
     allocate(read(0:this % num_components() - 1), source=.false.)
     do i = 1, this % num_vertices()
@@ -2316,12 +2659,12 @@ contains
   end subroutine read_components
 
   !===================================================================!
-  ! Invalid input: a variable of type expression never assigned from
-  ! unknown, design, constant or an operator has no vertex, so no
-  ! root and no value. Every read of the vertex count passes through
-  ! here, so this is the one refusal; without it the compiled code
-  ! reads an array with no memory and faults in memmove with no
-  ! message.
+  ! Returns the count of vertices. Invalid input: a variable of type
+  ! expression never assigned from unknown, design, constant or an
+  ! operator has no vertex, so no root and no value. Every read of the
+  ! vertex count passes through here, so this is the one refusal;
+  ! without it the compiled code reads an array with no memory and
+  ! faults in memmove with no message.
   !===================================================================!
 
   pure integer function num_vertices(this)
@@ -2338,8 +2681,8 @@ contains
   end function num_vertices
 
   !===================================================================!
-  ! The vertices are stored in evaluation order, so the root, the
-  ! vertex whose value is the value of the expression, is the last.
+  ! Returns the root: the vertices are stored in evaluation order, so
+  ! the vertex whose value is the value of the expression is the last
   !===================================================================!
 
   pure integer function root(this)
@@ -2351,12 +2694,13 @@ contains
   end function root
 
   !===================================================================!
-  ! The vertex table as values, in evaluation order, for a view.
+  ! Returns the vertex table as values, in evaluation order, for a
+  ! view
   !===================================================================!
 
   function vertices(this) result(v)
 
-    class(expression), intent(in) :: this
+    class(expression), intent(in)        :: this
     type(expression_vertex), allocatable :: v(:)
 
     integer :: i
@@ -2370,17 +2714,17 @@ contains
   end function vertices
 
   !===================================================================!
-  ! THE COMPONENT A COORDINATE AND AN ORDER NAME. The first
+  ! Returns the component a coordinate and an order name. The first
   ! coordinate's orders run from zero and every later one's from one,
   ! since order zero is the state itself and is named once. A mixed
-  ! order names the component of that order along the first
-  ! coordinate too.
+  ! order names the component of that order along the first coordinate
+  ! too.
   !===================================================================!
 
   pure integer function component_at(this, coordinate, order, field, mixed_order) result(at)
 
-    class(expression), intent(in) :: this
-    integer          , intent(in) :: coordinate, order
+    class(expression), intent(in)           :: this
+    integer          , intent(in)           :: coordinate, order
     integer          , intent(in), optional :: field, mixed_order
 
     integer :: f
@@ -2392,8 +2736,8 @@ contains
   end function component_at
 
   !===================================================================!
-  ! The component of the tuple a state or multiplier leaf reads: the
-  ! one formed with the domain, where it was.
+  ! Returns the component of the tuple a state or multiplier leaf
+  ! reads: the one formed with the domain, where it was
   !===================================================================!
 
   pure integer function leaf_at(this, i) result(at)
@@ -2413,8 +2757,9 @@ contains
   end function leaf_at
 
   !===================================================================!
-  ! The first component of a field in the tuple the rule reads, which
-  ! stores the state fields alone. A multiplier stops the program.
+  ! Returns the first component of a field in the tuple the rule
+  ! reads, which stores the state fields alone. A multiplier stops the
+  ! program.
   !===================================================================!
 
   pure integer function offset_of_field(this, field) result(at)
@@ -2434,14 +2779,17 @@ contains
   end function offset_of_field
 
   !===================================================================!
-  ! The same component in the tuple the rule evaluates, which stores
-  ! every state field and then the multipliers, one value each.
+  ! Returns the same component in the tuple the rule evaluates, which
+  ! stores every state field and then the multipliers, one value each
+  !
+  !      [ field 1 | field 2 | ... | lambda_1  lambda_2 ... ]
+  !                                  ^ num_components()
   !===================================================================!
 
   pure integer function stored_at(this, position, field, coordinate, order, mixed_order) result(at)
 
-    class(expression), intent(in) :: this
-    integer          , intent(in) :: position, field, coordinate, order
+    class(expression), intent(in)           :: this
+    integer          , intent(in)           :: position, field, coordinate, order
     integer          , intent(in), optional :: mixed_order
 
     if (position == ARGUMENT_MULTIPLIER) then
@@ -2453,16 +2801,22 @@ contains
   end function stored_at
 
   !===================================================================!
-  ! The place of a component within its field's components: the
-  ! orders along the first coordinate from zero, then one block of
+  ! Returns the place of a component within its field's components:
+  ! the orders along the first coordinate from zero, then one block of
   ! the later coordinates' orders for each mixed order from zero, the
-  ! pure components first.
+  ! pure components first
+  !
+  !      u of degree 2 in t, degree 2 in x, mixed degree 1
+  !
+  !      place   0  1    2     3    4     5     6
+  !              u  u_t  u_tt  u_x  u_xx  u_tx  u_txx
+  !              along t       mixed 0    mixed 1
   !===================================================================!
 
   pure integer function order_at(this, field, coordinate, order, mixed_order) result(at)
 
-    class(expression), intent(in) :: this
-    integer          , intent(in) :: field, coordinate, order
+    class(expression), intent(in)           :: this
+    integer          , intent(in)           :: field, coordinate, order
     integer          , intent(in), optional :: mixed_order
 
     integer :: c, a
@@ -2496,9 +2850,9 @@ contains
   end function order_at
 
   !===================================================================!
-  ! How many components one field stores at a point: its own orders
-  ! along the first coordinate including zero, and each later
-  ! coordinate's orders from one, once for each mixed order from zero.
+  ! Returns how many components one field stores at a point: its own
+  ! orders along the first coordinate including zero, and each later
+  ! coordinate's orders from one, once for each mixed order from zero
   !===================================================================!
 
   pure integer function components_per_field(this, field)
@@ -2512,8 +2866,8 @@ contains
   end function components_per_field
 
   !===================================================================!
-  ! A field's highest order along the first coordinate among its mixed
-  ! components; zero when it has none.
+  ! Returns a field's highest order along the first coordinate among
+  ! its mixed components; zero when it has none
   !===================================================================!
 
   pure integer function mixed_degree(this, field)
@@ -2529,8 +2883,8 @@ contains
   end function mixed_degree
 
   !===================================================================!
-  ! How many components one point of the state stores: every state
-  ! field, the multipliers excluded.
+  ! Returns how many components one point of the state stores: every
+  ! state field, the multipliers excluded
   !===================================================================!
 
   pure integer function num_components(this)
@@ -2551,7 +2905,8 @@ contains
   end function num_components
 
   !===================================================================!
-  ! The fields of the rule: the state fields and then the multipliers.
+  ! Returns the fields of the rule: the state fields and then the
+  ! multipliers
   !===================================================================!
 
   pure integer function num_fields(this)
@@ -2563,8 +2918,8 @@ contains
   end function num_fields
 
   !===================================================================!
-  ! The degree along a coordinate: the first field's along the first
-  ! coordinate, every field's along a later one.
+  ! Returns the degree along a coordinate: the first field's along the
+  ! first coordinate, every field's along a later one
   !===================================================================!
 
   pure integer function degree_along(this, coordinate) result(degree)
@@ -2579,6 +2934,10 @@ contains
 
   end function degree_along
 
+  !===================================================================!
+  ! Returns the count of multipliers
+  !===================================================================!
+
   pure integer function num_multipliers(this)
 
     class(expression), intent(in) :: this
@@ -2586,6 +2945,10 @@ contains
     num_multipliers = this % multipliers
 
   end function num_multipliers
+
+  !===================================================================!
+  ! Returns the count of designs a point stores for the rule
+  !===================================================================!
 
   pure integer function num_designs(this)
 
@@ -2596,36 +2959,53 @@ contains
   end function num_designs
 
   !===================================================================!
-  ! THE ONE LEAF of an expression that is a leaf alone - u, or u %
-  ! derivative([t]) - by its field, its order and the coordinate its
-  ! derivative follows. An expression of several vertices, or one
-  ! whose vertex is not a leaf, stops the program.
+  ! Returns the field of the one leaf of an expression that is a leaf
+  ! alone (u, or u % derivative([t])). An expression of several
+  ! vertices, or one whose vertex is not a leaf, stops the program.
   !===================================================================!
 
   pure integer function leaf_field(this)
+
     class(expression), intent(in) :: this
+
     if (this % root() /= 1) error stop 'operation_expression: the leaf named is an expression of several vertices'
     if (this % kind(1) /= VERTEX_LEAF) error stop 'operation_expression: the vertex named is not a leaf'
     leaf_field = this % field(1)
+
   end function leaf_field
 
+  !===================================================================!
+  ! Returns the order of the one leaf, as leaf_field
+  !===================================================================!
+
   pure integer function leaf_order(this)
+
     class(expression), intent(in) :: this
+
     if (this % root() /= 1) error stop 'operation_expression: the leaf named is an expression of several vertices'
     if (this % kind(1) /= VERTEX_LEAF) error stop 'operation_expression: the vertex named is not a leaf'
     leaf_order = this % order(1)
+
   end function leaf_order
 
+  !===================================================================!
+  ! Returns the coordinate the one leaf's derivative follows, as
+  ! leaf_field
+  !===================================================================!
+
   pure integer function leaf_along(this)
+
     class(expression), intent(in) :: this
+
     if (this % root() /= 1) error stop 'operation_expression: the leaf named is an expression of several vertices'
     if (this % kind(1) /= VERTEX_LEAF) error stop 'operation_expression: the vertex named is not a leaf'
     leaf_along = this % along(1)
+
   end function leaf_along
 
   !===================================================================!
-  ! A field's degree along the first coordinate; a multiplier's is
-  ! zero.
+  ! Returns a field's degree along the first coordinate; a
+  ! multiplier's is zero
   !===================================================================!
 
   pure integer function degree_of_field(this, field) result(degree)
@@ -2641,8 +3021,11 @@ contains
 
   end function degree_of_field
 
-  ! the coordinates a rule reads from the position of a point: the
-  ! highest index named, zero when the rule reads none
+  !===================================================================!
+  ! Returns the coordinates a rule reads from the position of a point:
+  ! the highest index named, zero when the rule reads none
+  !===================================================================!
+
   pure integer function num_position_coordinates(this)
 
     class(expression), intent(in) :: this
@@ -2651,6 +3034,10 @@ contains
 
   end function num_position_coordinates
 
+  !===================================================================!
+  ! Returns the count of coordinates the state is declared over
+  !===================================================================!
+
   pure integer function num_coordinates(this)
 
     class(expression), intent(in) :: this
@@ -2658,6 +3045,11 @@ contains
     num_coordinates = size(this % degrees)
 
   end function num_coordinates
+
+  !===================================================================!
+  ! Returns the degree of the equation: the first field's along the
+  ! first coordinate
+  !===================================================================!
 
   pure integer function equation_degree(this)
 
@@ -2668,21 +3060,22 @@ contains
   end function equation_degree
 
   !===================================================================!
-  ! The rule at every instant, returning the coefficient of the full
-  ! subset: the value with no directions, the mixed partial with n.
+  ! Applies the rule at every point of the graph, emitting the
+  ! coefficient of the full subset: the value with no directions, the
+  ! mixed partial with n
   !===================================================================!
 
   subroutine expression_evaluate(this, input_graph, q, nu, output, positions)
 
-    class(expression)     , intent(in) :: this
-    class(directed_graph) , intent(in) :: input_graph
-    type(derivative_terms), intent(in) :: q(:), nu(:)
-    class(field), allocatable, intent(inout) :: output
-    real(dp)              , intent(in), optional :: positions(:)
+    class(expression)        , intent(in)           :: this
+    class(directed_graph)    , intent(in)           :: input_graph
+    type(derivative_terms)   , intent(in)           :: q(:), nu(:)
+    class(field), allocatable, intent(inout)        :: output
+    real(dp)                 , intent(in), optional :: positions(:)
 
     real(dp), allocatable :: values(:)
-    integer :: k, nd, base, ndesign, coordinates
-    character(len=250) :: message
+    integer               :: k, nd, base, ndesign, coordinates
+    character(len=250)    :: message
 
     nd      = this % num_components()
     ndesign = this % designs
@@ -2728,35 +3121,39 @@ contains
 
   end subroutine expression_evaluate
 
+  !===================================================================!
+  ! Applies the rule: its partial action of order zero
+  !===================================================================!
+
   subroutine expression_apply(this, input_graph, inputs, output)
 
-    class(expression)     , intent(in)       :: this
-    class(directed_graph) , intent(in)       :: input_graph
-    type(binding), intent(in), optional       :: inputs(:)
-    class(field), allocatable, intent(inout) :: output
+    class(expression)        , intent(in)           :: this
+    class(directed_graph)    , intent(in)           :: input_graph
+    type(binding)            , intent(in), optional :: inputs(:)
+    class(field), allocatable, intent(inout)        :: output
 
     call this % value_by_partial_action(input_graph, inputs, output)
 
   end subroutine expression_apply
 
   !===================================================================!
-  ! The state and the design as derivative terms, read from bindings
-  ! by argument identity, each seeded by the variations naming it. A
-  ! variation naming neither stops the program.
+  ! Applies the partial action: the state and the design as derivative
+  ! terms, read from bindings by argument identity, each seeded by the
+  ! variations naming it. A variation naming neither stops the program.
   !===================================================================!
 
   subroutine expression_partial_action(this, input_graph, inputs, variations, output)
 
-    class(expression)     , intent(in)       :: this
-    class(directed_graph) , intent(in)       :: input_graph
-    type(binding)          , intent(in)       :: inputs(:)
-    type(variation)       , intent(in)       :: variations(:)
+    class(expression)        , intent(in)    :: this
+    class(directed_graph)    , intent(in)    :: input_graph
+    type(binding)            , intent(in)    :: inputs(:)
+    type(variation)          , intent(in)    :: variations(:)
     class(field), allocatable, intent(inout) :: output
 
     type(derivative_terms), allocatable :: q(:), nu(:)
-    real(dp), allocatable :: positions(:)
-    integer :: on_state, on_design
-    character(len=250) :: message
+    real(dp), allocatable               :: positions(:)
+    integer                             :: on_state, on_design
+    character(len=250)                  :: message
 
     call this % require_variations(variations)
     call seeded_argument(this, inputs, variations, ARGUMENT_STATE , q , on_state)

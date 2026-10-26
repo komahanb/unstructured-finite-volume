@@ -1,20 +1,18 @@
 !=====================================================================!
-! THE REVERSIBLE CHANGE PROTOCOL
-!
-! One lifecycle for every reversible mutation of a graph and its
-! attached values:
+! Module that states the reversible change protocol: one lifecycle
+! for every reversible mutation of a graph and its attached values,
 !
 !      apply -> check -> commit | revert
 !
-! The controller owns only the lifecycle; the change object owns
-! the mutation, its stored state, and its reversal. A change may
-! touch structure, attached values, or both; the controller never
-! reads which.
+! The controller owns only the lifecycle; the change object owns the
+! mutation, its stored state and its reversal. A change may touch
+! structure, attached values, or both; the controller never reads
+! which.
 !
-! A failure reported by apply or check is reverted and returned,
-! not rejected. What stops the program: a change that returns from
-! a step without marking either the step or failure, because its
-! record would then misreport what happened; and a terminal record
+! A failure reported by apply or check is reverted and returned, not
+! rejected. What stops the program is a change that returns from a
+! step without marking either the step or a failure, because its
+! record would then misreport what happened, and a terminal record
 ! with contradictory flags. This module imports nothing; concrete
 ! changes are defined beside the data they mutate.
 !
@@ -26,16 +24,17 @@ module map_change_protocol
   implicit none
 
   private
+
   public :: change_record
   public :: reversible_change
   public :: run_change
 
-  !===================================================================!
-  ! The record of one change's lifecycle: what was attempted, what
-  ! each step reported, and what the change declares it touches.
-  ! The touch flags are the change's self-description; the
-  ! controller never reads them.
-  !===================================================================!
+  !-------------------------------------------------------------------!
+  ! Type that models the record of one change's lifecycle: what was
+  ! attempted, what each step reported, and what the change declares
+  ! it touches. The touch flags are the change's self-description;
+  ! the controller never reads them.
+  !-------------------------------------------------------------------!
 
   type :: change_record
 
@@ -44,7 +43,7 @@ module map_change_protocol
      logical :: checked      = .false.
      logical :: check_passed = .false.
      logical :: accepted     = .false.
-     logical :: committed         = .false.
+     logical :: committed    = .false.
      logical :: reverted     = .false.
      logical :: failed       = .false.
 
@@ -64,24 +63,29 @@ module map_change_protocol
 
   end type change_record
 
-  !===================================================================!
-  ! The abstract reversible change: four deferred steps. What
-  ! apply builds, revert must reverse; commit makes the applied state
-  ! permanent.
-  !===================================================================!
+  !-------------------------------------------------------------------!
+  ! Type that models the abstract reversible change: four deferred
+  ! steps. What apply builds, revert must reverse; commit makes the
+  ! applied state permanent.
+  !-------------------------------------------------------------------!
 
   type, abstract :: reversible_change
 
    contains
 
+     ! Deferred procedures
      procedure(change_apply_interface) , deferred :: apply
      procedure(change_check_interface) , deferred :: check
-     procedure(change_commit_interface)  , deferred :: commit
+     procedure(change_commit_interface), deferred :: commit
      procedure(change_revert_interface), deferred :: revert
 
   end type reversible_change
 
   abstract interface
+
+     !----------------------------------------------------------------!
+     ! Interface for applying the change, marking the record
+     !----------------------------------------------------------------!
 
      subroutine change_apply_interface(this, result)
        import :: reversible_change, change_record
@@ -89,17 +93,29 @@ module map_change_protocol
        type(change_record)     , intent(inout) :: result
      end subroutine change_apply_interface
 
+     !----------------------------------------------------------------!
+     ! Interface for checking the applied change
+     !----------------------------------------------------------------!
+
      subroutine change_check_interface(this, result)
        import :: reversible_change, change_record
        class(reversible_change), intent(inout) :: this
        type(change_record)     , intent(inout) :: result
      end subroutine change_check_interface
 
+     !----------------------------------------------------------------!
+     ! Interface for making the applied change permanent
+     !----------------------------------------------------------------!
+
      subroutine change_commit_interface(this, result)
        import :: reversible_change, change_record
        class(reversible_change), intent(inout) :: this
        type(change_record)     , intent(inout) :: result
      end subroutine change_commit_interface
+
+     !----------------------------------------------------------------!
+     ! Interface for reversing what apply built
+     !----------------------------------------------------------------!
 
      subroutine change_revert_interface(this, result)
        import :: reversible_change, change_record
@@ -112,8 +128,8 @@ module map_change_protocol
 contains
 
   !===================================================================!
-  ! The record procedures: each marks exactly the flag its name
-  ! states, and reset returns the whole record to false.
+  ! Returns the whole record to false. Each mark_ procedure below sets
+  ! exactly the flag its name states.
   !===================================================================!
 
   pure subroutine reset(this)
@@ -125,7 +141,7 @@ contains
     this % checked      = .false.
     this % check_passed = .false.
     this % accepted     = .false.
-    this % committed         = .false.
+    this % committed    = .false.
     this % reverted     = .false.
     this % failed       = .false.
 
@@ -146,7 +162,7 @@ contains
 
   pure subroutine mark_checked(this, pass)
     class(change_record), intent(inout) :: this
-    logical                 , intent(in)    :: pass
+    logical             , intent(in)    :: pass
     this % checked      = .true.
     this % check_passed = pass
   end subroutine mark_checked
@@ -167,7 +183,7 @@ contains
   end subroutine mark_failed
 
   !===================================================================!
-  ! Check a terminal record for contradictions, each stopping the
+  ! Checks a terminal record for contradictions, each stopping the
   ! program: committed and reverted cannot both be set; accepted
   ! requires committed; failed excludes committed.
   !===================================================================!
@@ -191,18 +207,30 @@ contains
   end subroutine validate_terminal
 
   !===================================================================!
-  ! Run the lifecycle: apply, then check, then commit on acceptance
-  ! or revert otherwise. A failure reported by apply or check is
-  ! reverted and returned. A step that returns without marking its
-  ! result stops the program - including every controller-called
-  ! revert, on failure and rejection paths alike - so no terminal
-  ! record can be incomplete without detection.
+  ! Runs the lifecycle: apply, then check, then commit on acceptance or
+  ! revert otherwise. A failure reported by apply or check is reverted
+  ! and returned. A step that returns without marking its result stops
+  ! the program, every revert the controller calls included, on the
+  ! failure and the rejection paths alike, so no terminal record can
+  ! be incomplete without detection:
+  !
+  !   reset, attempted
+  !        |
+  !      apply ---- failed -----------------------------> revert, return
+  !        |
+  !      check ---- failed, or the check not passed ----> revert, return
+  !        |
+  !      accept? -- yes --> accepted, commit
+  !        |
+  !        no ------------> revert
+  !        |
+  !   validate_terminal
   !===================================================================!
 
   subroutine run_change(change, accept, result)
 
     class(reversible_change), intent(inout) :: change
-    logical                     , intent(in)    :: accept
+    logical                 , intent(in)    :: accept
     type(change_record)     , intent(inout) :: result
 
     call result % reset()

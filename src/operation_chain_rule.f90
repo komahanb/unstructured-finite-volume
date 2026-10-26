@@ -1,83 +1,102 @@
 !=====================================================================!
-! The chain rule to any order: for a composition S(x_1(s), ...,
-! x_m(s)) of one differentiable statement with per-argument paths
-! x_j(s), assemble the total derivative d^n/ds^n from the
-! statement's exact partial actions.
+! Module that states the chain rule to any order: for a composition
+! S(x_1(s), ..., x_m(s)) of one differentiable statement with
+! per-argument paths x_j(s), it assembles the total derivative
+! d^n/ds^n from the statement's exact partial actions.
 !
-! Each term is indexed by an integer partition of n: a
-! nondecreasing positive tuple d = [d_1, ..., d_k] with
-! d_1 + ... + d_k = n, with the multinomial count
+! Each term is indexed by an integer partition of n: a nondecreasing
+! positive tuple d = [d_1, ..., d_k] with d_1 + ... + d_k = n, with
+! the multinomial count
 !
 !      c(d) = n! / ( prod_i d_i!  *  prod_j multiplicity_j! )
 !
-! where multiplicity_j counts repeated equal entries of d.
+! where multiplicity_j counts repeated equal entries of d. For one path
+! x and n = 3 the partitions and counts are
+!
+!      d            c(d)    term
+!      [3]          1       S'  [x''']
+!      [1, 2]       3       S'' [x', x'']
+!      [1, 1, 1]    1       S'''[x', x', x']
+!
+! which is Faà di Bruno's formula, each S^(k)[...] one partial action
+! of order k along the directions listed.
+!
 ! The partitions of every degree up to the assembler's highest are
-! enumerated once, when it is constructed, in a fixed order:
-! increasing entry count first, lexicographic within one entry
-! count. They are the index structure of the chain rule; an
-! algorithm supplies only the paths, so Newton's corrections and a
-! march's tangents each read one table. Every partition entry
-! ranges over all argument paths providing that derivative order,
-! in ordered tuples - the factor
-! a symmetric mixed partial requires. The count multiplies the
-! result outside the statement's calculus; no derivative tensor is
-! stored.
+! enumerated once, when it is constructed, in a fixed order: increasing
+! entry count first, lexicographic within one entry count. They are
+! the index structure of the chain rule; an algorithm supplies only the
+! paths, so Newton's corrections and a march's tangents each read one
+! table.
+!
+! Every partition entry ranges over all argument paths providing that
+! derivative order, in ordered tuples: the factor a symmetric mixed
+! partial requires. For two paths a and b and n = 2,
+!
+!      [2]       S_a a''  +  S_b b''
+!      [1, 1]    S_aa a' a'  +  S_ab a' b'  +  S_ba b' a'  +  S_bb b' b'
+!
+! the two mixed tuples giving the 2 S_ab a' b' of the expansion. The
+! count multiplies the result outside the statement's calculus; no
+! derivative tensor is stored.
 !
 ! An argument_path names one input slot and stores the derivative
-! sequence x^(1), ..., x^(k) of that argument, so one path cannot
-! mix two arguments' derivatives. Two paths naming the same slot
-! would double count and stop the program. An unoccupied
-! derivative is read as zero: the terms it would enter are not
-! assembled.
+! sequence x^(1), ..., x^(k) of that argument, so one path cannot mix
+! two arguments' derivatives. Two paths naming the same slot would
+! double count and stop the program. An unoccupied derivative is read
+! as zero: the terms it would enter are not assembled.
 !
-! Degree 0 is the statement's value. Inputs that stop the program:
-! a negative degree, a multinomial count outside int64, a path
-! naming a slot the statement does not take, a duplicated slot,
-! and a partition needing a partial past the statement's
-! max_degree.
+! Degree 0 is the statement's value. Inputs that stop the program: a
+! negative degree, a multinomial count outside int64, a path naming a
+! slot the statement does not take, a duplicated slot, and a partition
+! needing a partial past the statement's max_degree.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 
 module operation_chain_rule
 
-  use iso_fortran_env, only : int64
+  use iso_fortran_env , only : int64
   use util_precision  , only : dp
-  use view_directed , only : directed_graph
-  use field_calculus, only : field
-  use graph_fractal       , only : graph
-  use operation_action    , only : operation, argument, variation
-  use operation_action    , only : binding, emit_real
-  use field_stored   , only : stored_field
+  use view_directed   , only : directed_graph
+  use field_calculus  , only : field
+  use graph_fractal   , only : graph
+  use operation_action, only : operation, argument, variation
+  use operation_action, only : binding, emit_real
+  use field_stored    , only : stored_field
 
   implicit none
 
   private
+
   public :: total_derivative, derivative_of
   public :: argument_path
   public :: path_derivative
 
-  !===================================================================!
-  ! One derivative of a path: occupied, it stores x^(k) as a
-  ! direction field; unoccupied, it is read as zero.
-  !===================================================================!
+  !-------------------------------------------------------------------!
+  ! Type that models one derivative of a path: occupied, it stores
+  ! x^(k) as a direction field; unoccupied, it is read as zero
+  !-------------------------------------------------------------------!
 
   type :: path_derivative
 
-     logical     :: occupied = .false.
+     logical            :: occupied = .false.
      type(stored_field) :: direction
 
   end type path_derivative
 
-  !===================================================================!
-  ! One argument's path: the argument of the statement it perturbs,
-  ! obtained from the statement itself, and its derivative sequence
-  ! - derivative(k) stores x^(k).
-  !===================================================================!
+  !-------------------------------------------------------------------!
+  ! Type that models one argument's path: the argument of the statement
+  ! it perturbs, obtained from the statement itself, and its derivative
+  ! sequence, derivative(k) storing x^(k)
+  !
+  !      wrt            the argument x
+  !      derivative     x'     x''    x'''   ...
+  !      occupied       yes    yes    no            read as zero
+  !-------------------------------------------------------------------!
 
   type :: argument_path
 
-     type(argument) :: wrt
+     type(argument)                     :: wrt
      type(path_derivative), allocatable :: derivative(:)
 
    contains
@@ -90,21 +109,22 @@ module operation_chain_rule
      module procedure create_argument_path
   end interface argument_path
 
-  !===================================================================!
-  ! One integer partition of the degree, with its multinomial
-  ! count. Private to this module.
-  !===================================================================!
+  !-------------------------------------------------------------------!
+  ! Type that models one integer partition of the degree, with its
+  ! multinomial count. Private to this module.
+  !-------------------------------------------------------------------!
 
   type :: derivative_partition
 
-     integer(int64) :: coefficient = 1_int64
+     integer(int64)       :: coefficient = 1_int64
      integer, allocatable :: path_degree(:)
 
   end type derivative_partition
 
-  !===================================================================!
-  ! The partitions of one degree: the terms of d^n/ds^n.
-  !===================================================================!
+  !-------------------------------------------------------------------!
+  ! Type that models the partitions of one degree: the terms of
+  ! d^n/ds^n
+  !-------------------------------------------------------------------!
 
   type :: degree_partitions
 
@@ -112,19 +132,21 @@ module operation_chain_rule
 
   end type degree_partitions
 
-  !===================================================================!
-  ! The assembler, constructed for a highest degree. An assembler
-  ! that was not constructed stops the program at assemble.
-  !===================================================================!
-
-  !===================================================================!
-  ! THE CHAIN RULE IS AN OPERATION. Composed over a statement, a
-  ! degree and the paths its arguments follow, it is a map from the
-  ! same inputs the statement reads to the total derivative of that
-  ! order - which is what an operation is. `assemble` remains, for a
-  ! caller that supplies the statement and paths at the call rather
-  ! than storing them; `apply` is that call with them stored.
-  !===================================================================!
+  !-------------------------------------------------------------------!
+  ! Type that models the assembler, constructed for a highest degree.
+  ! An assembler that was not constructed stops the program at
+  ! assemble.
+  !
+  ! The chain rule is an operation. Composed over a statement, a degree
+  ! and the paths its arguments follow, it is a map from the same
+  ! inputs the statement reads to the total derivative of that order,
+  ! which is what an operation is. assemble remains, for a caller that
+  ! supplies the statement and paths at the call rather than storing
+  ! them; apply is that call with them stored.
+  !
+  !      of_degree(n) % term(p)      partition p of degree n, and c(d)
+  !      statement, along, order     the composition, when stored
+  !-------------------------------------------------------------------!
 
   type, extends(operation) :: total_derivative
 
@@ -132,7 +154,8 @@ module operation_chain_rule
 
      type(degree_partitions), allocatable :: of_degree(:)
 
-     ! what the composition is over, when it is stored rather than passed
+     ! What the composition is over, when it is stored rather than
+     ! passed
      class(operation)   , allocatable :: statement
      type(argument_path), allocatable :: along(:)
      integer                          :: order = -1
@@ -152,22 +175,15 @@ module operation_chain_rule
 contains
 
   !===================================================================!
-  ! Create the path for one input slot with derivative slots
-  ! 1..degree. Filling those slots is an algorithm decision: Newton
-  ! fills the correction sequence, a march fills state histories, and
-  ! an empty slot contributes zero to the chain-rule assembly.
-  !===================================================================!
-
-  !===================================================================!
-  ! The name of a composed rule: the statement's, and the order of
-  ! the derivative taken of it.
+  ! Returns the name of a composed rule: the statement's, and the order
+  ! of the derivative taken of it
   !===================================================================!
 
   pure function total_derivative_name(this) result(name)
 
-    class(total_derivative), intent(in) :: this
-    character(len=:), allocatable :: name
-    character(len=12) :: digits
+    class(total_derivative), intent(in)  :: this
+    character(len=:)       , allocatable :: name
+    character(len=12)                    :: digits
 
     write(digits,'(i0)') this % order
     if (allocated(this % statement)) then
@@ -179,9 +195,9 @@ contains
   end function total_derivative_name
 
   !===================================================================!
-  ! THE DERIVATIVE OF A STATEMENT, of the given order, along the
-  ! given directions. The result is an operation: applying it to the
-  ! statement's own inputs returns that derivative.
+  ! Returns the derivative of a statement, of the given order, along
+  ! the given directions. The result is an operation: applying it to
+  ! the statement's own inputs returns that derivative.
   !===================================================================!
 
   function derivative_of(statement, order, along) result(this)
@@ -189,8 +205,8 @@ contains
     class(operation)   , intent(in) :: statement
     integer            , intent(in) :: order
     type(argument_path), intent(in) :: along(:)
-    type(total_derivative) :: this
-    character(len=250) :: message
+    type(total_derivative)          :: this
+    character(len=250)              :: message
 
     if (order < 0) then
        write(message,'(a,i0)') 'total_derivative: the order of a derivative must not be &
@@ -207,17 +223,17 @@ contains
   end function derivative_of
 
   !===================================================================!
-  ! The composed rule applied: the total derivative of the stored
-  ! order, from the stored statement's partial actions along the
-  ! stored paths.
+  ! Applies the composed rule: the total derivative of the stored
+  ! order, from the stored statement's partial actions along the stored
+  ! paths
   !===================================================================!
 
   subroutine total_derivative_apply(this, input_graph, inputs, output)
 
-    class(total_derivative)        , intent(in)    :: this
-    class(directed_graph)    , intent(in)    :: input_graph
-    type(binding)             , intent(in), optional :: inputs(:)
-    class(field), allocatable, intent(inout) :: output
+    class(total_derivative)  , intent(in)           :: this
+    class(directed_graph)    , intent(in)           :: input_graph
+    type(binding)            , intent(in), optional :: inputs(:)
+    class(field), allocatable, intent(inout)        :: output
 
     if (.not. allocated(this % statement)) then
        error stop 'total_derivative: total_derivative_apply was called on a value not &
@@ -233,12 +249,19 @@ contains
 
   end subroutine total_derivative_apply
 
+  !===================================================================!
+  ! Creates the path for one input slot with derivative slots
+  ! 1..degree. Filling those slots is an algorithm decision: Newton
+  ! fills the correction sequence, a march fills state histories, and
+  ! an empty slot contributes zero to the chain-rule assembly.
+  !===================================================================!
+
   function create_argument_path(wrt, degree) result(path)
 
     type(argument), intent(in) :: wrt
     integer       , intent(in) :: degree
     type(argument_path)        :: path
-    character(len=250) :: message
+    character(len=250)         :: message
 
     if (degree < 0) then
        write(message,'(a,i0)') 'argument_path: the derivative degree must be nonnegative; &
@@ -252,14 +275,14 @@ contains
   end function create_argument_path
 
   !===================================================================!
-  ! True when derivative(order) exists and is occupied.
+  ! Returns true when derivative(order) exists and is occupied
   !===================================================================!
 
   pure function path_has_degree(this, order) result(has)
 
     class(argument_path), intent(in) :: this
     integer             , intent(in) :: order
-    logical :: has
+    logical                          :: has
 
     has = .false.
     if (.not. allocated(this % derivative)) return
@@ -270,16 +293,17 @@ contains
   end function path_has_degree
 
   !===================================================================!
-  ! Enumerate the partitions of every degree up to the highest. A
-  ! negative highest degree stops the program.
+  ! Creates the assembler: the partitions of every degree up to the
+  ! highest, enumerated once. A negative highest degree stops the
+  ! program.
   !===================================================================!
 
   function create_total_derivative(max_degree) result(this)
 
-    integer, intent(in) :: max_degree
+    integer, intent(in)    :: max_degree
     type(total_derivative) :: this
 
-    integer :: degree
+    integer            :: degree
     character(len=250) :: message
 
     if (max_degree < 0) then
@@ -296,25 +320,26 @@ contains
   end function create_total_derivative
 
   !===================================================================!
-  ! Assemble the total derivative of the given degree. The degree
-  ! and the paths are checked before any statement call runs.
+  ! Assembles the total derivative of the given degree: the sum over
+  ! the partitions of the degree of their terms. The degree and the
+  ! paths are checked before any statement call runs.
   !===================================================================!
 
   subroutine assemble(this, statement, input_graph, inputs, degree, &
        & paths, output)
 
-    class(total_derivative)              , intent(in)    :: this
-    class(operation)               , intent(in)    :: statement
-    class(directed_graph)          , intent(in)    :: input_graph
-    type(binding)                         , intent(in)    :: inputs(:)
-    integer                        , intent(in)    :: degree
-    type(argument_path)            , intent(in)    :: paths(:)
+    class(total_derivative)  , intent(in)    :: this
+    class(operation)         , intent(in)    :: statement
+    class(directed_graph)    , intent(in)    :: input_graph
+    type(binding)            , intent(in)    :: inputs(:)
+    integer                  , intent(in)    :: degree
+    type(argument_path)      , intent(in)    :: paths(:)
     class(field), allocatable, intent(inout) :: output
 
     real(dp), allocatable :: derivative_sum(:)
-    logical :: sum_initialized
-    integer :: p, num_components
-    character(len=250) :: message
+    logical               :: sum_initialized
+    integer               :: p, num_components
+    character(len=250)    :: message
 
     if (degree < 0) then
        write(message,'(a,i0)') 'total_derivative: assemble does not support a negative degree; &
@@ -328,7 +353,7 @@ contains
 
     call require_valid_paths(paths, statement)
 
-    ! degree 0 is the statement's own value
+    ! Degree 0 is the statement's own value
     if (degree == 0) then
        call statement % apply(input_graph, inputs, output)
        return
@@ -342,7 +367,7 @@ contains
     end if
 
     sum_initialized = .false.
-    num_components   = 1
+    num_components  = 1
 
     associate (partitions => this % of_degree(degree) % term)
       do p = 1, size(partitions)
@@ -357,11 +382,10 @@ contains
   end subroutine assemble
 
   !===================================================================!
-  ! Check the paths: each must name an argument of the statement -
-  ! one of its own declared positions, not another operation's - and
-  ! no two may name the same argument, because a duplicated argument
-  ! would double count chain-rule terms. Both violations stop the
-  ! program.
+  ! Requires valid paths: each must name an argument of the statement,
+  ! one of its own declared positions, not another operation's, and no
+  ! two may name the same argument, because a duplicated argument would
+  ! double count chain-rule terms. Both violations stop the program.
   !===================================================================!
 
   pure subroutine require_valid_paths(paths, statement)
@@ -390,9 +414,12 @@ contains
   end subroutine require_valid_paths
 
   !===================================================================!
-  ! Generate the partitions of one degree: every nondecreasing
-  ! positive tuple summing to the degree, ordered by entry count
-  ! then lexicographically, each with its multinomial count.
+  ! Returns the partitions of one degree: every nondecreasing positive
+  ! tuple summing to the degree, ordered by entry count then
+  ! lexicographically, each with its multinomial count. Degree 4:
+  !
+  !      [4]   [1, 3]   [2, 2]   [1, 1, 2]   [1, 1, 1, 1]
+  !       1      4        3          6             1
   !===================================================================!
 
   subroutine enumerate_partitions(degree, partitions)
@@ -401,7 +428,7 @@ contains
     type(derivative_partition), allocatable, intent(out) :: partitions(:)
 
     integer, allocatable :: tuple(:)
-    integer :: entries
+    integer              :: entries
 
     allocate(partitions(0))
 
@@ -412,6 +439,13 @@ contains
     end do
 
   end subroutine enumerate_partitions
+
+  !===================================================================!
+  ! Appends every nondecreasing completion of a tuple from a position
+  ! on: the entry at the position ranges from the minimum to the
+  ! largest that allows the remaining entries to be no smaller,
+  ! and the last entry takes what remains
+  !===================================================================!
 
   recursive subroutine generate_partitions(remaining, tuple, position, &
        & minimum, partitions)
@@ -442,13 +476,17 @@ contains
 
   end subroutine generate_partitions
 
+  !===================================================================!
+  ! Appends one partition and its count
+  !===================================================================!
+
   subroutine append_partition(partitions, tuple)
 
     type(derivative_partition), allocatable, intent(inout) :: partitions(:)
     integer                                , intent(in)    :: tuple(:)
 
     type(derivative_partition), allocatable :: grown(:)
-    integer :: n
+    integer                                 :: n
 
     n = size(partitions)
     allocate(grown(n + 1))
@@ -460,9 +498,12 @@ contains
   end subroutine append_partition
 
   !===================================================================!
-  ! The multinomial count of one partition, as one exact integer
-  ! division; the tuple's nondecreasing order makes every
-  ! equal degrees adjacent for multiplicity counting.
+  ! Returns the multinomial count of one partition, as one exact
+  ! integer division; the tuple's nondecreasing order makes all equal
+  ! degrees adjacent for multiplicity counting:
+  !
+  !      [1, 1, 2]    4! / (1! 1! 2!  *  2! 1!)  =  24 / 4  =  6
+  !                                      `- two 1s, one 2
   !===================================================================!
 
   pure function partition_coefficient(total, path_degree) result(coefficient)
@@ -472,7 +513,7 @@ contains
     integer(int64)      :: coefficient
 
     integer(int64) :: denominator
-    integer :: j, multiplicity
+    integer        :: j, multiplicity
 
     denominator = 1_int64
     do j = 1, size(path_degree)
@@ -493,6 +534,10 @@ contains
     coefficient = factorial_int64(total) / denominator
 
   end function partition_coefficient
+
+  !===================================================================!
+  ! Returns n! in int64; n above 20 stops the program
+  !===================================================================!
 
   pure function factorial_int64(n) result(factorial)
 
@@ -515,23 +560,26 @@ contains
   end function factorial_int64
 
   !===================================================================!
-  ! Expand one partition over the paths: every partition entry
-  ! ranges over every path providing that derivative order, in
-  ! ordered tuples; each admitted tuple becomes one partial action
-  ! scaled by the partition's count.
+  ! Expands one partition over the paths: every partition entry ranges
+  ! over every path providing that derivative order, in ordered tuples;
+  ! each admitted tuple becomes one partial action scaled by the
+  ! partition's count. The tuples are counted as the digits of a number
+  ! in base npaths, the last entry fastest:
+  !
+  !      npaths = 2, k = 2     (1,1)  (1,2)  (2,1)  (2,2)
   !===================================================================!
 
   subroutine assemble_partition(statement, input_graph, inputs, &
        & partition, paths, derivative_sum, sum_initialized, num_components)
 
-    class(operation)               , intent(in)    :: statement
-    class(directed_graph)          , intent(in)    :: input_graph
-    type(binding)                         , intent(in)    :: inputs(:)
-    type(derivative_partition)     , intent(in)    :: partition
-    type(argument_path)            , intent(in)    :: paths(:)
-    real(dp), allocatable          , intent(inout) :: derivative_sum(:)
-    logical                        , intent(inout) :: sum_initialized
-    integer                        , intent(inout) :: num_components
+    class(operation)          , intent(in)    :: statement
+    class(directed_graph)     , intent(in)    :: input_graph
+    type(binding)             , intent(in)    :: inputs(:)
+    type(derivative_partition), intent(in)    :: partition
+    type(argument_path)       , intent(in)    :: paths(:)
+    real(dp), allocatable     , intent(inout) :: derivative_sum(:)
+    logical                   , intent(inout) :: sum_initialized
+    integer                   , intent(inout) :: num_components
 
     integer :: path_indices(size(partition % path_degree))
     integer :: k, j, npaths
@@ -559,8 +607,8 @@ contains
                & paths, path_indices, derivative_sum, sum_initialized, num_components)
        end if
 
-       ! mixed-radix increment: advance the last entry, with overflow into
-       ! the left
+       ! Mixed-radix increment: advance the last entry, with overflow
+       ! into the left
        j = k
        do
           path_indices(j) = path_indices(j) + 1
@@ -575,32 +623,32 @@ contains
   end subroutine assemble_partition
 
   !===================================================================!
-  ! One admitted tuple, one partial action. The order (the tuple
-  ! length) must not exceed the statement's max_degree; violation
-  ! stops the program, because the statement declared no partials
-  ! past that order. The multinomial count scales the term after
-  ! the statement call, and every accumulated term must have one
-  ! shape.
+  ! Adds one admitted tuple's partial action, scaled by the count. The
+  ! order (the tuple length) must not exceed the statement's
+  ! max_degree; violation stops the program, because the statement
+  ! declared no partials past that order. The multinomial count scales
+  ! the term after the statement call, and every accumulated term must
+  ! have one shape.
   !===================================================================!
 
   subroutine emit_term(statement, input_graph, inputs, partition, &
        & paths, path_indices, derivative_sum, sum_initialized, num_components)
 
-    class(operation)               , intent(in)    :: statement
-    class(directed_graph)          , intent(in)    :: input_graph
-    type(binding)                         , intent(in)    :: inputs(:)
-    type(derivative_partition)     , intent(in)    :: partition
-    type(argument_path)            , intent(in)    :: paths(:)
-    integer                        , intent(in)    :: path_indices(:)
-    real(dp), allocatable          , intent(inout) :: derivative_sum(:)
-    logical                        , intent(inout) :: sum_initialized
-    integer                        , intent(inout) :: num_components
+    class(operation)          , intent(in)    :: statement
+    class(directed_graph)     , intent(in)    :: input_graph
+    type(binding)             , intent(in)    :: inputs(:)
+    type(derivative_partition), intent(in)    :: partition
+    type(argument_path)       , intent(in)    :: paths(:)
+    integer                   , intent(in)    :: path_indices(:)
+    real(dp), allocatable     , intent(inout) :: derivative_sum(:)
+    logical                   , intent(inout) :: sum_initialized
+    integer                   , intent(inout) :: num_components
 
     class(field), allocatable :: output
-    type(variation) :: variations(size(path_indices))
-    real(dp), allocatable :: term(:)
-    integer :: j, k
-    character(len=250) :: message
+    type(variation)           :: variations(size(path_indices))
+    real(dp), allocatable     :: term(:)
+    integer                   :: j, k
+    character(len=250)        :: message
 
     k = size(path_indices)
 
@@ -610,8 +658,8 @@ contains
        error stop trim(message)
     end if
 
-    ! one factor per chosen path: its argument, and the derivative
-    ! of the order this partition entry specifies as the direction
+    ! One factor per chosen path: its argument, and the derivative of
+    ! the order this partition entry specifies as the direction
     do j = 1, k
        variations(j) = variation(paths(path_indices(j)) % wrt, &
             & paths(path_indices(j)) % derivative(partition % path_degree(j)) % direction)
@@ -629,33 +677,33 @@ contains
        end if
        derivative_sum = derivative_sum + real(partition % coefficient, dp) * term
     else
-       derivative_sum = real(partition % coefficient, dp) * term
-       num_components   = output % num_components()
+       derivative_sum  = real(partition % coefficient, dp) * term
+       num_components  = output % num_components()
        sum_initialized = .true.
     end if
 
   end subroutine emit_term
 
   !===================================================================!
-  ! Write the total onto the statement's domain. When no term was
-  ! admitted (every required derivative was unoccupied) the total
-  ! is zero, with its shape taken from the statement's own value.
+  ! Writes the total onto the statement's domain. When no term was
+  ! admitted (every required derivative was unoccupied) the total is
+  ! zero, with its shape taken from the statement's own value.
   !===================================================================!
 
   subroutine write_output(statement, input_graph, inputs, derivative_sum, &
        & sum_initialized, num_components, output)
 
-    class(operation)               , intent(in)    :: statement
-    class(directed_graph)          , intent(in)    :: input_graph
-    type(binding)                         , intent(in)    :: inputs(:)
-    real(dp), allocatable          , intent(inout) :: derivative_sum(:)
-    logical                        , intent(in)    :: sum_initialized
-    integer                        , intent(in)    :: num_components
+    class(operation)         , intent(in)    :: statement
+    class(directed_graph)    , intent(in)    :: input_graph
+    type(binding)            , intent(in)    :: inputs(:)
+    real(dp), allocatable    , intent(inout) :: derivative_sum(:)
+    logical                  , intent(in)    :: sum_initialized
+    integer                  , intent(in)    :: num_components
     class(field), allocatable, intent(inout) :: output
 
     class(field), allocatable :: value
-    type(graph) :: domain
-    integer         :: n_domain, width
+    type(graph)               :: domain
+    integer                   :: n_domain, width
 
     call statement % domain(input_graph, domain, n_domain)
 
@@ -664,7 +712,7 @@ contains
        call statement % apply(input_graph, inputs, value)
        call value % real_vector(derivative_sum)
        derivative_sum = 0.0_dp
-       width   = value % num_components()
+       width          = value % num_components()
     end if
 
     call emit_real('total derivative', domain, size(derivative_sum) / width, derivative_sum, output, width)

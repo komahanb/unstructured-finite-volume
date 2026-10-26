@@ -1,13 +1,13 @@
 !=====================================================================!
-! A file, represented as a chain graph. Lines are the vertices,
-! "next line" is the only edge, and the reader has exactly one
-! operation - traverse the edge forward:
+! Module that represents a file as a chain graph. Lines are the
+! vertices, "next line" is the only edge, and the reader has exactly
+! one operation, to traverse the edge forward:
 !
-!     (line 1)──▶(line 2)──▶(line 3)──▶ ...
+!     (line 1) --> (line 2) --> (line 3) --> ...
 !
 ! Open and close delimit the traversal, read_line takes one step,
-! read_lines reads the whole chain into memory, and num_lines
-! measures its length.
+! read_lines reads the whole chain into memory, and num_lines measures
+! its length.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -17,23 +17,25 @@ module util_file
   use util_string, only : string
 
   implicit none
-  
+
   private
+
   public :: file
 
   !-------------------------------------------------------------------!
-  ! A derived type for a file.
+  ! Type that models a file: its name, its unit and the width of a
+  ! line's buffer
   !-------------------------------------------------------------------!
-  
+
   type :: file
 
-     character(:), allocatable :: filename ! The file name.
-     type(integer) :: file_unit            ! The file unit number.
-     integer       :: buffer_size          ! The line buffer width.
+     character(:), allocatable :: filename    ! the file name
+     type(integer)             :: file_unit   ! the file unit number
+     integer                   :: buffer_size ! the line buffer width
 
    contains
 
-     ! Overridden procedures.
+     ! Provided procedures
      procedure :: open
      procedure :: close
      procedure :: unit
@@ -41,13 +43,13 @@ module util_file
      procedure :: read_lines
      procedure :: num_lines
 
-     ! The destructor.
+     ! The destructor
      final :: destroy
 
   end type file
 
   !-------------------------------------------------------------------!
-  ! The constructor interface for a file.
+  ! The constructor interface for a file
   !-------------------------------------------------------------------!
 
   interface file
@@ -57,30 +59,32 @@ module util_file
 contains
 
   !===================================================================!
-  ! Construct a file object with the given file name.
+  ! Creates a file object of the given name, with lines of the given
+  ! width (100 when none is given), on the first unopened unit from 100
   !===================================================================!
-  
+
   impure type(file) function create(filename, line_width) result (this)
 
     type(character(*)), intent(in)           :: filename
     type(integer)     , intent(in), optional :: line_width
+
     logical :: valid
     integer :: i
 
-    ! Set the file name.
+    ! The file name
     allocate(this % filename, source=filename)
 
-    ! Set the line width.
+    ! The line width
     if (present(line_width)) then
        this % buffer_size = line_width
     else
        this % buffer_size = 100
     end if
 
-    ! Use an unopened unit number for opening.
+    ! The first unopened unit number
     i = 99
-    check_unit: do 
-       i = i + 1 
+    check_unit: do
+       i = i + 1
        inquire(unit=i, opened=valid)
        if(valid .eqv. .false.) then
           this % file_unit = i
@@ -89,11 +93,11 @@ contains
     end do check_unit
 
   end function create
-  
+
   !===================================================================!
-  ! The destructor for a file object.
+  ! Destroys a file object, releasing its name
   !===================================================================!
-  
+
   pure subroutine destroy(this)
 
     type(file), intent(inout) :: this
@@ -103,25 +107,26 @@ contains
   end subroutine destroy
 
   !===================================================================!
-  ! Open the file.
+  ! Opens the file; a file that does not exist stops the program
   !===================================================================!
 
   impure subroutine open(this)
 
     class(file), intent(in) :: this
+
     logical :: file_exists
 
     inquire(file=this % filename, exist=file_exists)
     if (file_exists  .eqv. .false.) then
        error stop 'file: does not exist - ' // this % filename
     end if
-    
+
     open(unit = this % file_unit, file = this % filename)
-    
+
   end subroutine open
 
   !===================================================================!
-  ! Close the file.
+  ! Closes the file
   !===================================================================!
 
   impure subroutine close(this)
@@ -133,7 +138,7 @@ contains
   end subroutine close
 
   !===================================================================!
-  ! Return the file unit number.
+  ! Returns the file unit number
   !===================================================================!
 
   pure type(integer) function unit(this)
@@ -145,15 +150,16 @@ contains
   end function unit
 
   !===================================================================!
-  ! A utility function that counts the number of lines in the mesh file.
+  ! Returns the number of lines in the file, counted by one traversal
   !===================================================================!
 
   impure type(integer) function num_lines(this) result(nlines)
 
-    class(file) , intent(in) :: this
+    class(file), intent(in) :: this
+
     integer :: stat
 
-    nlines = 0 
+    nlines = 0
     call this % open()
     do
        read(this % unit(),*, iostat=stat)
@@ -164,17 +170,17 @@ contains
 
   end function num_lines
 
-  !=================================================================!
-  ! Read one line and return a string object.
-  !=================================================================!
+  !===================================================================!
+  ! Reads one line and returns it as a string, trailing blanks trimmed
+  !===================================================================!
 
   impure subroutine read_line(this, line)
 
-    ! Arguments.
-    class(file)  , intent(in)  :: this
-    type(string) , intent(out) :: line
+    ! Arguments
+    class(file) , intent(in)  :: this
+    type(string), intent(out) :: line
 
-    ! Locals.
+    ! Locals
     character(len=this % buffer_size) :: buffer
 
     read(this % unit(), fmt = '(a)') buffer
@@ -182,30 +188,31 @@ contains
 
   end subroutine read_line
 
-  !=================================================================!
-  ! Read all lines and return a string array.
-  !=================================================================!
+  !===================================================================!
+  ! Reads all lines and returns them as an array of strings.
+  !
+  ! The lines are counted first, so that the array can be allocated;
+  ! that count opens and traverses the file a second time, which needs
+  ! a fix:
+  !
+  !   num_lines:   open --> line 1 --> ... --> line n --> close
+  !   read:        open --> line 1 --> ... --> line n --> close
+  !===================================================================!
 
   impure subroutine read_lines(this, lines)
 
-    ! Arguments.
-    class(file)  , intent(in)            :: this
-    type(string) , allocatable, intent(out) :: lines(:)
+    ! Arguments
+    class(file) , intent(in)               :: this
+    type(string), allocatable, intent(out) :: lines(:)
 
-    ! Locals.
+    ! Locals
     integer :: num_lines
     integer :: iline
-
-    !-----------------------------------------------------------------!
-    ! Count the lines in the file so that space can be allocated.
-    ! This measurement opens and traverses the file a second time,
-    ! which needs a fix.
-    !-----------------------------------------------------------------!
 
     num_lines = this % num_lines()
     allocate(lines(num_lines))
 
-    ! Traverse the chain and store each line into the lines array.
+    ! The chain traversed, each line stored
     call this % open()
     do iline = 1, num_lines
        call this % read_line(lines(iline))
@@ -213,5 +220,5 @@ contains
     call this % close()
 
   end subroutine read_lines
-   
+
 end module util_file

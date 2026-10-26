@@ -1,32 +1,37 @@
 !=====================================================================!
-! The stencil operator: a matrix as the tower represents it.
+! Module that states the stencil operator: a matrix as the tower
+! represents it.
 !
-! A sparse matrix is a graph with a number on every edge. This type
-! is that definition, stored: it CONTAINS a stored graph - one
-! directed edge per dependency, column to row - a field of weights
-! on that graph's edges, and a field of constants on its vertices,
-! the affine part contributed by boundary values. Its apply
-! traverses the edges once:
+! A sparse matrix is a graph with a number on every edge. This type is
+! that definition, stored: it contains a stored graph, one directed
+! edge per dependency, column to row; a field of weights on that
+! graph's edges; and a field of constants on its vertices, the affine
+! part contributed by boundary values. Its apply traverses the edges
+! once:
 !
 !      y(head) += weight * q(tail)
 !
-! Because the pattern IS a graph, the structure queries require no
-! additional operations: the sparsity gives adjacency, the colouring
-! traversal runs on it for probing and sweeps, and a coarsener
-! applied to it is the Galerkin construction of a coarse operator.
-! This is the spatial concretion of the discretization, and
-! the family contract is satisfied: the pattern is exposed by contract.
-! Nothing here records where the weights came from: a scheme
-! computes them from geometry, a multigrid from a product, a test
-! from explicit values.
+!      |  2  -1   0 |          1 <-- -1 --> 2 <-- -1 --> 3
+!      | -1   2  -1 |          and a loop of weight 2 at each vertex
+!      |  0  -1   2 |
+!                              y(i) = c(i) + sum over edges j -> i of a_ij q(j)
 !
-! INTERPRETED AND COMPILED. The calculus's differential operator and
+! Because the pattern is a graph, the structure queries require no
+! additional operations: the sparsity gives adjacency, the colouring
+! traversal runs on it for probing and sweeps, and a coarsener applied
+! to it is the Galerkin construction of a coarse operator. This is the
+! spatial concretion of the discretization, and the family contract is
+! satisfied: the pattern is exposed by contract. Nothing here records
+! where the weights came from: a scheme computes them from geometry, a
+! multigrid from a product, a test from explicit values.
+!
+! Interpreted and compiled. The calculus's differential operator and
 ! this type are the same mathematics in two execution styles. The
-! differential operator INTERPRETS: it reads the host's incidence at
-! every apply, matrix-free, always recomputed - the default. The
-! stencil is the COMPILED form: weights computed once and traversed
-! many times - coarse levels, preconditioners, assembled exactness.
-! Neither depends on the other's implementation.
+! differential operator interprets: it reads the host's incidence at
+! every apply, matrix-free, always recomputed, the default. The stencil
+! is the compiled form: weights computed once and traversed many times,
+! for coarse levels, preconditioners, assembled exactness. Neither
+! depends on the other's implementation.
 !
 ! A stencil is also compiled from any operation by evaluation on the
 ! standard basis (zero state -> constant, basis vector minus constant
@@ -38,25 +43,35 @@
 
 module operation_stencil
 
-  use util_precision  , only : dp
-  use view_directed, only : directed_graph
-  use field_calculus, only : field, FIELD_REAL
-  use operation_action, only : operation, variation, contract
-  use operation_action, only : binding, bound_real_vector
-  use operation_action, only : emit, dense_of_triples
-  use relation_binary, only : group_by_key
-  use field_stored  , only : stored_field, typed_field_domain
-  use view_directed_stored        , only : stored_directed_graph
-  use graph_fractal      , only : graph
+  use util_precision      , only : dp
+  use view_directed       , only : directed_graph
+  use field_calculus      , only : field, FIELD_REAL
+  use operation_action    , only : operation, variation, contract
+  use operation_action    , only : binding, bound_real_vector
+  use operation_action    , only : emit, dense_of_triples
+  use relation_binary     , only : group_by_key
+  use field_stored        , only : stored_field, typed_field_domain
+  use view_directed_stored, only : stored_directed_graph
+  use graph_fractal       , only : graph
 
   implicit none
 
   private
+
   public :: stencil
   public :: combine_triples
   public :: triple_list
   public :: compile_matrix_from_action
   public :: compile_entries_from_action
+
+  !-------------------------------------------------------------------!
+  ! Type that models the stencil: the pattern, a weight per edge, and a
+  ! constant per vertex
+  !
+  !      pattern      edge e: tail = column, head = row
+  !      weights      w(e), on the pattern's edges
+  !      constants    c(v), on the pattern's vertices
+  !-------------------------------------------------------------------!
 
   type, extends(operation) :: stencil
 
@@ -67,28 +82,33 @@ module operation_stencil
 
    contains
 
-     procedure :: apply        => stencil_apply
-     procedure :: entries       => stencil_entries
-     procedure :: transpose     => stencil_transpose
-     procedure :: reverse       => stencil_reverse
-     procedure :: restricted    => stencil_restricted
+     ! The operation, the matrix and its transforms
+     procedure :: apply          => stencil_apply
+     procedure :: entries        => stencil_entries
+     procedure :: transpose      => stencil_transpose
+     procedure :: reverse        => stencil_reverse
+     procedure :: restricted     => stencil_restricted
      procedure :: partial_action => stencil_partial_action
+
+     ! Partial products and blocks, for relaxations and parts
      procedure :: column_product
      procedure :: row_product
      procedure :: diagonal_blocks
 
   end type stencil
 
-  !===================================================================!
-  ! A list of (row, column, weight) triples being gathered, the
-  ! capacity doubling when it is exhausted. Every assembly on the tower
-  ! appends to one of these and reads the filled entries out; none
-  ! maintains its own counter.
-  !===================================================================!
+  !-------------------------------------------------------------------!
+  ! Type that models a list of (row, column, weight) triples being
+  ! gathered, the capacity doubling when it is exhausted. Every
+  ! assembly on the tower appends to one of these and reads the filled
+  ! entries out; none maintains its own counter.
+  !
+  !      rows, columns, weights   (1:filled) placed, the rest capacity
+  !-------------------------------------------------------------------!
 
   type :: triple_list
 
-     integer :: filled = 0
+     integer               :: filled = 0
      integer , allocatable :: rows(:), columns(:)
      real(dp), allocatable :: weights(:)
 
@@ -108,22 +128,22 @@ module operation_stencil
 contains
 
   !===================================================================!
-  ! Build from the triples and the constants. The triples become the
-  ! dependency graph - one edge per (row, column) pair, tail at the
-  ! column, head at the row - and the numbers become its fields.
+  ! Creates a stencil from the triples and the constants. The triples
+  ! become the dependency graph, one edge per (row, column) pair, tail
+  ! at the column, head at the row, and the numbers become its fields.
   !===================================================================!
 
   type(stencil) function create(rows, columns, weights, &
        & constant, label) result(this)
 
-    integer , intent(in) :: rows(:)
-    integer , intent(in) :: columns(:)
-    real(dp), intent(in) :: weights(:)
-    real(dp), intent(in) :: constant(:)
+    integer         , intent(in)           :: rows(:)
+    integer         , intent(in)           :: columns(:)
+    real(dp)        , intent(in)           :: weights(:)
+    real(dp)        , intent(in)           :: constant(:)
     character(len=*), intent(in), optional :: label
 
     character(len=:), allocatable :: stencil_label
-    integer :: nv
+    integer                       :: nv
 
     nv = size(constant)
 
@@ -137,16 +157,16 @@ contains
     stencil_label = 'stencil'
     if (present(label)) stencil_label = label
 
-    ! one argument: the state the matrix multiplies; linear, so its
-    ! one exact partial action is of degree one
+    ! One argument: the state the matrix multiplies; linear, so its one
+    ! exact partial action is of degree one
     call this % declare_arguments(1, [contract(FIELD_REAL, 1)], label=stencil_label, max_degree=1)
 
   end function create
 
   !===================================================================!
-  ! Build from a dense matrix: each entry becomes one weighted edge,
-  ! column to row, constants zero. The matrix must be square,
-  ! because a stencil's input and output share one vertex set;
+  ! Creates a stencil from a dense matrix: each entry becomes one
+  ! weighted edge, column to row, constants zero. The matrix must be
+  ! square, because a stencil's input and output share one vertex set;
   ! a rectangular array stops the program.
   !===================================================================!
 
@@ -157,8 +177,8 @@ contains
 
     integer , allocatable :: rows(:), columns(:)
     real(dp), allocatable :: weights(:), constant(:)
-    integer :: n, i, j, e
-    character(len=250) :: message
+    integer               :: n, i, j, e
+    character(len=250)    :: message
 
     n = size(a, 1)
     if (size(a, 2) /= n) then
@@ -185,28 +205,28 @@ contains
   end function create_dense
 
   !===================================================================!
-  ! Build from an operation by evaluation on the standard basis: the
-  ! operation applied to the zero state is the constant, and applied
-  ! to each basis vector minus that constant is one column. width is
-  ! the number of values a state stores; it must be a positive
-  ! whole multiple of the operation's domain size, and every apply
-  ! must return exactly width values; both are checked and stop the
-  ! program, because a mismatched column cannot be placed in the
-  ! matrix. The label defaults to the operation's name.
+  ! Creates a stencil from an operation by evaluation on the standard
+  ! basis: the operation applied to the zero state is the constant, and
+  ! applied to each basis vector minus that constant is one column.
+  ! width is the number of values a state stores; it must be a positive
+  ! whole multiple of the operation's domain size, and every apply must
+  ! return exactly width values; both are checked and stop the program,
+  ! because a mismatched column cannot be placed in the matrix. The
+  ! label defaults to the operation's name.
   !===================================================================!
 
   type(stencil) function create_compiled(action, context, width, label) &
        & result(this)
 
-    class(operation)     , intent(in) :: action
-    class(directed_graph), intent(in) :: context
-    integer              , intent(in) :: width
-    character(len=*), intent(in), optional :: label
+    class(operation)     , intent(in)           :: action
+    class(directed_graph), intent(in)           :: context
+    integer              , intent(in)           :: width
+    character(len=*)     , intent(in), optional :: label
 
-    type(graph) :: dom
+    type(graph)           :: dom
     real(dp), allocatable :: a(:,:), constant(:)
-    integer :: n_dom, num_components
-    character(len=250) :: message
+    integer               :: n_dom, num_components
+    character(len=250)    :: message
 
     call action % domain(context, dom, n_dom)
 
@@ -235,10 +255,14 @@ contains
   end function create_compiled
 
   !===================================================================!
-  ! The columns of a linear operation, one per basis vector: column j
-  ! is F(e_j, h) - F(0, h), the affine part F(0, h) read at j = 0 and
-  ! retained as the constant, h the inputs fixed if any. The compiled
-  ! stencil and the direct solver both read their matrix here.
+  ! Returns the columns of a linear operation, one per basis vector,
+  ! h the inputs fixed if any:
+  !
+  !      j = 0      F(0, h)                the constant c, retained
+  !      j >= 1     F(e_j, h) - c          column j of A
+  !
+  ! The compiled stencil and the direct solver both read their matrix
+  ! here. A stencil is its own matrix: it is read from its edges.
   !===================================================================!
 
   subroutine compile_matrix_from_action(action, context, dom, n_dom, width, &
@@ -249,20 +273,20 @@ contains
     type(graph)          , intent(in) :: dom
     integer              , intent(in) :: n_dom, width, num_components
 
-    real(dp), allocatable, intent(out) :: a(:,:), constant(:)
+    real(dp), allocatable, intent(out)          :: a(:,:), constant(:)
     type(stored_field)   , intent(in), optional :: stored(:)
 
     type(stored_field)        :: state
     class(field), allocatable :: output
-    real(dp), allocatable :: e(:), y(:), weights(:)
-    integer , allocatable :: rows(:), columns(:)
-    integer :: j
-    character(len=250) :: message
+    real(dp)    , allocatable :: e(:), y(:), weights(:)
+    integer     , allocatable :: rows(:), columns(:)
+    integer                   :: j
+    character(len=250)        :: message
 
-    ! A STENCIL IS ITS OWN MATRIX. Evaluating it column by column costs
-    ! one application per column to recover numbers the pattern
-    ! already stores, so a stencil returns its matrix from its edges
-    ! and only an operation of another kind is evaluated.
+    ! A stencil is its own matrix. Evaluating it column by column costs
+    ! one application per column to recover numbers the pattern already
+    ! stores, so a stencil returns its matrix from its edges and only an
+    ! operation of another kind is evaluated.
     select type (action)
     type is (stencil)
        if (action % pattern % num_vertices() == width) then
@@ -303,9 +327,9 @@ contains
   end subroutine compile_matrix_from_action
 
   !===================================================================!
-  ! THE ENTRIES OF A LINEAR OPERATION that is a stencil of width
-  ! vertices, its matrix as compile_matrix_from_action reads it from
-  ! its edges, without the matrix: stated true, rows, columns and
+  ! Returns the entries of a linear operation that is a stencil of
+  ! width vertices, its matrix as compile_matrix_from_action reads it
+  ! from its edges, without the matrix: stated true, rows, columns and
   ! weights; false for an operation of another kind.
   !===================================================================!
 
@@ -331,14 +355,21 @@ contains
   end subroutine compile_entries_from_action
 
   !===================================================================!
-  ! THE STENCIL RESTRICTED to a subset of its vertices, everything
-  ! outside the subset fixed at the values given: the rows retained
-  ! are those of the subset, a column inside it remains a dependency,
-  ! and a column outside it is added to the row's constant as its
-  ! weight times the fixed value. The result is the same linear map,
-  ! restricted to the subset, with the outside as an affine part.
-  ! A member outside the vertices, or values of the wrong extent,
-  ! stops the program.
+  ! Returns the stencil restricted to a subset of its vertices,
+  ! everything outside the subset fixed at the values given: the rows
+  ! retained are those of the subset, a column inside it remains a
+  ! dependency, and a column outside it is added to the row's constant
+  ! as its weight times the fixed value. The result is the same linear
+  ! map, restricted to the subset, with the outside as an affine part.
+  !
+  !      retained {1, 2}, vertex 3 fixed at v_3
+  !
+  !      | a11  a12 | a13 |          | a11  a12 |       | c1 + a13 v_3 |
+  !      | a21  a22 | a23 |    ->    | a21  a22 |  q  + | c2 + a23 v_3 |
+  !      | a31  a32 | a33 |
+  !
+  ! A member outside the vertices, or values of the wrong extent, stops
+  ! the program.
   !===================================================================!
 
   function stencil_restricted(this, retained, values) result(sub)
@@ -346,13 +377,13 @@ contains
     class(stencil), intent(in) :: this
     integer       , intent(in) :: retained(:)
     real(dp)      , intent(in) :: values(:)
-    type(stencil) :: sub
+    type(stencil)              :: sub
 
     integer , allocatable :: sub_of(:), rows(:), columns(:), heads(:), tails(:)
     real(dp), allocatable :: weights(:), w(:), constant(:), stored(:)
-    type(triple_list) :: triples
-    integer :: n, m, e, row
-    character(len=250) :: message
+    type(triple_list)     :: triples
+    integer               :: n, m, e, row
+    character(len=250)    :: message
 
     n = this % pattern % num_vertices()
     m = size(retained)
@@ -395,9 +426,9 @@ contains
   end function stencil_restricted
 
   !===================================================================!
-  ! The (row, column, weight) triples of the matrix, one per edge in
-  ! the pattern's edge order: the row is the head, the column the
-  ! tail. Weights not yet stored give an empty weight list.
+  ! Returns the (row, column, weight) triples of the matrix, one per
+  ! edge in the pattern's edge order: the row is the head, the column
+  ! the tail. Weights not yet stored give an empty weight list.
   !===================================================================!
 
   pure subroutine stencil_entries(this, rows, columns, weights)
@@ -415,20 +446,21 @@ contains
   end subroutine stencil_entries
 
   !===================================================================!
-  ! y = constants + the dependency edges, traversed once: each edge
-  ! adds its weight times the tail's value to its head.
+  ! Applies the stencil: y = constants + the dependency edges,
+  ! traversed once, each edge adding its weight times the tail's value
+  ! to its head. With no inputs the constants alone are returned.
   !===================================================================!
 
   subroutine stencil_apply(this, input_graph, inputs, output)
 
-    class(stencil), intent(in)            :: this
-    class(directed_graph), intent(in)                       :: input_graph
-    type(binding), intent(in), optional       :: inputs(:)
-    class(field), allocatable, intent(inout) :: output
+    class(stencil)           , intent(in)           :: this
+    class(directed_graph)    , intent(in)           :: input_graph
+    type(binding)            , intent(in), optional :: inputs(:)
+    class(field), allocatable, intent(inout)        :: output
 
-    type(stored_field)   :: out
-    type(typed_field_domain)   :: image
-    real(dp), allocatable :: q(:), y(:)
+    type(stored_field)       :: out
+    type(typed_field_domain) :: image
+    real(dp), allocatable    :: q(:), y(:)
 
     call this % constants % real_vector(y)
 
@@ -445,8 +477,15 @@ contains
   end subroutine stencil_apply
 
   !===================================================================!
-  ! The edge traversal, shared by apply and the tangent: each edge
-  ! adds its weight times the tail's value to the head.
+  ! Adds A q to y: the edge traversal, shared by apply and the tangent,
+  ! each edge adding its weight times the tail's value to the head. The
+  ! rows are read through the pattern's incoming incidence,
+  !
+  !      offsets(v) .. offsets(v + 1) - 1     the edges entering v
+  !      indices(p)                           edge number e
+  !      sources(e)                           its tail
+  !
+  ! each row accumulated locally and written once.
   !===================================================================!
 
   subroutine accumulate_edges(this, q, y)
@@ -457,14 +496,15 @@ contains
 
     real(dp), pointer :: w(:)
 
-    ! the weights are read in place: an earlier apply copied the
-    ! whole edge vector before reading it
+    ! The weights are read in place: an earlier apply copied the whole
+    ! edge vector before reading it
     w => this % weights % real_values()
     if (.not. associated(w)) return
 
     ! The graph selects its orientation once and supplies its grouped
-    ! incidence to one read. Each row is accumulated locally and written
-    ! once, with no copy of the topology and no per-edge procedure call.
+    ! incidence to one read. Each row is accumulated locally and
+    ! written once, with no copy of the topology and no per-edge
+    ! procedure call.
     call this % pattern % read_incoming(accumulate_rows)
 
   contains
@@ -472,8 +512,8 @@ contains
     subroutine accumulate_rows(offsets, indices, sources)
 
       integer, intent(in) :: offsets(:), indices(:), sources(:)
-      real(dp) :: acc
-      integer :: e, p, v
+      real(dp)            :: acc
+      integer             :: e, p, v
 
       do v = 1, size(offsets) - 1
          acc = 0.0_dp
@@ -489,24 +529,30 @@ contains
   end subroutine accumulate_edges
 
   !===================================================================!
-  ! THE PRODUCT OF SOME COLUMNS with the values at those columns,
-  ! added to y with a factor: y = y + factor sum over c in columns of
+  ! Adds the product of some columns with the values at those columns
+  ! to y, with a factor: y = y + factor sum over c in columns of
   ! A(:, c) q(c). A relaxation that changes the unknowns of one colour
-  ! class updates its residual through this with the factor -1, at
-  ! the cost of the edges leaving those columns rather than of a
-  ! product over every edge.
+  ! class updates its residual through this with the factor -1, at the
+  ! cost of the edges leaving those columns rather than of a product
+  ! over every edge.
+  !
+  !      column_product           row_product
+  !      | .  x  . |              | .  .  . |
+  !      | .  x  . |              | x  x  x |  <- row r
+  !      | .  x  . |              | .  .  . |
+  !           ^ column c
   !===================================================================!
 
   subroutine column_product(this, columns, q, y, factor)
 
-    class(stencil), intent(in)    :: this
-    integer       , intent(in)    :: columns(:)
-    real(dp)      , intent(in)    :: q(:)
-    real(dp)      , intent(inout) :: y(:)
+    class(stencil), intent(in)           :: this
+    integer       , intent(in)           :: columns(:)
+    real(dp)      , intent(in)           :: q(:)
+    real(dp)      , intent(inout)        :: y(:)
     real(dp)      , intent(in), optional :: factor
 
     real(dp), pointer :: w(:)
-    real(dp) :: scale
+    real(dp)          :: scale
 
     scale = 1.0_dp
     if (present(factor)) scale = factor
@@ -520,8 +566,8 @@ contains
     subroutine accumulate_columns(offsets, indices, targets)
 
       integer, intent(in) :: offsets(:), indices(:), targets(:)
-      integer :: k, c, p, e
-      real(dp) :: qc
+      integer             :: k, c, p, e
+      real(dp)            :: qc
 
       do k = 1, size(columns)
          c  = columns(k)
@@ -538,10 +584,11 @@ contains
   end subroutine column_product
 
   !===================================================================!
-  ! THE PRODUCT OF SOME ROWS: y(r) = sum over the edges entering r of
-  ! the weight times q at the tail, for each r in rows, without the
-  ! constants; y elsewhere is left as given. An image that owns some
-  ! rows of a distributed system forms its rows of A q through this.
+  ! Returns the product of some rows: y(r) = sum over the edges
+  ! entering r of the weight times q at the tail, for each r in rows,
+  ! without the constants; y elsewhere is left as given. An image that
+  ! owns some rows of a distributed system forms its rows of A q
+  ! through this.
   !===================================================================!
 
   subroutine row_product(this, rows, q, y)
@@ -566,8 +613,8 @@ contains
     subroutine accumulate_some_rows(offsets, indices, sources)
 
       integer, intent(in) :: offsets(:), indices(:), sources(:)
-      real(dp) :: acc
-      integer :: k, v, p, e
+      real(dp)            :: acc
+      integer             :: k, v, p, e
 
       do k = 1, size(rows)
          v   = rows(k)
@@ -584,20 +631,26 @@ contains
   end subroutine row_product
 
   !===================================================================!
-  ! THE DIAGONAL BLOCKS of a stated width, d(i, k, b) = A(row, column)
-  ! for row = (b-1) width + i and column = (b-1) width + k, read from
-  ! the edges whose two ends lie in one block. A vertex count that is
-  ! not a whole number of blocks is invalid input.
+  ! Returns the diagonal blocks of a stated width,
+  ! d(i, k, b) = A(row, column) for row = (b-1) width + i and
+  ! column = (b-1) width + k, read from the edges whose two ends lie in
+  ! one block. A vertex count that is not a whole number of blocks is
+  ! invalid input.
+  !
+  !      width 2         | d1  d1 | .   .  |
+  !                      | d1  d1 | .   .  |
+  !                      | .   .  | d2  d2 |
+  !                      | .   .  | d2  d2 |
   !===================================================================!
 
   subroutine diagonal_blocks(this, width, d)
 
-    class(stencil), intent(in)  :: this
-    integer       , intent(in)  :: width
+    class(stencil)       , intent(in)  :: this
+    integer              , intent(in)  :: width
     real(dp), allocatable, intent(out) :: d(:,:,:)
 
-    real(dp), pointer :: w(:)
-    integer :: n, nb, e, row, column, b
+    real(dp), pointer  :: w(:)
+    integer            :: n, nb, e, row, column, b
     character(len=250) :: message
 
     n  = this % pattern % num_vertices()
@@ -624,26 +677,26 @@ contains
   end subroutine diagonal_blocks
 
   !===================================================================!
-  ! A stencil is linear, so it is its own tangent: the first partial
-  ! action in its one argument is the edge traversal on the direction,
-  ! without the constants. An order past one or an argument other
-  ! than one stops the program, because a linear map in one argument
-  ! has no other partial.
+  ! Applies the partial action. A stencil is linear, so it is its own
+  ! tangent: the first partial action in its one argument is the edge
+  ! traversal on the direction, without the constants. An order past
+  ! one or an argument other than one stops the program, because a
+  ! linear map in one argument has no other partial.
   !===================================================================!
 
   subroutine stencil_partial_action(this, input_graph, inputs, &
        & variations, output)
 
-    class(stencil), intent(in)               :: this
-    class(directed_graph), intent(in)        :: input_graph
-    type(binding), intent(in)                 :: inputs(:)
-    type(variation), intent(in)              :: variations(:)
+    class(stencil)           , intent(in)    :: this
+    class(directed_graph)    , intent(in)    :: input_graph
+    type(binding)            , intent(in)    :: inputs(:)
+    type(variation)          , intent(in)    :: variations(:)
     class(field), allocatable, intent(inout) :: output
 
-    type(stored_field)   :: out
-    type(typed_field_domain)   :: image
-    real(dp), allocatable :: v(:), y(:)
-    character(len=250) :: message
+    type(stored_field)       :: out
+    type(typed_field_domain) :: image
+    real(dp), allocatable    :: v(:), y(:)
+    character(len=250)       :: message
 
     associate (u1 => inputs); end associate
 
@@ -671,12 +724,15 @@ contains
   end subroutine stencil_partial_action
 
   !===================================================================!
-  ! The transpose: the same pattern read in the reverse direction, so
-  ! the weight that multiplied the tail's value into the head now
-  ! multiplies the head's into the tail - no edge is rebuilt and no
-  ! weight is moved, and the transpose of the transpose is this stencil
-  ! exactly. The constants are removed, because the affine part of a
-  ! map has no transpose.
+  ! Returns the transpose: the same pattern read in the reverse
+  ! direction, so the weight that multiplied the tail's value into the
+  ! head now multiplies the head's into the tail. No edge is rebuilt and
+  ! no weight is moved, and the transpose of the transpose is this
+  ! stencil exactly. The constants are removed, because the affine part
+  ! of a map has no transpose.
+  !
+  !      A        edge e: j --w(e)--> i
+  !      A^T      edge e: i --w(e)--> j        the same e, the same w(e)
   !===================================================================!
 
   type(stencil) function stencil_transpose(this) result(transposed)
@@ -694,17 +750,18 @@ contains
          & transposed % pattern % vertex_set(), transposed % pattern % num_vertices())
     call transposed % constants % set_real_vector(zeros)
 
-    ! the transpose is an operation of one argument as the original is;
-    ! attached as a matrix-vector product, it is called with that argument
+    ! The transpose is an operation of one argument as the original is;
+    ! attached as a matrix-vector product, it is called with that
+    ! argument
     call transposed % declare_arguments(1, [contract(FIELD_REAL, 1)], &
          & label='transpose of ' // this % name(), max_degree=1)
 
   end function stencil_transpose
 
   !===================================================================!
-  ! The transpose taken in place: the pattern's orientation reversed
-  ! at constant cost, the constants removed, no weight and no edge
-  ! copied. The result equals the owning transpose of the former value.
+  ! Takes the transpose in place: the pattern's orientation reversed at
+  ! constant cost, the constants removed, no weight and no edge copied.
+  ! The result equals the owning transpose of the former value.
   !===================================================================!
 
   subroutine stencil_reverse(this)
@@ -727,26 +784,29 @@ contains
   end subroutine stencil_reverse
 
   !===================================================================!
-  ! Combine duplicate (row, column) entries of a weighted triple
-  ! list: a matrix has one entry per pair, so equal pairs sum. Two
-  ! stable groupings (by column, then by row) place equal pairs
-  ! adjacent; one pass merges them. Used wherever triples are
-  ! produced with repeats - a sparse product's emitted terms, a
-  ! Galerkin coarsening's aggregated edges - before they become a
-  ! stencil.
+  ! Combines duplicate (row, column) entries of a weighted triple list:
+  ! a matrix has one entry per pair, so equal pairs sum. Two stable
+  ! groupings (by column, then by row) place equal pairs adjacent; one
+  ! pass merges them. Used wherever triples are produced with repeats,
+  ! a sparse product's emitted terms, a Galerkin coarsening's
+  ! aggregated edges, before they become a stencil.
+  !
+  !      given      (2,1,a)   (1,2,b)   (2,1,c)
+  !      grouped    (1,2,b)   (2,1,a)   (2,1,c)      by row, then column
+  !      merged     (1,2,b)   (2,1,a+c)
   !===================================================================!
 
   pure subroutine combine_triples(nrows, ncols, r, c, w, rows, cols, weights)
 
-    integer , intent(in) :: nrows, ncols
-    integer , intent(in) :: r(:), c(:)
-    real(dp), intent(in) :: w(:)
+    integer              , intent(in)  :: nrows, ncols
+    integer              , intent(in)  :: r(:), c(:)
+    real(dp)             , intent(in)  :: w(:)
     integer , allocatable, intent(out) :: rows(:)
     integer , allocatable, intent(out) :: cols(:)
     real(dp), allocatable, intent(out) :: weights(:)
 
     integer, allocatable :: identity(:), ptr(:), by_c(:), by_rc(:)
-    integer :: j, n, m
+    integer              :: j, n, m
 
     n = size(r)
 
@@ -789,7 +849,8 @@ contains
   end subroutine combine_triples
 
   !===================================================================!
-  ! One triple appended, the capacity doubling when it is exhausted.
+  ! Appends one triple, the capacity, sixteen at first, doubling when
+  ! it is exhausted
   !===================================================================!
 
   pure subroutine assign(this, row, column, weight)
@@ -800,7 +861,7 @@ contains
 
     integer , allocatable :: wider(:)
     real(dp), allocatable :: heavier(:)
-    integer :: capacity
+    integer               :: capacity
 
     if (.not. allocated(this % rows)) then
        allocate(this % rows(16), this % columns(16), this % weights(16))
@@ -828,7 +889,7 @@ contains
   end subroutine assign
 
   !===================================================================!
-  ! The triples placed so far, exactly, in the order placed.
+  ! Returns the triples placed so far, exactly, in the order placed
   !===================================================================!
 
   pure subroutine entries(this, rows, columns, weights)

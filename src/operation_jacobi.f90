@@ -1,16 +1,25 @@
 !=====================================================================!
-! The jacobi iteration on the tower.
+! Module that states the Jacobi iteration on the tower.
 !
-! Correct every cell by its own residual divided by its own
-! diagonal, all cells at once,
+! Every cell is corrected by its own residual divided by its own
+! diagonal, all cells at once:
 !
 !      x  <-  x + omega * (rhs - A x) / diag
 !
-! which is the gauss-seidel sweep over one colour class - every cell
-! the same colour, so every correction reads the old state and none
-! reads another correction. That is stated by extension: the sweep,
-! the diagonal, the evaluation of each residual are gauss-seidel's,
-! and this module specifies only which colouring is swept.
+! This is the Gauss-Seidel sweep over one colour class. With every
+! cell the same colour, every correction reads the old state and none
+! reads another correction:
+!
+!   gauss-seidel, two colours              jacobi, one colour
+!
+!   o x o x o    o corrected first;        o o o o o    every cell
+!   x o x o x    x then reads the          o o o o o    corrected at
+!   o x o x o    new o                     o o o o o    once from the
+!                                                        old state
+!
+! The module states this by extension. The sweep, the diagonal and
+! the evaluation of each residual are Gauss-Seidel's; this module
+! specifies only which colouring is swept.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -22,7 +31,13 @@ module operation_jacobi
   implicit none
 
   private
+
   public :: jacobi
+
+  !-------------------------------------------------------------------!
+  ! Type that models the Jacobi iteration: Gauss-Seidel over one
+  ! colour class
+  !-------------------------------------------------------------------!
 
   type, extends(gauss_seidel) :: jacobi
 
@@ -35,26 +50,36 @@ module operation_jacobi
 
 contains
 
+  !===================================================================!
+  ! Returns the name of the iteration
+  !===================================================================!
+
   pure function jacobi_name(this) result(name)
 
-    class(jacobi), intent(in) :: this
+    class(jacobi)   , intent(in)  :: this
     character(len=:), allocatable :: name
 
+    ! Names this, which the name does not read, to keep the compiler
+    ! from warning that the argument is unused
     associate (u1 => this); end associate
     name = 'jacobi'
 
   end function jacobi_name
 
   !===================================================================!
-  ! One colour class: every unknown corrected at once from the state
-  ! the iteration began at. The sweep does not read the coupling; the
-  ! block diagonal of an operator other than a stencil still does.
+  ! Returns one colour class for n unknowns: every unknown corrected at
+  ! once from the state the iteration began at,
+  !
+  !   colours = [1, 1, 1, ..., 1]
+  !
+  ! The sweep does not read the coupling; the block diagonal of an
+  ! operator other than a stencil still does.
   !===================================================================!
 
   subroutine one_colour(this, n, colours)
 
-    class(jacobi), intent(in)  :: this
-    integer      , intent(in)  :: n
+    class(jacobi)       , intent(in)  :: this
+    integer             , intent(in)  :: n
     integer, allocatable, intent(out) :: colours(:)
 
     associate (u1 => this); end associate

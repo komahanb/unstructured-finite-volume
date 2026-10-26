@@ -1,5 +1,6 @@
 !=====================================================================!
-! MESH DERIVATION: the mesh expressed in the eight primes.
+! Module that states the mesh derivation: the mesh expressed in the
+! eight primes.
 !
 ! A mesh file supplies three primitive pieces of data:
 !
@@ -9,7 +10,7 @@
 !      one field      coordinates : vertices -> R^3
 !      labels         physical tag names           (prime: map)
 !
-! Everything else a finite-volume solver reads is DERIVED here by
+! Everything else a finite-volume solver reads is derived here by
 ! relation algebra and geometry, as pure functions of those inputs:
 !
 !      faces          the interior faces are the shared-vertex
@@ -29,26 +30,35 @@
 !                     as edges with tail/head = F2C(f); assembled
 !                     by view_mesh_builder into view_mesh
 !
-! Every routine takes plain arrays and returns plain arrays; no
-! graph type is needed to measure geometry. Incidence tables are
-! padded rectangles with per-entry counts, entries numbered from 1.
+!      C2V ------> faces, F2V ------> F2C ------> C2F
+!       |                  |           |           |
+!       |    coordinates --+--> face centres, area vectors
+!       |                              |           |
+!       +-----------------------> cell volumes, centroids
+!                                      |
+!                       centre-to-centre vectors, deltas, weights
 !
-! Checks that stop the program: a face vertex count outside 2..4,
-! a face incident to no cell, a nonpositive face area, and a negative
-! cell volume (an inside-out cell).
+! Every routine takes plain arrays and returns plain arrays; no graph
+! type is needed to measure geometry. Incidence tables are padded
+! rectangles with per-entry counts, entries numbered from 1.
+!
+! Checks that stop the program: a shared vertex set the element table
+! has no face kind for, a face incident to no cell, a face of zero
+! area, and a negative cell volume (an inside-out cell).
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 
 module view_mesh_geometry
 
-  use util_precision  , only : dp
-  use view_mesh       , only : mesh
-  use relation_binary , only : transpose_padded
+  use util_precision , only : dp
+  use view_mesh      , only : mesh
+  use relation_binary, only : transpose_padded
 
   implicit none
 
   private
+
   public :: derive_faces
   public :: derive_face_cells
   public :: derive_cell_moments
@@ -62,16 +72,27 @@ module view_mesh_geometry
   public :: element_num_vertices
   public :: element_kind, elements, gmsh_kinds, widest_element, face_kind
 
-  !===================================================================!
-  ! THE ELEMENT TABLE: the meaning of each gmsh element number, stated
-  ! once. Each kind stores its dimension, its vertex count, its faces
-  ! - which of its vertices form each face, in the order that makes
-  ! the face normal outward - and the paraview type that renders it.
-  ! Every query about an element kind is a read of this table: the
-  ! loader's widths, the face count the algebraic face total needs,
-  ! the ordering of a shared face, the writer's cell type. A gmsh
-  ! number absent from the table has dimension -1 and no other data.
-  !===================================================================!
+  !-------------------------------------------------------------------!
+  ! Type that models one row of the element table: the meaning of each
+  ! gmsh element number, stated once. Each kind stores its dimension,
+  ! its vertex count, its faces (which of its vertices form each face,
+  ! in the order that makes the face normal outward) and the paraview
+  ! type that renders it. Every query about an element kind is a read
+  ! of this table: the loader's widths, the face count the algebraic
+  ! face total needs, the ordering of a shared face, the writer's cell
+  ! type. A gmsh number absent from the table has dimension -1 and no
+  ! other data.
+  !
+  !      the hexahedron, kind 5          its faces, each outward
+  !
+  !            8 ---------- 7            1 5 8 4     x = 0
+  !           /|           /|            2 3 7 6     x = 1
+  !          5 ---------- 6 |            5 6 7 8     z = 1
+  !          | |          | |            1 4 3 2     z = 0
+  !          | 4 ---------|-3            7 3 4 8     y = 1
+  !          |/           |/             1 2 6 5     y = 0
+  !          1 ---------- 2
+  !-------------------------------------------------------------------!
 
   type :: element_kind
      integer :: dimension    = -1
@@ -112,23 +133,27 @@ module view_mesh_geometry
        ! 15: a 1-node point
        & element_kind(0, 1, 0, 1, [0, 0, 0, 0, 0, 0], reshape([0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0], [4, 6])) ]
 
-
 contains
 
   !===================================================================!
-  ! The face member set and F2V. The file supplies only the tagged
-  ! boundary faces; the interior faces are derived: two cells share
-  ! an interior face when they share 2 vertices in 2d (a segment),
-  ! or 3 or 4 vertices in 3d (a triangle or quadrilateral). The
-  ! total count is computed algebraically before the search,
+  ! Returns the face member set and F2V. The file supplies only the
+  ! tagged boundary faces; the interior faces are derived: two cells
+  ! share an interior face when they share 2 vertices in 2d (a
+  ! segment), or 3 or 4 vertices in 3d (a triangle or quadrilateral).
+  ! The total count is computed algebraically before the search,
   !
   !      num_faces = (sum of per-cell face counts - nbfaces)/2
   !                  + nbfaces,
   !
   ! because every interior face is counted by exactly two cells.
   ! Boundary faces retain the file's order and tags, positions
-  ! 1..nbfaces; interior faces follow in cell-pair order. A shared
-  ! vertex count above 4 stops the program.
+  ! 1..nbfaces; interior faces follow in cell-pair order:
+  !
+  !      faces   [ 1 .. nbfaces | nbfaces+1 .. num_faces ]
+  !                the file's     (i, j) for i < j, in that order
+  !
+  ! A shared vertex set of no face kind the table defines stops the
+  ! program.
   !===================================================================!
 
   impure subroutine derive_faces(spatial_dim, num_points, num_cells, &
@@ -137,29 +162,29 @@ contains
        & bface_types, num_faces, face_vertices, num_face_vertices, &
        & face_tags, face_types)
 
-    integer, intent(in)  :: spatial_dim
-    integer, intent(in)  :: num_points
-    integer, intent(in)  :: num_cells
-    integer, intent(in)  :: cell_vertices(:,:)
-    integer, intent(in)  :: num_cell_vertices(:)
-    integer, intent(in)  :: cell_types(:)
-    integer, intent(in)  :: cell_tags(:)
-    integer, intent(in)  :: nbfaces
-    integer, intent(in)  :: bface_vertices(:,:)
-    integer, intent(in)  :: bnum_face_vertices(:)
-    integer, intent(in)  :: bface_tags(:)
-    integer, intent(in)  :: bface_types(:)
-    integer, intent(out) :: num_faces
+    integer             , intent(in)  :: spatial_dim
+    integer             , intent(in)  :: num_points
+    integer             , intent(in)  :: num_cells
+    integer             , intent(in)  :: cell_vertices(:,:)
+    integer             , intent(in)  :: num_cell_vertices(:)
+    integer             , intent(in)  :: cell_types(:)
+    integer             , intent(in)  :: cell_tags(:)
+    integer             , intent(in)  :: nbfaces
+    integer             , intent(in)  :: bface_vertices(:,:)
+    integer             , intent(in)  :: bnum_face_vertices(:)
+    integer             , intent(in)  :: bface_tags(:)
+    integer             , intent(in)  :: bface_types(:)
+    integer             , intent(out) :: num_faces
     integer, allocatable, intent(out) :: face_vertices(:,:)
     integer, allocatable, intent(out) :: num_face_vertices(:)
     integer, allocatable, intent(out) :: face_tags(:)
     integer, allocatable, intent(out) :: face_types(:)
 
-    integer :: iface, icell, jcell, ivertex
-    integer :: shared_node_count, shared_kind
+    integer              :: iface, icell, jcell, ivertex
+    integer              :: shared_node_count, shared_kind
     integer, allocatable :: shared_vertices(:)
-    integer :: nf
-    character(len=250) :: message
+    integer              :: nf
+    character(len=250)   :: message
 
     num_faces = (sum(element_num_faces(cell_types)) - nbfaces)/2 + nbfaces
 
@@ -173,7 +198,7 @@ contains
     face_tags         = 0
     face_types        = 0
 
-    ! the file's boundary faces first, order and tags preserved
+    ! The file's boundary faces first, order and tags preserved
     do iface = 1, nbfaces
        face_tags(iface)         = bface_tags(iface)
        face_types(iface)        = bface_types(iface)
@@ -182,7 +207,7 @@ contains
             & bface_vertices(1:bnum_face_vertices(iface), iface)
     end do
 
-    ! interior faces from shared vertices, upper-triangle cell pairs
+    ! Interior faces from shared vertices, upper-triangle cell pairs
     nf = nbfaces
 
     do icell = 1, num_cells
@@ -201,9 +226,9 @@ contains
              end if
           end do
 
-          ! a shared vertex is never a face, and in 3d neither is a
-          ! shared segment: a face has as many vertices as the space
-          ! has dimensions, at the least, and is a kind the table defines
+          ! A shared vertex is never a face, and in 3d neither is a
+          ! shared segment: a face has as many vertices as the space has
+          ! dimensions, at the least, and is a kind the table defines
           if (shared_node_count >= spatial_dim) then
              shared_kind = face_kind(spatial_dim - 1, shared_node_count)
              if (shared_kind == 0) then
@@ -219,7 +244,6 @@ contains
                   & shared_vertices(1:shared_node_count))
              face_vertices(1:shared_node_count, nf) = shared_vertices(1:shared_node_count)
           end if
-
 
        end do
 
@@ -240,9 +264,9 @@ contains
   end subroutine derive_faces
 
   !===================================================================!
-  ! F2C: a cell contains a face when the cell contains every one of
-  ! the face's vertices; the candidates are the cells incident to the
-  ! face's first vertex (V2C supplies them), so the search is
+  ! Returns F2C: a cell contains a face when the cell contains every
+  ! one of the face's vertices; the candidates are the cells incident
+  ! to the face's first vertex (V2C supplies them), so the search is
   ! local. At most two cells contain a face; exactly one means a
   ! boundary face. A face with no cell stops the program.
   !===================================================================!
@@ -251,13 +275,13 @@ contains
        & num_face_vertices, cell_vertices, num_cell_vertices, &
        & vertex_cells, num_vertex_cells, face_cells, num_face_cells)
 
-    integer, intent(in)  :: num_faces
-    integer, intent(in)  :: face_vertices(:,:)
-    integer, intent(in)  :: num_face_vertices(:)
-    integer, intent(in)  :: cell_vertices(:,:)
-    integer, intent(in)  :: num_cell_vertices(:)
-    integer, intent(in)  :: vertex_cells(:,:)
-    integer, intent(in)  :: num_vertex_cells(:)
+    integer             , intent(in)  :: num_faces
+    integer             , intent(in)  :: face_vertices(:,:)
+    integer             , intent(in)  :: num_face_vertices(:)
+    integer             , intent(in)  :: cell_vertices(:,:)
+    integer             , intent(in)  :: num_cell_vertices(:)
+    integer             , intent(in)  :: vertex_cells(:,:)
+    integer             , intent(in)  :: num_vertex_cells(:)
     integer, allocatable, intent(out) :: face_cells(:,:)
     integer, allocatable, intent(out) :: num_face_cells(:)
 
@@ -294,19 +318,33 @@ contains
   end subroutine derive_face_cells
 
   !===================================================================!
-  ! Face centres and area vectors. The one measurement of a face is
-  ! its area vector S_f: the corner fan from the first vertex, each
-  ! simplex of d-1 edge vectors taken through the dual and summed,
-  ! over (d-1)!. In 2d that is the segment turned a quarter turn in
-  ! plane, (t_y, -t_x, 0), so |S_f| is the length; in 3d half the
-  ! sum of the fan's cross products, one triangle plus a second for
-  ! a quadrilateral, so |S_f| is the vector area - for a planar face
-  ! the scalar area, for a non-planar quadrilateral the area the
-  ! divergence theorem integrates. Neither case is written out here:
-  ! one formula serves every dimension. The scalar area is its norm;
-  ! the unit normal is S_f over its norm and is computed where it is
-  ! needed. The centre is the vertex mean. A face whose area vector
-  ! vanishes - coincident points, a degenerate fan - stops the program
+  ! Returns the face centres and area vectors. The one measurement of
+  ! a face is its area vector S_f: the corner fan from the first
+  ! vertex, each simplex of d-1 edge vectors taken through the dual and
+  ! summed, over (d-1)!. In 2d that is the segment turned a quarter
+  ! turn in plane, (t_y, -t_x, 0), so |S_f| is the length; in 3d half
+  ! the sum of the fan's cross products, one triangle plus a second for
+  ! a quadrilateral, so |S_f| is the vector area: for a planar face the
+  ! scalar area, for a non-planar quadrilateral the area the divergence
+  ! theorem integrates.
+  !
+  !      2d, a segment               3d, a quadrilateral
+  !                                      4 ----------- 3
+  !      1 ----------> 2                 |          /  |
+  !        t = x2 - x1                   |   B    /    |
+  !                                      |      /   A  |
+  !      S_f = (t_y, -t_x, 0)            |    /        |
+  !                                      1 ----------- 2
+  !
+  !                                  S_f = (A + B) / 2,
+  !                                  A = (x2 - x1) x (x3 - x1)
+  !                                  B = (x3 - x1) x (x4 - x1)
+  !
+  ! Neither case is written out here: one formula serves every
+  ! dimension. The scalar area is its norm; the unit normal is S_f over
+  ! its norm and is computed where it is needed. The centre is each
+  ! simplex's mean weighted by its measure. A face whose area vector
+  ! vanishes (coincident points, a degenerate fan) stops the program
   ! before any division by it.
   !===================================================================!
 
@@ -314,10 +352,10 @@ contains
        & face_vertices, num_face_vertices, face_centres, face_vectors, &
        & face_areas)
 
-    integer , intent(in)  :: spatial_dim
-    real(dp), intent(in)  :: coordinates(:,:)
-    integer , intent(in)  :: face_vertices(:,:)
-    integer , intent(in)  :: num_face_vertices(:)
+    integer              , intent(in)  :: spatial_dim
+    real(dp)             , intent(in)  :: coordinates(:,:)
+    integer              , intent(in)  :: face_vertices(:,:)
+    integer              , intent(in)  :: num_face_vertices(:)
     real(dp), allocatable, intent(out) :: face_centres(:,:)
     real(dp), allocatable, intent(out) :: face_vectors(:,:)
     real(dp), allocatable, intent(out) :: face_areas(:)
@@ -338,10 +376,10 @@ contains
     do iface = 1, num_faces
        associate(facenodes => face_vertices(1:num_face_vertices(iface), iface))
 
-         ! the fan from the first vertex: each simplex's dual summed is
+         ! The fan from the first vertex: each simplex's dual summed is
          ! the area vector, and each simplex's mean weighted by its
-         ! measure is the face's centroid - exact for any flat face,
-         ! the midpoint of a segment, the vertex mean of a triangle
+         ! measure is the face's centroid, exact for any flat face: the
+         ! midpoint of a segment, the vertex mean of a triangle
          s     = 0.0_dp
          mean  = 0.0_dp
          whole = 0.0_dp
@@ -349,7 +387,7 @@ contains
             do k = 1, spatial_dim - 1
                fan(:, k) = coordinates(:, facenodes(i + k - 1)) - coordinates(:, facenodes(1))
             end do
-            simplex_vector   = dual(spatial_dim, fan)
+            simplex_vector = dual(spatial_dim, fan)
             measure = norm2(simplex_vector)
             s       = s + simplex_vector
             mean    = mean + measure * (coordinates(:, facenodes(1)) &
@@ -370,9 +408,9 @@ contains
        end associate
     end do
 
-    ! the lower bound is the build's own real kind's, not one fixed
-    ! kind's: a quadruple-precision build has a far smaller tiny()
-    ! than a double-precision build, and the check scales with it
+    ! The lower bound is the build's own real kind's, not one fixed
+    ! kind's: a quadruple-precision build has a far smaller tiny() than
+    ! a double-precision build, and the check scales with it
     if (minval(face_areas) < 10.0_dp * tiny(1.0_dp)) then
        error stop 'view_mesh_geometry: at least one face has a zero (or near-zero) area vector'
     end if
@@ -380,11 +418,15 @@ contains
   end subroutine derive_face_vectors
 
   !===================================================================!
-  ! The sign that points a face's area vector out of a cell: +1 when
-  ! S_f points from the cell centre toward the face centre, -1 when
-  ! S_f must be reversed. The same interior face has opposite signs
-  ! relative to its two cells, which makes the assembled operator
+  ! Returns the sign that points a face's area vector out of a cell:
+  ! +1 when S_f points from the cell centre toward the face centre, -1
+  ! when S_f must be reversed. The same interior face has opposite
+  ! signs relative to its two cells, which makes the assembled operator
   ! conservative.
+  !
+  !      cell c1           face f           cell c2
+  !        *  --------->   |  S_f  <---------  *
+  !      sign +1: S_f . (x_f - x_c1) > 0      sign -1 for c2
   !===================================================================!
 
   pure real(dp) function outward_sign(face_vector, face_centre, cell_centre)
@@ -398,11 +440,10 @@ contains
 
   end function outward_sign
 
-
   !===================================================================!
-  ! Cell volumes and centroids by the divergence theorem. With S_f
-  ! the face's area vector, x_f its centroid, sigma_cf the sign that
-  ! points S_f out of the cell and d the spatial dimension,
+  ! Returns the cell volumes and centroids by the divergence theorem.
+  ! With S_f the face's area vector, x_f its centroid, sigma_cf the
+  ! sign that points S_f out of the cell and d the spatial dimension,
   !
   !      V   = (1/d) sum_f sigma_cf (S_f . x_f)
   !      x_c = sum_f sigma_cf (S_f . x_f) x_f / ((d + 1) V)
@@ -411,27 +452,28 @@ contains
   ! constant on a flat face: exact for any cell with flat faces. The
   ! centroid is the point about which the first moment vanishes, so a
   ! cell average evaluated there is second order; the vertex mean is
-  ! not, except by symmetry. The sign is evaluated against any
-  ! interior point; the vertex mean is one such point. A negative
-  ! volume is an inside-out cell and stops the program.
+  ! not, except by symmetry. The sign is evaluated against any interior
+  ! point; the vertex mean is one such point. The head of a shifted
+  ! face reads it at its centre less the shift. A negative volume is an
+  ! inside-out cell and stops the program.
   !===================================================================!
 
   pure subroutine derive_cell_moments(spatial_dim, face_centres, face_vectors, &
        & interior, cell_faces, num_cell_faces, cell_volumes, cell_centres, face_cells, shift)
 
-    integer , intent(in)  :: spatial_dim
-    real(dp), intent(in)  :: face_centres(:,:)
-    real(dp), intent(in)  :: face_vectors(:,:)
-    real(dp), intent(in)  :: interior(:,:)
-    integer , intent(in)  :: cell_faces(:,:)
-    integer , intent(in)  :: num_cell_faces(:)
-    real(dp), allocatable, intent(out) :: cell_volumes(:)
-    real(dp), allocatable, intent(out) :: cell_centres(:,:)
-    integer , intent(in), optional :: face_cells(:,:)
-    real(dp), intent(in), optional :: shift(:,:)
+    integer              , intent(in)           :: spatial_dim
+    real(dp)             , intent(in)           :: face_centres(:,:)
+    real(dp)             , intent(in)           :: face_vectors(:,:)
+    real(dp)             , intent(in)           :: interior(:,:)
+    integer              , intent(in)           :: cell_faces(:,:)
+    integer              , intent(in)           :: num_cell_faces(:)
+    real(dp), allocatable, intent(out)          :: cell_volumes(:)
+    real(dp), allocatable, intent(out)          :: cell_centres(:,:)
+    integer              , intent(in), optional :: face_cells(:,:)
+    real(dp)             , intent(in), optional :: shift(:,:)
 
-    integer  :: lcell, lface, gface
-    real(dp) :: flux
+    integer               :: lcell, lface, gface
+    real(dp)              :: flux
     real(dp), allocatable :: centre(:)
 
     allocate(cell_volumes(size(num_cell_faces)))
@@ -443,7 +485,7 @@ contains
        do lface = 1, num_cell_faces(lcell)
           gface  = cell_faces(lface, lcell)
           centre = face_centres(:, gface)
-          ! the head of a shifted face reads it in its own frame
+          ! The head of a shifted face reads it in its own frame
           if (present(shift) .and. present(face_cells)) then
              if (face_cells(2, gface) == lcell) centre = centre - shift(:, gface)
           end if
@@ -463,21 +505,24 @@ contains
   end subroutine derive_cell_moments
 
   !===================================================================!
-  ! The centre-to-centre vector of each face: cell centre to cell
-  ! centre across an interior face, cell centre to face centre on
-  ! a boundary face. This is the segment a two-point gradient
-  ! differences along.
+  ! Returns the centre-to-centre vector of each face: cell centre to
+  ! cell centre across an interior face, the head's displaced by the
+  ! shift; cell centre to face centre on a boundary face. This is the
+  ! segment a two-point gradient differences along.
+  !
+  !      interior    l_f = x_c2 + shift - x_c1
+  !      boundary    l_f = x_f - x_c1
   !===================================================================!
 
   pure subroutine derive_centroidal_vectors(face_cells, num_face_cells, &
        & cell_centres, face_centres, lvec, shift)
 
-    integer , intent(in)  :: face_cells(:,:)
-    integer , intent(in)  :: num_face_cells(:)
-    real(dp), intent(in)  :: cell_centres(:,:)
-    real(dp), intent(in)  :: face_centres(:,:)
-    real(dp), allocatable, intent(out) :: lvec(:,:)
-    real(dp), intent(in), optional :: shift(:,:)
+    integer              , intent(in)           :: face_cells(:,:)
+    integer              , intent(in)           :: num_face_cells(:)
+    real(dp)             , intent(in)           :: cell_centres(:,:)
+    real(dp)             , intent(in)           :: face_centres(:,:)
+    real(dp), allocatable, intent(out)          :: lvec(:,:)
+    real(dp)             , intent(in), optional :: shift(:,:)
 
     integer :: iface
 
@@ -498,18 +543,25 @@ contains
   end subroutine derive_centroidal_vectors
 
   !===================================================================!
-  ! Face deltas: the centre-to-centre vector projected on the unit
-  ! normal, |l_f . S_f| / |S_f|, one per face - the sign of the
+  ! Returns the face deltas: the centre-to-centre vector projected on
+  ! the unit normal, |l_f . S_f| / |S_f|, one per face; the sign of the
   ! normal cancels under the modulus. On a skewed mesh the segment
-  ! crosses its face obliquely, so this normal distance is shorter
-  ! than the segment; it is the denominator of every two-point face
+  ! crosses its face obliquely, so this normal distance is shorter than
+  ! the segment; it is the denominator of every two-point face
   ! gradient.
+  !
+  !         c1 *  - - - - - - - - - -
+  !             \                     |
+  !              \  l_f               |
+  !      ==========\===============   |  delta = |l_f . n|  <=  |l_f|
+  !                  \  face f        |
+  !                    * c2  - - - - -
   !===================================================================!
 
   pure subroutine derive_face_deltas(lvec, face_vectors, face_deltas)
 
-    real(dp), intent(in)  :: lvec(:,:)
-    real(dp), intent(in)  :: face_vectors(:,:)
+    real(dp)             , intent(in)  :: lvec(:,:)
+    real(dp)             , intent(in)  :: face_vectors(:,:)
     real(dp), allocatable, intent(out) :: face_deltas(:)
 
     integer :: f
@@ -524,23 +576,29 @@ contains
   end subroutine derive_face_deltas
 
   !===================================================================!
-  ! Interpolation weights per face: the two cells' fractions by
-  ! inverse distance to the face centre, stored as (w, 1-w). A
-  ! boundary face has one cell, which receives the whole weight.
+  ! Returns the interpolation weights per face: the two cells'
+  ! fractions by inverse distance to the face centre, stored as
+  ! (w, 1-w). A boundary face has one cell, which receives the whole
+  ! weight.
+  !
+  !      c1 *--------- d1 ---------|----- d2 -----* c2
+  !                           face centre
+  !
+  !      w = (1/d1) / (1/d1 + 1/d2) = d2 / (d1 + d2)
   !===================================================================!
 
   pure subroutine derive_face_weights(face_cells, num_face_cells, &
        & cell_centres, face_centres, face_cell_weights, shift)
 
-    integer , intent(in)  :: face_cells(:,:)
-    integer , intent(in)  :: num_face_cells(:)
-    real(dp), intent(in)  :: cell_centres(:,:)
-    real(dp), intent(in)  :: face_centres(:,:)
-    real(dp), allocatable, intent(out) :: face_cell_weights(:,:)
-    real(dp), intent(in), optional :: shift(:,:)
+    integer              , intent(in)           :: face_cells(:,:)
+    integer              , intent(in)           :: num_face_cells(:)
+    real(dp)             , intent(in)           :: cell_centres(:,:)
+    real(dp)             , intent(in)           :: face_centres(:,:)
+    real(dp), allocatable, intent(out)          :: face_cell_weights(:,:)
+    real(dp)             , intent(in), optional :: shift(:,:)
 
-    integer  :: iface
-    real(dp) :: d1, d2, dinv1, dinv2, weight
+    integer               :: iface
+    real(dp)              :: d1, d2, dinv1, dinv2, weight
     real(dp), allocatable :: head(:)
 
     allocate(face_cell_weights(2, size(num_face_cells)))
@@ -567,15 +625,20 @@ contains
 
   end subroutine derive_face_weights
 
-
   !===================================================================!
-  ! The dual of d-1 vectors in d dimensions: the vector normal to all
-  ! of them whose length is the volume they span - the cross product
-  ! at d = 3, the quarter turn (t_y, -t_x) at d = 2, and in general
-  ! the cofactors of the matrix whose columns they are, component i
-  ! being (-1)^(i+1) times the minor with row i struck. One formula
-  ! serves every dimension, so no dimension is written out. The
-  ! vectors have as many rows as the coordinates have; only the
+  ! Returns the dual of d-1 vectors in d dimensions: the vector normal
+  ! to all of them whose length is the volume they span. It is the
+  ! cross product at d = 3, the quarter turn (t_y, -t_x) at d = 2, and
+  ! in general the cofactors of the matrix whose columns they are,
+  ! component i being (-1)^(i+1) times the minor with row i struck:
+  !
+  !      | v_11  v_12 |          s_1 = + det | v_21  v_22 |
+  !      | v_21  v_22 |                      | v_31  v_32 |
+  !      | v_31  v_32 |          s_2 = - det of rows 1 and 3
+  !                              s_3 = + det of rows 1 and 2
+  !
+  ! One formula serves every dimension, so no dimension is written out.
+  ! The vectors have as many rows as the coordinates have; only the
   ! first d rows are read, and the components past d are zero.
   !===================================================================!
 
@@ -583,7 +646,7 @@ contains
 
     integer , intent(in) :: d
     real(dp), intent(in) :: vectors(:,:)
-    real(dp) :: s(size(vectors, 1))
+    real(dp)             :: s(size(vectors, 1))
 
     real(dp) :: minor(d - 1, d - 1)
     integer  :: i, k
@@ -597,15 +660,15 @@ contains
   end function dual
 
   !===================================================================!
-  ! The determinant, by expansion along the first row. The minors
-  ! here are at most (d-1) square, so the expansion's operation count
-  ! is small and a factorisation is not warranted.
+  ! Returns the determinant, by expansion along the first row. The
+  ! minors here are at most (d-1) square, so the expansion's operation
+  ! count is small and a factorisation is not warranted.
   !===================================================================!
 
   pure recursive function determinant(a) result(det)
 
     real(dp), intent(in) :: a(:,:)
-    real(dp) :: det
+    real(dp)             :: det
 
     integer :: n, j, k
 
@@ -624,6 +687,10 @@ contains
 
   end function determinant
 
+  !===================================================================!
+  ! Returns n!
+  !===================================================================!
+
   pure integer function factorial(n)
 
     integer, intent(in) :: n
@@ -638,34 +705,35 @@ contains
   end function factorial
 
   !===================================================================!
-  ! THE MESH FROM ITS INCIDENCES. Every measurement a mesh stores is
-  ! a function of the coordinates and three relations - each cell's
-  ! vertices, each face's vertices, each face's cells - and of nothing
-  ! else: not of element types, not of how the faces were found. So
-  ! this is the one terminal step of every mesh construction: the gmsh
-  ! builder reaches it after deriving its faces, the spatial level
-  ! after enumerating its own, and the measurements are computed once.
+  ! Returns the mesh from its incidences. Every measurement a mesh
+  ! stores is a function of the coordinates and three relations, each
+  ! cell's vertices, each face's vertices, each face's cells, and of
+  ! nothing else: not of element types, not of how the faces were
+  ! found. So this is the one terminal step of every mesh construction:
+  ! the gmsh builder reaches it after deriving its faces, the spatial
+  ! level after enumerating its own, and the measurements are computed
+  ! once.
   !
-  ! The coordinates may have more rows than the space has dimensions
-  ! (a two-dimensional mesh read from a three-dimensional file); the
-  ! mesh retains the first spatial_dim of them. A face with one cell
-  ! is a boundary face, an edge without a head, and stores the tag
-  ! given; the unit normal points out of the tail cell; the weight is
-  ! the tail cell's interpolation fraction.
+  ! The coordinates may have more rows than the space has dimensions (a
+  ! two-dimensional mesh read from a three-dimensional file); the mesh
+  ! retains the first spatial_dim of them. A face with one cell is a
+  ! boundary face, an edge without a head, and stores the tag given;
+  ! the unit normal points out of the tail cell; the weight is the tail
+  ! cell's interpolation fraction.
   !===================================================================!
 
   impure type(mesh) function mesh_from_incidence(spatial_dim, coordinates, &
        & cell_vertices, num_cell_vertices, face_vertices, num_face_vertices, &
        & face_cells, num_face_cells, etags, face_shift, cell_types) result(m)
 
-    integer         , intent(in) :: spatial_dim
-    real(dp)        , intent(in) :: coordinates(:,:)
-    integer         , intent(in) :: cell_vertices(:,:)
-    integer         , intent(in) :: num_cell_vertices(:)
-    integer         , intent(in) :: face_vertices(:,:)
-    integer         , intent(in) :: num_face_vertices(:)
-    integer         , intent(in) :: face_cells(:,:)
-    integer         , intent(in) :: num_face_cells(:)
+    integer         , intent(in)           :: spatial_dim
+    real(dp)        , intent(in)           :: coordinates(:,:)
+    integer         , intent(in)           :: cell_vertices(:,:)
+    integer         , intent(in)           :: num_cell_vertices(:)
+    integer         , intent(in)           :: face_vertices(:,:)
+    integer         , intent(in)           :: num_face_vertices(:)
+    integer         , intent(in)           :: face_cells(:,:)
+    integer         , intent(in)           :: num_face_cells(:)
     character(len=*), intent(in), optional :: etags(:)
     real(dp)        , intent(in), optional :: face_shift(:,:)
     integer         , intent(in), optional :: cell_types(:)
@@ -675,8 +743,8 @@ contains
     real(dp), allocatable :: interior(:,:), cell_centres(:,:), face_centres(:,:)
     real(dp), allocatable :: face_vectors(:,:), face_areas(:), cell_volumes(:), lvec(:,:)
     real(dp), allocatable :: face_deltas(:), face_cell_weights(:,:), normals(:), weights(:)
-    integer :: num_cells, num_faces, c, f, d
-    character(len=250) :: message
+    integer               :: num_cells, num_faces, c, f, d
+    character(len=250)    :: message
 
     d         = spatial_dim
     num_cells = size(num_cell_vertices)
@@ -693,17 +761,17 @@ contains
     call derive_face_vectors(d, coordinates, face_vertices, num_face_vertices, &
          & face_centres, face_vectors, face_areas)
 
-    ! an interior point of each cell for the outward signs: the mean
-    ! of its vertices, inside any convex cell
+    ! An interior point of each cell for the outward signs: the mean of
+    ! its vertices, inside any convex cell
     allocate(interior(size(coordinates, 1), num_cells))
     do c = 1, num_cells
        interior(:, c) = sum(coordinates(:, cell_vertices(1:num_cell_vertices(c), c)), dim=2) &
             & / real(num_cell_vertices(c), dp)
     end do
 
-    ! a face's geometry is stated on its tail's side; its head is at
-    ! its own centre plus the shift, and reads the face at the face's
-    ! centre less the shift
+    ! A face's geometry is stated on its tail's side; its head is at its
+    ! own centre plus the shift, and reads the face at the face's centre
+    ! less the shift
     allocate(shift(size(coordinates, 1), num_faces), source=0.0_dp)
     if (present(face_shift)) then
        if (size(face_shift, 1) /= d .or. size(face_shift, 2) /= num_faces) then
@@ -744,7 +812,7 @@ contains
          & dimension    = d, &
          & shifts       = reshape(shift(1:d, :), [d * num_faces]))
 
-    ! the corners are stored when the element type of each cell is
+    ! The corners are stored when the element type of each cell is
     ! given, the drawn form of the mesh
     if (present(cell_types)) then
        if (size(cell_types) /= num_cells) then
@@ -762,8 +830,7 @@ contains
   end function mesh_from_incidence
 
   !===================================================================!
-  ! Three elemental reads of the table; a number outside the table
-  ! reads as dimension -1, zero vertices, zero faces.
+  ! Returns an element's dimension, -1 for a number outside the table
   !===================================================================!
 
   pure elemental integer function element_dimension(elem_type) result (dim)
@@ -775,6 +842,11 @@ contains
 
   end function element_dimension
 
+  !===================================================================!
+  ! Returns an element's vertex count, zero for a number outside the
+  ! table
+  !===================================================================!
+
   pure elemental integer function element_num_vertices(elem_type) result (num_vertices)
 
     integer, intent(in) :: elem_type
@@ -783,6 +855,11 @@ contains
     if (elem_type >= 1 .and. elem_type <= gmsh_kinds) num_vertices = elements(elem_type) % num_vertices
 
   end function element_num_vertices
+
+  !===================================================================!
+  ! Returns an element's face count, zero for a number outside the
+  ! table
+  !===================================================================!
 
   pure elemental integer function element_num_faces(elem_type) result (num_faces)
 
@@ -794,10 +871,8 @@ contains
   end function element_num_faces
 
   !===================================================================!
-  ! The most vertices any element of a dimension has - the width a
-  ! padded list of such elements needs - and the kind of a face of a
-  ! dimension with this many vertices, or zero where the table
-  ! defines none.
+  ! Returns the most vertices any element of a dimension has: the width
+  ! a padded list of such elements needs
   !===================================================================!
 
   pure integer function widest_element(dimension)
@@ -807,6 +882,11 @@ contains
     widest_element = max(0, maxval(elements % num_vertices, mask=elements % dimension == dimension))
 
   end function widest_element
+
+  !===================================================================!
+  ! Returns the kind of a face of a dimension with this many vertices,
+  ! or zero where the table defines none
+  !===================================================================!
 
   pure integer function face_kind(dimension, num_vertices)
 
@@ -825,11 +905,11 @@ contains
   end function face_kind
 
   !===================================================================!
-  ! The vertices of a face a cell shares, put in the order the table
-  ! gives that face of that cell, which is the order that orients its
-  ! area vector outward. The face is found among the cell's faces by
-  ! its vertex set; a vertex set that is no face of the cell stops the
-  ! program, because the mesh is then nonconforming.
+  ! Orders the vertices of a face a cell shares as the table gives that
+  ! face of that cell, which is the order that orients its area vector
+  ! outward. The face is found among the cell's faces by its vertex
+  ! set; a vertex set that is no face of the cell stops the program,
+  ! because the mesh is then nonconforming.
   !===================================================================!
 
   impure subroutine order_face_vertices(cell_type, cell_vertices, face_vertices_unordered)
@@ -839,7 +919,7 @@ contains
     integer, intent(inout) :: face_vertices_unordered(:)
 
     type(element_kind) :: cell_shape
-    integer :: iface, ivertex, n, match_count
+    integer            :: iface, ivertex, n, match_count
     character(len=250) :: message
 
     if (element_num_faces(cell_type) == 0) then

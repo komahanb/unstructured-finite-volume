@@ -1,50 +1,52 @@
 !=====================================================================!
-! A number together with every mixed derivative of it along n given
-! directions.
+! Module that states a number together with every mixed derivative of
+! it along n given directions.
 !
-! A quantity built from the four arithmetic operations alone stores
-! its derivatives beside its value if each operation is given the
-! rule for them. That is what this type stores: one coefficient per
-! subset of the n directions, 2^n in all, the empty subset storing the
-! value and the full subset storing the n-th mixed partial. Nothing is
-! perturbed and nothing is truncated - each coefficient is the exact
-! derivative.
+! A quantity built from the four arithmetic operations alone stores its
+! derivatives beside its value if each operation is given the rule for
+! them. That is what this type stores: one coefficient per subset of
+! the n directions, 2^n in all, the empty subset storing the value and
+! the full subset storing the n-th mixed partial. Nothing is perturbed
+! and nothing is truncated: each coefficient is the exact derivative.
 !
-!             THE SUBSET INDEX
+! The subset index. A subset is a bit mask, and the mask m is stored at
+! index m + 1. Allocatable assignment does not preserve a zero lower
+! bound in the compilers this is built with, so the masks are stored
+! from one and the two are never confused.
 !
-! A subset is a bit mask, and the mask m is stored at index m + 1.
-! Allocatable assignment does not preserve a zero lower bound in the
-! compilers this is built with, so the masks are stored from one and
-! the two are never confused.
+!      n = 2     mask m    subset     stored at    coefficient
+!                00        { }        1            a
+!                01        {1}        2            d a / d s_1
+!                10        {2}        3            d a / d s_2
+!                11        {1, 2}     4            d^2 a / d s_1 d s_2
 !
-!             SYMMETRIC SEEDING
-!
-! Set every subset of the same size to the same number and the type
-! computes a Taylor composition rather than a mixed partial: seed the
-! subsets of size k with the k-th derivative of a quantity along one
-! parameter, and the coefficient of the full subset comes out as the
-! n-th derivative of whatever was built from it. That is the product
-! rule read on subsets - splitting a set of size k into two parts
-! counts each split once, which is the binomial coefficient the
-! Leibniz rule requires - so nothing here changes; only the
+! Symmetric seeding. Set every subset of the same size to the same
+! number and the type computes a Taylor composition rather than a mixed
+! partial: seed the subsets of size k with the k-th derivative of a
+! quantity along one parameter, and the coefficient of the full subset
+! comes out as the n-th derivative of whatever was built from it. That
+! is the product rule read on subsets: splitting a set of size k into
+! two parts counts each split once, which is the binomial coefficient
+! the Leibniz rule requires. So nothing here changes; only the
 ! interpretation of the numbers does.
+!
+!      c_{12} = a b_{12} + a_1 b_2 + a_2 b_1 + a_{12} b             subsets
+!      c''    = a b''    + 2 a' b'           + a'' b               symmetric
 !
 ! The convention is derivatives, not derivatives over factorials: a
 ! subset of size k stores the k-th derivative itself.
 !
-!             SUBSET SEEDING
+! Subset seeding. Set the coefficient of one subset to one number. A
+! quantity whose total derivative along every subset of n design
+! directions is known (the state of a system solved for the designs,
+! whose tangents are those derivatives) is seeded subset by subset, and
+! the coefficient of a subset of anything built from the quantity is
+! then the total derivative along that subset: the sum over the set
+! partitions of the subset that the chain rule requires is what the
+! product rule on subsets computes, so no partition is listed.
+! Symmetric seeding is the case of one direction repeated.
 !
-! Set the coefficient of one subset to one number. A quantity whose
-! total derivative along every subset of n design directions is known
-! - the state of a system solved for the designs, whose tangents are
-! those derivatives - is seeded subset by subset, and the coefficient
-! of a subset of anything built from the quantity is then the total derivative
-! along that subset: the sum over the set partitions of the subset
-! that the chain rule requires is what the product rule on subsets
-! computes, so no partition is listed. Symmetric seeding is the case
-! of one direction repeated.
-!
-!             THE FOUR RULES
+! The four rules:
 !
 !      sum        coefficient by coefficient
 !      product    the coefficient of a subset m is the sum, over the
@@ -55,12 +57,14 @@
 !      power      repeated product, and for a negative exponent the
 !                 reciprocal of the positive power
 !
-!             COMPOSITION WITH A FUNCTION
-!
-! For g = f(a) the coefficient of a subset m is the sum over the set
-! partitions of m into blocks B_1 .. B_p of
+! Composition with a function. For g = f(a) the coefficient of a
+! subset m is the sum over the set partitions of m into blocks
+! B_1 .. B_p of
 !
 !      f^(p)(a_0)  a_{B_1} ... a_{B_p}
+!
+!      g_{12} = f'(a) a_{12} + f''(a) a_1 a_2          the partitions
+!                                                      {12} and {1}{2}
 !
 ! computed without listing partitions. With i the lowest element of m
 ! and G(k, m) the same sum with f^(p+k) in place of f^(p), the block
@@ -72,43 +76,41 @@
 !
 ! filled in increasing m, for k up to n - |m|; the coefficient of g on
 ! m is G(0, m). Each entry is a subset sum, so the cost is the 3^n
-! operations of a product. A function supplies its derivatives at the value of a
-! for k = 0 .. n: exp is its own; sin and cos cycle through four; log
-! and a real power recur by one division of the value each, so no
-! factorial is formed. sqrt is the power one half, and an integer
+! operations of a product. A function supplies its derivatives at the
+! value of a for k = 0 .. n: exp is its own; sin and cos cycle through
+! four; log and a real power recur by one division of the value each,
+! so no factorial is formed. sqrt is the power one half, and an integer
 ! power stays a repeated product, which a zero value admits.
 !
 ! A product costs up to 3^n operations and a quotient the same, which
-! is what a mixed partial of degree n costs; the storage is 2^n
-! numbers per quantity. The degree is bounded by the width of mask a
-! default integer can store, which max_subset_width reports.
+! is what a mixed partial of degree n costs; the storage is 2^n numbers
+! per quantity. The degree is bounded by the width of mask a default
+! integer can store, which max_subset_width reports.
 !
-!             THE RULES ON THE COEFFICIENTS
+! The rules on the coefficients. Each rule is also stated on arrays of
+! the 2^n coefficients, indexed by mask from zero (product_terms,
+! quotient_terms and the others), so that an evaluation over many
+! quantities stores their coefficients in one array and allocates none
+! per operation. The operators of the type are these rules on its own
+! coefficients, so the two forms perform the same arithmetic in the
+! same order.
 !
-! Each rule is also stated on arrays of the 2^n coefficients, indexed
-! by mask from zero (product_terms, quotient_terms and the others), so
-! that an evaluation over many quantities stores their coefficients
-! in one array and allocates none per operation. The operators of the
-! type are these rules on its own coefficients, so the two forms
-! perform the same arithmetic in the same order.
-!
-!             WHAT IS REJECTED
-!
-! A quotient whose divisor has a zero value, and a direction index
-! outside one to n. log, sqrt and a real power at a value that is not
-! positive, and a derivative table shorter than n + 1. Each stops the
-! program: there is no derivative to report.
+! What is rejected: a quotient whose divisor has a zero value, and a
+! direction index outside one to n; log, sqrt and a real power at a
+! value that is not positive, and a derivative table shorter than
+! n + 1. Each stops the program: there is no derivative to report.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 
 module util_derivative_terms
 
-  use util_precision  , only : dp
+  use util_precision, only : dp
 
   implicit none
 
   private
+
   public :: derivative_terms, value, mixed_partial, coefficient, max_subset_width, symmetric_terms
   public :: extend_directions, partial
   public :: integer_power, composed, leibniz_parts, inner_product
@@ -116,6 +118,12 @@ module util_derivative_terms
   public :: sine_terms, cosine_terms, exponential_terms, logarithm_terms
   public :: operator(+), operator(-), operator(*), operator(/), operator(**)
   public :: sin, cos, exp, log, sqrt
+
+  !-------------------------------------------------------------------!
+  ! Type that models a quantity and its mixed derivatives: the count of
+  ! directions, and one coefficient per subset of them, terms(m + 1)
+  ! the coefficient of the mask m
+  !-------------------------------------------------------------------!
 
   type :: derivative_terms
 
@@ -183,8 +191,9 @@ module util_derivative_terms
 contains
 
   !===================================================================!
-  ! The widest mask a default integer indexes: the bit width less the
-  ! sign bit and the bit that 2 raised to the width would occupy.
+  ! Returns the widest mask a default integer indexes: the bit width
+  ! less the sign bit and the bit that 2 raised to the width would
+  ! occupy, 30 for a 32-bit integer
   !===================================================================!
 
   pure integer function max_subset_width()
@@ -194,15 +203,15 @@ contains
   end function max_subset_width
 
   !===================================================================!
-  ! A constant: its value, and zero in every derivative. A negative
-  ! count of directions, or one past the mask width, stops the
+  ! Creates a constant: its value, and zero in every derivative. A
+  ! negative count of directions, or one past the mask width, stops the
   ! program.
   !===================================================================!
 
   pure function create_constant(x, num_directions) result(this)
 
-    real(dp), intent(in) :: x
-    integer , intent(in) :: num_directions
+    real(dp), intent(in)   :: x
+    integer , intent(in)   :: num_directions
     type(derivative_terms) :: this
 
     if (num_directions < 0 .or. num_directions > max_subset_width()) then
@@ -216,25 +225,29 @@ contains
 
   end function create_constant
 
+  !===================================================================!
+  ! Creates a constant over the directions of another quantity
+  !===================================================================!
+
   pure function create_like(x, other) result(this)
 
     real(dp)              , intent(in) :: x
     type(derivative_terms), intent(in) :: other
-    type(derivative_terms) :: this
+    type(derivative_terms)             :: this
 
     this = create_constant(x, other % directions)
 
   end function create_like
 
   !===================================================================!
-  ! A quantity from its coefficients, one per subset, indexed by the
-  ! mask from zero. A count that is not a power of two within the
-  ! mask width names no set of directions and stops the program.
+  ! Creates a quantity from its coefficients, one per subset, indexed
+  ! by the mask from zero. A count that is not a power of two within
+  ! the mask width names no set of directions and stops the program.
   !===================================================================!
 
   pure function create_from_coefficients(c) result(this)
 
-    real(dp), intent(in) :: c(0:)
+    real(dp), intent(in)   :: c(0:)
     type(derivative_terms) :: this
 
     integer :: n
@@ -252,18 +265,18 @@ contains
   end function create_from_coefficients
 
   !===================================================================!
-  ! The same quantity over more directions, the added ones being the
-  ! highest: a subset of the old directions has the same mask, so the
-  ! coefficients are copied in place and every subset that contains
-  ! an added direction stores zero. A count below the present one
-  ! stops the program: a direction is not discarded.
+  ! Returns the same quantity over more directions, the added ones
+  ! being the highest: a subset of the old directions has the same
+  ! mask, so the coefficients are copied in place and every subset that
+  ! contains an added direction stores zero. A count below the present
+  ! one stops the program: a direction is not discarded.
   !===================================================================!
 
   pure function extend_directions(x, num_directions) result(this)
 
     type(derivative_terms), intent(in) :: x
     integer               , intent(in) :: num_directions
-    type(derivative_terms) :: this
+    type(derivative_terms)             :: this
 
     if (num_directions < x % directions) then
        error stop 'util_derivative_terms: extend_directions was called with num_directions &
@@ -274,7 +287,10 @@ contains
 
   end function extend_directions
 
-  ! the same, into the coefficients c over the directions of c
+  !===================================================================!
+  ! Returns the same, into the coefficients c over the directions of c
+  !===================================================================!
+
   pure subroutine extended_terms(x, c)
 
     type(derivative_terms), intent(in)  :: x
@@ -290,17 +306,20 @@ contains
   end subroutine extended_terms
 
   !===================================================================!
-  ! The derivative along direction i, as a quantity over the other
-  ! directions: the coefficient of a subset m of those is the
+  ! Returns the derivative along direction i, as a quantity over the
+  ! other directions: the coefficient of a subset m of those is the
   ! coefficient of m with i added. A direction outside those declared
   ! stops the program.
+  !
+  !      n = 2, i = 1      new mask    0      1
+  !                        old mask    01     11      i's bit inserted
   !===================================================================!
 
   pure function partial(x, i) result(this)
 
     type(derivative_terms), intent(in) :: x
     integer               , intent(in) :: i
-    type(derivative_terms) :: this
+    type(derivative_terms)             :: this
 
     integer :: m, low, high, bit
 
@@ -310,13 +329,17 @@ contains
     this = create_constant(0.0_dp, x % directions - 1)
     bit = 2**(i - 1)
     do m = 0, size(this % terms) - 1
-       ! the mask over the remaining directions, with i's bit inserted
+       ! The mask over the remaining directions, with i's bit inserted
        low  = iand(m, bit - 1)
        high = m - low
        this % terms(m + 1) = x % terms(low + 2 * high + bit + 1)
     end do
 
   end function partial
+
+  !===================================================================!
+  ! Returns the number of directions
+  !===================================================================!
 
   pure integer function num_directions(this)
 
@@ -327,8 +350,8 @@ contains
   end function num_directions
 
   !===================================================================!
-  ! The derivative of this quantity along direction i, which is the
-  ! coefficient of the subset holding i alone. An index outside one
+  ! Sets the derivative of this quantity along direction i, which is
+  ! the coefficient of the subset holding i alone. An index outside one
   ! to n stops the program.
   !===================================================================!
 
@@ -347,9 +370,9 @@ contains
   end subroutine set_direction
 
   !===================================================================!
-  ! Seed every subset of one size with one number. An order below
-  ! zero or past the directions declared stops the program: there is
-  ! no such coefficient to set.
+  ! Seeds every subset of one size with one number. An order below zero
+  ! or past the directions declared stops the program: there is no such
+  ! coefficient to set.
   !===================================================================!
 
   pure subroutine set_symmetric(this, order, x)
@@ -371,7 +394,7 @@ contains
   end subroutine set_symmetric
 
   !===================================================================!
-  ! Seed the coefficient of the subset with mask m: the total
+  ! Seeds the coefficient of the subset with mask m: the total
   ! derivative along the directions m contains. A mask outside 1 to
   ! 2^n - 1 stops the program: the value is not a derivative, and no
   ! other subset exists.
@@ -393,21 +416,20 @@ contains
   end subroutine set_coefficient
 
   !===================================================================!
-  ! The quantity whose k-th derivative along one parameter is d(k),
-  ! k = 1 .. size(d), seeded on every subset of the first size(d)
+  ! Returns the quantity whose k-th derivative along one parameter is
+  ! d(k), k = 1 .. size(d), seeded on every subset of the first size(d)
   ! directions of the width given, symmetric seeding over the
   ! parameter; every subset containing a later direction stores zero,
-  ! so that a later direction can be seeded on one quantity alone as
-  ! a perturbation whose mixed coefficients with the parameter's
-  ! subsets are the derivatives along the parameter of the partial
-  ! derivative in that quantity. More derivatives than directions
-  ! stops the program.
+  ! so that a later direction can be seeded on one quantity alone as a
+  ! perturbation whose mixed coefficients with the parameter's subsets
+  ! are the derivatives along the parameter of the partial derivative in
+  ! that quantity. More derivatives than directions stops the program.
   !===================================================================!
 
   pure function symmetric_terms(x, d, width) result(this)
 
-    real(dp), intent(in) :: x, d(:)
-    integer , intent(in) :: width
+    real(dp), intent(in)   :: x, d(:)
+    integer , intent(in)   :: width
     type(derivative_terms) :: this
 
     integer :: m
@@ -422,6 +444,10 @@ contains
 
   end function symmetric_terms
 
+  !===================================================================!
+  ! Returns the value, the coefficient of the empty subset
+  !===================================================================!
+
   pure real(dp) function value(x)
 
     type(derivative_terms), intent(in) :: x
@@ -429,6 +455,11 @@ contains
     value = x % terms(1)
 
   end function value
+
+  !===================================================================!
+  ! Returns the mixed partial along every direction, the coefficient of
+  ! the full subset
+  !===================================================================!
 
   pure real(dp) function mixed_partial(x)
 
@@ -439,9 +470,9 @@ contains
   end function mixed_partial
 
   !===================================================================!
-  ! The coefficient of the subset with mask m: the mixed partial along
-  ! the directions m contains. A mask outside 0 to 2^n - 1 stops the
-  ! program.
+  ! Returns the coefficient of the subset with mask m: the mixed
+  ! partial along the directions m contains. A mask outside 0 to
+  ! 2^n - 1 stops the program.
   !===================================================================!
 
   pure real(dp) function coefficient(x, m)
@@ -458,72 +489,100 @@ contains
   end function coefficient
 
   !===================================================================!
-  ! THE FOUR RULES.
+  ! Returns the sum, coefficient by coefficient, the first of the four
+  ! rules
   !===================================================================!
 
   pure function terms_plus(a, b) result(c)
 
     type(derivative_terms), intent(in) :: a, b
-    type(derivative_terms) :: c
+    type(derivative_terms)             :: c
 
     c % directions = a % directions
     c % terms = a % terms + b % terms
 
   end function terms_plus
 
+  !===================================================================!
+  ! Returns the difference, coefficient by coefficient
+  !===================================================================!
+
   pure function terms_minus(a, b) result(c)
 
     type(derivative_terms), intent(in) :: a, b
-    type(derivative_terms) :: c
+    type(derivative_terms)             :: c
 
     c % directions = a % directions
     c % terms = a % terms - b % terms
 
   end function terms_minus
 
+  !===================================================================!
+  ! Returns the negation, coefficient by coefficient
+  !===================================================================!
+
   pure function terms_negated(a) result(c)
 
     type(derivative_terms), intent(in) :: a
-    type(derivative_terms) :: c
+    type(derivative_terms)             :: c
 
     c % directions = a % directions
     c % terms = -a % terms
 
   end function terms_negated
 
+  !===================================================================!
+  ! Returns a real number times a quantity, coefficient by coefficient
+  !===================================================================!
+
   pure function real_times_terms(x, a) result(c)
 
     real(dp)              , intent(in) :: x
     type(derivative_terms), intent(in) :: a
-    type(derivative_terms) :: c
+    type(derivative_terms)             :: c
 
     c % directions = a % directions
     c % terms = x * a % terms
 
   end function real_times_terms
 
+  !===================================================================!
+  ! Returns the product of two quantities
+  !===================================================================!
+
   pure function terms_times(a, b) result(c)
 
     type(derivative_terms), intent(in) :: a, b
-    type(derivative_terms) :: c
+    type(derivative_terms)             :: c
 
     c = create_like(0.0_dp, a)
     call product_terms(a % terms, b % terms, c % terms)
 
   end function terms_times
 
+  !===================================================================!
+  ! Returns the quotient of two quantities
+  !===================================================================!
+
   pure function terms_over(a, b) result(r)
 
     type(derivative_terms), intent(in) :: a, b
-    type(derivative_terms) :: r
+    type(derivative_terms)             :: r
 
     r = create_like(0.0_dp, a)
     call quotient_terms(a % terms, b % terms, r % terms)
 
   end function terms_over
 
-  ! the product on the coefficients: c(m) the sum over the splittings
-  ! of m of a on one part times b on the other
+  !===================================================================!
+  ! Returns the product on the coefficients: c(m) the sum over the
+  ! splittings of m of a on one part times b on the other. The parts are
+  ! the submasks s of m, visited as s = m, (s - 1) and m, ..., 0:
+  !
+  !      m = 11      s = 11, 10, 01, 00
+  !      c_11 = a_11 b_00 + a_10 b_01 + a_01 b_10 + a_00 b_11
+  !===================================================================!
+
   pure subroutine product_terms(a, b, c)
 
     real(dp), intent(in)  :: a(0:), b(0:)
@@ -543,8 +602,15 @@ contains
 
   end subroutine product_terms
 
-  ! the quotient on the coefficients: r b = a solved subset by subset
-  ! in increasing order
+  !===================================================================!
+  ! Returns the quotient on the coefficients: r b = a solved subset by
+  ! subset in increasing order,
+  !
+  !      r_m = (a_m - sum over nonempty s within m of b_s r_(m - s)) / b_0
+  !
+  ! every r on the right of a smaller mask, so already solved
+  !===================================================================!
+
   pure subroutine quotient_terms(a, b, r)
 
     real(dp), intent(in)  :: a(0:), b(0:)
@@ -570,18 +636,18 @@ contains
   end subroutine quotient_terms
 
   !===================================================================!
-  ! THE PRODUCT RULE ON THE FULL SUBSET, READ BY THE SIZE OF ONE
-  ! FACTOR'S PART: parts(k) is the sum over the subsets S of size k
+  ! Returns the product rule on the full subset, read by the size of
+  ! one factor's part: parts(k) is the sum over the subsets S of size k
   ! of a_S b_(full - S), so the parts add to the n-th mixed partial of
-  ! a b. Under symmetric seeding parts(k) is C(n, k) a^(k) b^(n-k),
-  ! the k-th term of Leibniz. Factors over different counts of
-  ! directions stop the program.
+  ! a b. Under symmetric seeding parts(k) is C(n, k) a^(k) b^(n-k), the
+  ! k-th term of Leibniz. Factors over different counts of directions
+  ! stop the program.
   !===================================================================!
 
   pure function leibniz_parts(a, b) result(parts)
 
     type(derivative_terms), intent(in) :: a, b
-    real(dp) :: parts(0:a % directions)
+    real(dp)                           :: parts(0:a % directions)
 
     integer :: full, s
 
@@ -599,9 +665,9 @@ contains
   end function leibniz_parts
 
   !===================================================================!
-  ! THE INNER PRODUCT sum_i a(i) b(i), the entries an active mask
-  ! excludes taken as zero. The same reduction real arrays take under
-  ! dot_product, over the terms this module's own product rule
+  ! Returns the inner product sum_i a(i) b(i), the entries an active
+  ! mask excludes taken as zero: the same reduction real arrays take
+  ! under dot_product, over the terms this module's own product rule
   ! multiplies. An active mask shorter than the factors stops the
   ! program.
   !===================================================================!
@@ -609,8 +675,8 @@ contains
   pure function inner_product(a, b, active) result(c)
 
     type(derivative_terms), intent(in)           :: a(:), b(:)
-    logical                , intent(in), optional :: active(:)
-    type(derivative_terms) :: c
+    logical               , intent(in), optional :: active(:)
+    type(derivative_terms)                       :: c
 
     integer :: i
 
@@ -636,21 +702,26 @@ contains
   end function inner_product
 
   !===================================================================!
-  ! x raised to an integer exponent, of either sign. A zero exponent
-  ! is one, whatever the value; a negative exponent divides, and a
-  ! zero value then stops the program inside the quotient.
+  ! Returns x raised to an integer exponent, of either sign. A zero
+  ! exponent is one, whatever the value; a negative exponent divides,
+  ! and a zero value then stops the program inside the quotient.
   !===================================================================!
 
   pure function integer_power(x, n) result(p)
 
     type(derivative_terms), intent(in) :: x
     integer               , intent(in) :: n
-    type(derivative_terms) :: p
+    type(derivative_terms)             :: p
 
     p = create_like(0.0_dp, x)
     call integer_power_terms(x % terms, n, p % terms)
 
   end function integer_power
+
+  !===================================================================!
+  ! Returns the integer power on the coefficients: |n| products from
+  ! one, then the reciprocal for a negative n
+  !===================================================================!
 
   pure subroutine integer_power_terms(x, n, p)
 
@@ -659,7 +730,7 @@ contains
     real(dp), intent(out) :: p(0:)
 
     real(dp) :: previous(0:size(x) - 1), unit(0:size(x) - 1)
-    integer :: i
+    integer  :: i
 
     unit    = 0.0_dp
     unit(0) = 1.0_dp
@@ -675,32 +746,42 @@ contains
 
   end subroutine integer_power_terms
 
+  !===================================================================!
+  ! Returns x ** n for an integer n
+  !===================================================================!
+
   pure function terms_to_integer(x, n) result(p)
 
     type(derivative_terms), intent(in) :: x
     integer               , intent(in) :: n
-    type(derivative_terms) :: p
+    type(derivative_terms)             :: p
 
     p = integer_power(x, n)
 
   end function terms_to_integer
 
   !===================================================================!
-  ! COMPOSITION WITH A FUNCTION: g = f(a) from the derivatives f(0:n)
-  ! of f at the value of a. A table shorter than n + 1 stops the
-  ! program: the full subset has no derivative to read.
+  ! Returns the composition with a function: g = f(a) from the
+  ! derivatives f(0:n) of f at the value of a. A table shorter than
+  ! n + 1 stops the program: the full subset has no derivative to read.
   !===================================================================!
 
   pure function composed(a, f) result(g)
 
     type(derivative_terms), intent(in) :: a
     real(dp)              , intent(in) :: f(0:)
-    type(derivative_terms) :: g
+    type(derivative_terms)             :: g
 
     g = create_like(0.0_dp, a)
     call composed_terms(a % terms, f, g % terms)
 
   end function composed
+
+  !===================================================================!
+  ! Returns the composition on the coefficients, by the table G(k, m)
+  ! of the module header: G(k, 0) = f^(k), each later column the sum
+  ! over the submasks of m less its lowest element i
+  !===================================================================!
 
   pure subroutine composed_terms(a, f, g)
 
@@ -708,8 +789,8 @@ contains
     real(dp), intent(out) :: g(0:)
 
     real(dp), allocatable :: table(:,:)
-    real(dp) :: accumulated
-    integer  :: n, m, k, i, remaining_subset, s
+    real(dp)              :: accumulated
+    integer               :: n, m, k, i, remaining_subset, s
 
     n = trailz(size(a))
 
@@ -743,18 +824,23 @@ contains
   end subroutine composed_terms
 
   !===================================================================!
-  ! THE DERIVATIVE TABLES, each f^(k) at x for k = 0 .. n.
+  ! Returns exp(a). Each function below supplies its derivative table,
+  ! f^(k) at the value for k = 0 .. n; exp's is its own value
   !===================================================================!
 
   pure function terms_exp(a) result(g)
 
     type(derivative_terms), intent(in) :: a
-    type(derivative_terms) :: g
+    type(derivative_terms)             :: g
 
     g = create_like(0.0_dp, a)
     call exponential_terms(a % terms, g % terms)
 
   end function terms_exp
+
+  !===================================================================!
+  ! Returns exp on the coefficients
+  !===================================================================!
 
   pure subroutine exponential_terms(a, g)
 
@@ -768,15 +854,24 @@ contains
 
   end subroutine exponential_terms
 
+  !===================================================================!
+  ! Returns sin(a)
+  !===================================================================!
+
   pure function terms_sin(a) result(g)
 
     type(derivative_terms), intent(in) :: a
-    type(derivative_terms) :: g
+    type(derivative_terms)             :: g
 
     g = create_like(0.0_dp, a)
     call sine_terms(a % terms, g % terms)
 
   end function terms_sin
+
+  !===================================================================!
+  ! Returns sin on the coefficients, its derivatives the cycle
+  ! sin, cos, -sin, -cos
+  !===================================================================!
 
   pure subroutine sine_terms(a, g)
 
@@ -794,15 +889,24 @@ contains
 
   end subroutine sine_terms
 
+  !===================================================================!
+  ! Returns cos(a)
+  !===================================================================!
+
   pure function terms_cos(a) result(g)
 
     type(derivative_terms), intent(in) :: a
-    type(derivative_terms) :: g
+    type(derivative_terms)             :: g
 
     g = create_like(0.0_dp, a)
     call cosine_terms(a % terms, g % terms)
 
   end function terms_cos
+
+  !===================================================================!
+  ! Returns cos on the coefficients, its derivatives the cycle
+  ! cos, -sin, -cos, sin
+  !===================================================================!
 
   pure subroutine cosine_terms(a, g)
 
@@ -820,21 +924,25 @@ contains
 
   end subroutine cosine_terms
 
-  !-------------------------------------------------------------------!
-  ! log: f^(k) = (-1)^(k-1) (k-1)! / x^k, formed as f^(k) = -f^(k-1)
-  ! (k-1) / x from f^(1) = 1 / x. A value that is not positive stops
-  ! the program.
-  !-------------------------------------------------------------------!
+  !===================================================================!
+  ! Returns log(a): f^(k) = (-1)^(k-1) (k-1)! / x^k, formed as
+  ! f^(k) = -f^(k-1) (k-1) / x from f^(1) = 1 / x. A value that is not
+  ! positive stops the program.
+  !===================================================================!
 
   pure function terms_log(a) result(g)
 
     type(derivative_terms), intent(in) :: a
-    type(derivative_terms) :: g
+    type(derivative_terms)             :: g
 
     g = create_like(0.0_dp, a)
     call logarithm_terms(a % terms, g % terms)
 
   end function terms_log
+
+  !===================================================================!
+  ! Returns log on the coefficients
+  !===================================================================!
 
   pure subroutine logarithm_terms(a, g)
 
@@ -860,23 +968,27 @@ contains
 
   end subroutine logarithm_terms
 
-  !-------------------------------------------------------------------!
-  ! A real power: f^(k) = p (p-1) .. (p-k+1) x^(p-k), formed as
+  !===================================================================!
+  ! Returns a real power: f^(k) = p (p-1) .. (p-k+1) x^(p-k), formed as
   ! f^(k) = f^(k-1) (p-k+1) / x from f^(0) = x^p. A value that is not
   ! positive stops the program; an integer exponent is a repeated
   ! product and admits any value.
-  !-------------------------------------------------------------------!
+  !===================================================================!
 
   pure function terms_to_real(a, p) result(g)
 
     type(derivative_terms), intent(in) :: a
     real(dp)              , intent(in) :: p
-    type(derivative_terms) :: g
+    type(derivative_terms)             :: g
 
     g = create_like(0.0_dp, a)
     call real_power_terms(a % terms, p, g % terms)
 
   end function terms_to_real
+
+  !===================================================================!
+  ! Returns the real power on the coefficients
+  !===================================================================!
 
   pure subroutine real_power_terms(a, p, g)
 
@@ -900,10 +1012,14 @@ contains
 
   end subroutine real_power_terms
 
+  !===================================================================!
+  ! Returns sqrt(a), the power one half
+  !===================================================================!
+
   pure function terms_sqrt(a) result(g)
 
     type(derivative_terms), intent(in) :: a
-    type(derivative_terms) :: g
+    type(derivative_terms)             :: g
 
     g = terms_to_real(a, 0.5_dp)
 

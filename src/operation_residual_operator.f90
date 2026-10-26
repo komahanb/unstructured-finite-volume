@@ -1,68 +1,79 @@
 !=====================================================================!
-! The residual operator: a physics law composed with one or two
-! discretization stencils, summed, over points that each store a
-! fixed number of components - and the fixed rows of that state,
-! read off as an identity rather than solved for.
+! Module that states the residual operator: a physics law composed
+! with one or two discretization stencils, summed, over points that
+! each store a fixed number of components, and the fixed rows of that
+! state, read off as an identity rather than solved for.
 !
-! LEVEL 3 OF THE STRATIFICATION. Two stencils apply to the whole
-! state and are summed; the physics applies only at the points
-! (`at`), one rule per row it governs (`primary`), and each rule's
-! result is added into the summed stencils on its row. A Lagrangian
-! with k multipliers governs k rows, its stationarity in the j-th
-! multiplier on primary(j); a plain rule governs one, at every point.
-! A row named fixed instead reads x(row) - fixed(row): the identity,
-! not the physics. A fixed value may itself depend on the design -
-! the law closes the highest component of the initial tuple - so each
-! one states its design rate dh/dnu, and the row's design partial is
+! Stratification. This is level 3. Two stencils apply to the whole
+! state and are summed; the physics applies only at the points (at),
+! one rule per row it governs (primary), and each rule's result is
+! added into the summed stencils on its row. A Lagrangian with k
+! multipliers governs k rows, its stationarity in the j-th multiplier
+! on primary(j); a plain rule governs one, at every point.
+!
+!      x = [ tuple of point 1 | tuple of point 2 | ... ]
+!            ^ at(1) + 1        ^ at(2) + 1
+!
+!      r  = S_1(x) + S_2(x)                  the two stencils, affine
+!      r(at(p) + primary(j) + 1) += rule_j   the physics at point p
+!      r(row) = x(row) - h(row)              a fixed row
+!
+! Fixed rows. A row named fixed reads x(row) - h(row): the identity,
+! not the physics. A fixed value may itself depend on the design (the
+! law closes the highest component of the initial tuple), so each one
+! states its design rate dh/dnu, and the row's design partial is
 ! -dh(row)/dnu, not zero. A rate left out is zero, the value being
-! data of the problem rather than a function of the design.
+! data of the problem rather than a function of the design. A
+! prescribed row is stated by a third stencil, an affine relation of
+! the state, in place of the residual's own terms; a fixed row is the
+! case of one unknown.
 !
-! apply, explicit_jacobian and partial_action are composed once here
-! from the two stencils' own apply/explicit_jacobian/partial_action
-! and the physics expression's - a residual never differentiates
-! anything itself, it only assembles what the two composed objects
-! already differentiate.
+! Derivatives. apply, explicit_jacobian and partial_action are
+! composed once here from the two stencils' own apply,
+! explicit_jacobian and partial_action and the physics expression's.
+! A residual never differentiates anything itself; it only assembles
+! what the two composed objects already differentiate.
 !
-! A concretion attaches a domain-specific meaning to the points and
-! the stencils (a time march, a spatial mesh, or both together) by
-! building them before construction; this type does not know which.
+! Concretions. A concretion attaches a domain-specific meaning to the
+! points and the stencils (a time march, a spatial mesh, or both
+! together) by building them before construction; this type does not
+! know which.
 !
-! THE DOMAINS. The residual owns its unknown domain U (`unknown_graph`,
-! one vertex per unknown, no edges) and its design domain P
-! (`point_domain`, one vertex per evaluation point). The state Q and
-! every direction in the state are fields on U with one value per
-! unknown; the design nu and every direction in the design are fields
-! on P with one value per point; the residual, its tangents and its
-! partials are fields on Y = U. A field of equal length on another
+! Domains. The residual owns its unknown domain U (unknown_graph, one
+! vertex per unknown, no edges) and its design domain P (point_domain,
+! one vertex per evaluation point). A field of equal length on another
 ! domain, and a host graph of another identity, are refused: every
-! consumer - value, explicit jacobian, tangent and adjoint actions,
+! consumer (value, explicit jacobian, tangent and adjoint actions,
 ! higher partials, the frozen linearization and the constrained
-! residual - reads one frozen tuple (Q, nu) on U x P.
+! residual) reads one frozen tuple (Q, nu) on U x P.
+!
+!      field                             domain   values
+!      state Q and its directions        U        one per unknown
+!      design nu and its directions      P        designs per point
+!      residual, tangents, partials      Y = U    one per unknown
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 
 module operation_residual_operator
 
-
-  use util_precision   , only : dp
-  use operation_action , only : operation, contract, variation
-  use operation_action  , only : binding, bound_real_vector, bound_on
-  use view_directed     , only : directed_graph
-  use graph_fractal     , only : graph
-  use view_directed_stored, only : stored_directed_graph
-  use field_calculus    , only : field, FIELD_REAL
-  use field_stored      , only : stored_field, typed_field_domain
-  use operation_stencil  , only : stencil, combine_triples
-  use operation_expression , only : expression, euler_lagrange, multiplier
-  use operation_expression , only : operator(+), operator(-), operator(*), unknown
-  use operation_domain     , only : continuous_domain, discrete_domain
-  use util_derivative_terms, only : max_subset_width, coefficient
-  use util_derivative_terms, only : value
-  use util_derivative_terms, only : operator(*)
+  use util_precision                    , only : dp
+  use operation_action                  , only : operation, contract, variation
+  use operation_action                  , only : binding, bound_real_vector, bound_on
+  use view_directed                     , only : directed_graph
+  use graph_fractal                     , only : graph
+  use view_directed_stored              , only : stored_directed_graph
+  use field_calculus                    , only : field, FIELD_REAL
+  use field_stored                      , only : stored_field, typed_field_domain
+  use operation_stencil                 , only : stencil, combine_triples
+  use operation_expression              , only : expression, euler_lagrange, multiplier
+  use operation_expression              , only : operator(+), operator(-), operator(*), unknown
+  use operation_domain                  , only : continuous_domain, discrete_domain
+  use util_derivative_terms             , only : max_subset_width, coefficient
+  use util_derivative_terms             , only : value
+  use util_derivative_terms             , only : operator(*)
   use operation_derivative_approximation, only : element_quadrature, tested_at
-  use operation_exchange       , only : exchange, state_summed_rows
-
+  use operation_exchange                , only : exchange, state_summed_rows
 
   implicit none
 
@@ -70,105 +81,133 @@ module operation_residual_operator
   public :: residual_operator, projection, stationarities, chain_block, lower_bounds
   public :: origin, HISTORY_MOMENTS, OWN_MOMENTS, EVERY_MOMENT
 
-  !===================================================================!
-  ! THE PROJECTION OF A LAW ON THE CELLS, tested against a basis in
-  ! place of placed at the points. An instance is an element at one
-  ! moment: element_point(i, n) is the point of node i of instance n,
-  ! negative where another part states the node's rows, and
-  ! element_cell(n) the element of the quadrature. A quadrature point
-  ! of an instance is a site, where the rules are evaluated: site
-  ! (n - 1) nq + q is the point q of instance n. The tuple the rules
-  ! read at a site is formed from the tuples of the instance's nodes:
-  ! its component c is the sum over the nodes and their coefficients
-  ! of the basis's derivative formed(0, c) times the node's component
-  ! formed(k + 1, c), -1 for a coefficient that forms none. Rule j
-  ! tests the equation tested(1, j) with the basis's derivative
-  ! tested(2, j), and coefficient_row(k, f) is the row, within a node's
-  ! tuple, of the coefficient k of the equation f: the rule's value at
-  ! a site, times the weight and the test function there, is added to
-  ! the row of every coefficient of every node the instance states.
-  !===================================================================!
+  !-------------------------------------------------------------------!
+  ! Type that models the projection of a law on the cells: the law
+  ! tested against a basis in place of placed at the points.
+  !
+  ! An instance is an element at one moment: element_point(i, n) is
+  ! the point of node i of instance n, negative where another part
+  ! states the node's rows, and element_cell(n) the element e of the
+  ! quadrature. A quadrature point of an instance is a site, where the
+  ! rules are evaluated.
+  !
+  !      instance n, quadrature points q = 1..nq
+  !      site s = (n - 1) nq + q
+  !
+  ! The tuple the rules read at a site is formed from the tuples of the
+  ! instance's nodes: its component c is the sum over the nodes i and
+  ! their coefficients k of
+  !
+  !      b(formed(0, c), k, i, q, e) x(at(p_i) + formed(k + 1, c) + 1)
+  !
+  ! where b is the basis, p_i the point of node i, and formed(k + 1, c)
+  ! is -1 for a coefficient that forms none. Rule j tests the equation
+  ! tested(1, j) with the basis's derivative tested(2, j), and
+  ! coefficient_row(k, f) is the row, within a node's tuple, of the
+  ! coefficient k of the equation f: the rule's value at a site, times
+  ! the weight and the test function there, is added to the row of
+  ! every coefficient of every node the instance states.
+  !
+  !      node tuples --basis--> tuple at site s --rule j--> value
+  !      value x test --> row at(p_i) + coefficient_row(k, f) + 1
+  !-------------------------------------------------------------------!
 
   type :: projection
      type(element_quadrature) :: elements
-     integer , allocatable :: element_point(:,:)
-     integer , allocatable :: element_cell(:)
-     integer , allocatable :: tested(:,:)
-     integer , allocatable :: coefficient_row(:,:)
-     integer , allocatable :: formed(:,:)
+     integer , allocatable    :: element_point(:,:)
+     integer , allocatable    :: element_cell(:)
+     integer , allocatable    :: tested(:,:)
+     integer , allocatable    :: coefficient_row(:,:)
+     integer , allocatable    :: formed(:,:)
   end type projection
+
+  !-------------------------------------------------------------------!
+  ! Type that models the residual operator: its stencils and rules,
+  ! its points and unknowns, its fixed and prescribed rows, and, where
+  ! the law is projected on the cells, its sites
+  !-------------------------------------------------------------------!
 
   type, extends(operation) :: residual_operator
 
-     type(stencil)              , private :: primary_law
-     type(stencil), allocatable , private :: connected_law
-     type(expression), allocatable, private :: physics
-     type(expression), allocatable :: rules(:)
-     type(stored_directed_graph) :: points
-     type(stored_directed_graph), private :: unknown_vertices
-     integer , allocatable :: at(:)
-     integer , allocatable, private :: fixed_rows(:)
-     real(dp), allocatable, private :: fixed(:)
-     real(dp), allocatable, private :: fixed_rate(:)
-     ! rows stated as affine relations of the state in place of the
+     ! The laws: the two stencils, the physics and its rules
+     type(stencil)                            , private :: primary_law
+     type(stencil)              , allocatable , private :: connected_law
+     type(expression)           , allocatable , private :: physics
+     type(expression)           , allocatable           :: rules(:)
+     ! The points and the unknowns, each a graph without edges
+     type(stored_directed_graph)                        :: points
+     type(stored_directed_graph)              , private :: unknown_vertices
+     ! The offset of each point's tuple, and the fixed rows with their
+     ! values and design rates
+     integer                    , allocatable           :: at(:)
+     integer                    , allocatable , private :: fixed_rows(:)
+     real(dp)                   , allocatable , private :: fixed(:)
+     real(dp)                   , allocatable , private :: fixed_rate(:)
+     ! The rows stated as affine relations of the state in place of the
      ! residual's own: a fixed row is the case of one unknown
-     type(stencil), allocatable, private :: prescribed
-     logical      , allocatable :: prescribed_row(:)
-     integer                 :: degrees  = 0
-     integer                , private :: connected_degrees = 0
-     integer                , private :: unknowns = 0
-     integer , allocatable :: primary(:)
-     ! the designs at a point: the design is a vector of one value per
+     type(stencil)              , allocatable , private :: prescribed
+     logical                    , allocatable           :: prescribed_row(:)
+     ! The components per point, the primary law's and the connected
+     ! law's; the count of unknowns; the row within a tuple each rule
+     ! governs
+     integer                                            :: degrees           = 0
+     integer                                  , private :: connected_degrees = 0
+     integer                                  , private :: unknowns          = 0
+     integer                    , allocatable           :: primary(:)
+     ! The designs at a point: the design is a vector of one value per
      ! design coordinate at every evaluation point
-     integer                 :: designs = 1
-     ! the position of every evaluation point, one column per point:
+     integer                                            :: designs = 1
+     ! The position of every evaluation point, one column per point:
      ! the time, then the space coordinates; no rows when none is given
-     real(dp), allocatable :: point_positions(:,:)
-     ! the rows that read every point, the integral of an unknown over
+     real(dp)                   , allocatable           :: point_positions(:,:)
+     ! The rows that read every point, the integral of an unknown over
      ! the region: over several images each part states the terms of
      ! its owned columns and summed_by adds the others'
-     integer       , allocatable, private :: summed_rows(:)
-     type(exchange), allocatable, private :: summed_by
-     ! the law projected on the cells, in place of placed at the
+     integer                    , allocatable , private :: summed_rows(:)
+     type(exchange)             , allocatable , private :: summed_by
+     ! The law projected on the cells, in place of placed at the
      ! points; its sites as the vertices the rules are evaluated over,
      ! and the position of each
-     type(projection), allocatable :: projected
-     type(stored_directed_graph)   :: sites
-     real(dp), allocatable         :: site_positions(:,:)
-     ! the instances of the projection divided over the images, where
+     type(projection)           , allocatable           :: projected
+     type(stored_directed_graph)                        :: sites
+     real(dp)                   , allocatable           :: site_positions(:,:)
+     ! The instances of the projection divided over the images, where
      ! every image solves the same rows: each image forms the values
      ! and the matrices of the instances it owns (instance_owned), the
      ! others zero, and their sum over the images is the whole on every
      ! image, each entry formed by one image alone
-     logical :: divided = .false.
-     ! the tying rows, each of one unknown on its own diagonal reading
+     logical                                            :: divided = .false.
+     ! The tying rows, each of one unknown on its own diagonal reading
      ! others before it: the history, the family's relations, and the
      ! copies and zero coefficients of the unknowns of time alone,
      ! eliminated before a direct solve of the rest
-     logical, allocatable :: tying(:)
-     ! AT A REDUCED POINT, a moment at which the law is stated in its
-     ! form at the first instant (block_rows): rule j there is
-     ! rules(variant(j)), the reduced rule's - a law that reads no
+     logical                    , allocatable           :: tying(:)
+     ! At a reduced point, a moment at which the law is stated in its
+     ! form at the first instant (block_rows), rule j is
+     ! rules(variant(j)): the reduced rule's, a law that reads no
      ! component of top degree stated by its derivative along time
-     ! (initial_form) - appended to the rules, and rule j itself where
+     ! (initial_form), appended to the rules, and rule j itself where
      ! the law reads one. Under a projection on the cells the flags are
      ! of the sites, a site reduced where its instance's moment is.
-     integer, allocatable :: variant(:)
-     logical, allocatable, private :: reduced_point(:)
-     ! the count of the rules, one per multiplier, their variants after
-     integer :: laws = 0
+     integer                    , allocatable           :: variant(:)
+     logical                    , allocatable , private :: reduced_point(:)
+     ! The count of the rules, one per multiplier, their variants after
+     integer                                            :: laws = 0
 
    contains
 
-     procedure :: name           => residual_name
-     procedure :: domain         => residual_domain
-     procedure :: apply          => residual_apply
-     procedure :: max_degree     => residual_max_degree
-     procedure :: defined_at_zero => residual_defined_at_zero
-     procedure :: partial_action => residual_partial_action
+     ! The operation's symbols and partials
+     procedure :: name              => residual_name
+     procedure :: domain            => residual_domain
+     procedure :: apply             => residual_apply
+     procedure :: max_degree        => residual_max_degree
+     procedure :: defined_at_zero   => residual_defined_at_zero
+     procedure :: partial_action    => residual_partial_action
      procedure :: explicit_jacobian => residual_explicit_jacobian
      procedure, private :: positions => residual_positions
 
+     ! The unknowns, the fixed rows, the rules, the points, the
+     ! domains, and the residuals formed from this one
      procedure :: num_unknowns
      procedure :: fixed_unknowns
      procedure :: fixed_indicator
@@ -204,6 +243,7 @@ module operation_residual_operator
      procedure :: constrain
      procedure :: linearize
 
+     ! The evaluation at the points and at the sites of a projection
      procedure, private :: any_fixed_rate
      procedure, private :: discretized
      procedure, private :: gathered
@@ -215,13 +255,13 @@ module operation_residual_operator
      procedure, private :: placed
      procedure, private :: placed_output
      procedure, private :: point_inputs
-     procedure :: point_of
+     procedure          :: point_of
      procedure, private :: require_direction
      procedure, private :: require_host
      procedure, private :: state_of
      procedure, private :: write_prescribed
      procedure, private :: zero_prescribed_rows
-     procedure :: formed_at_sites
+     procedure          :: formed_at_sites
      procedure, private :: design_at_sites
      procedure, private :: tested_into
      procedure, private :: projected_count
@@ -230,7 +270,7 @@ module operation_residual_operator
      procedure, private :: instance_owned
      procedure, private :: projected_edges
      procedure, private :: projected_part
-     procedure :: law_at
+     procedure          :: law_at
      procedure, private :: restrict_reduced_points
   end type residual_operator
 
@@ -238,9 +278,12 @@ module operation_residual_operator
      module procedure create
   end interface residual_operator
 
-  ! the first instant, stage instant and node that the arrays of a
-  ! sweep store: one for arrays over the chain, later for arrays over
-  ! a window of it
+  !-------------------------------------------------------------------!
+  ! Type that models the first instant, stage instant and node that
+  ! the arrays of a sweep store: one for arrays over the chain, later
+  ! for arrays over a window of it
+  !-------------------------------------------------------------------!
+
   type :: lower_bounds
      integer :: instant = 1
      integer :: stage   = 1
@@ -249,44 +292,56 @@ module operation_residual_operator
 
   type(lower_bounds), parameter :: origin = lower_bounds(1, 1, 1)
 
-  !===================================================================!
-  ! ONE BLOCK OF THE CHAIN: the instants first..last, the first
-  ! `depth` of them the history, solved by the blocks before, and the
-  ! rows stated on its moments - each instant and, for a family
-  ! marching by stages, the stages of the step into it - with the
+  !-------------------------------------------------------------------!
+  ! Type that models one block of the chain: the instants first..last,
+  ! the first depth of them the history, solved by the blocks before,
+  ! and the rows stated on its moments (each instant and, for a family
+  ! marching by stages, the stages of the step into it), with the
   ! unknowns q of those moments, the estimate and then the solution.
+  !
+  !      first ... first + depth - 1 | first + depth ... last
+  !      the history, solved before   | solved here
+  !
   ! The unknowns list the moments in the order of time, each moment's
   ! cells in order, each cell's tuple: instant_moment(k) is the moment
   ! of the k-th instant, and the stages of the step into the instant
-  ! k + 1 are the moments after it. The point manifold is the block of
-  ! one moment, without a history. Where the block is linearized,
-  ! `inputs` are the rows' inputs at q, by which their jacobian is
-  ! formed there, and `owner` the image of every point.
-  !===================================================================!
+  ! k + 1 are the moments after it.
+  !
+  !      moment     m_k | m_k + 1 ... m_k + num_stages | m_(k+1)
+  !                 instant k    the stages of the step   instant k + 1
+  !      unknowns   moment 1 [cell 1 | cell 2 ...] | moment 2 ...
+  !
+  !      where m_k = instant_moment(k)
+  !
+  ! The point manifold is the block of one moment, without a history.
+  ! Where the block is linearized, inputs are the rows' inputs at q, by
+  ! which their jacobian is formed there, and owner the image of every
+  ! point.
+  !-------------------------------------------------------------------!
 
   type :: chain_block
 
-     type(residual_operator) :: rows
-     real(dp), allocatable :: q(:)
-     integer , allocatable :: instant_moment(:)
-     integer :: first = 1, last = 1, depth = 0
-     integer :: num_stages = 0
-     integer :: num_cells  = 1
+     type(residual_operator)         :: rows
+     real(dp), allocatable           :: q(:)
+     integer , allocatable           :: instant_moment(:)
+     integer                         :: first = 1, last = 1, depth = 0
+     integer                         :: num_stages = 0
+     integer                         :: num_cells  = 1
      type(stored_field), allocatable :: inputs(:)
      integer           , allocatable :: owner(:)
-     ! the design at every point of the block, the rows' stored input
-     type(stored_field) :: design
-     ! where an expansion moves the instants: the rows along time, each
+     ! The design at every point of the block, the rows' stored input
+     type(stored_field)              :: design
+     ! Where an expansion moves the instants: the rows along time, each
      ! determining component time_row(e) from time_column(e), and
      ! weight_derivative(e, o, d) the o-th derivative of the edge's
      ! weight along the expansion d
-     integer , allocatable :: time_row(:), time_column(:)
-     real(dp), allocatable :: weight_derivative(:,:,:)
-     ! where the instants are pinned: instant_weight(e, a, k, d) the
+     integer , allocatable           :: time_row(:), time_column(:)
+     real(dp), allocatable           :: weight_derivative(:,:,:)
+     ! Where the instants are pinned: instant_weight(e, a, k, d) the
      ! derivative in the instant instant_first + a - 1 of the k-th
      ! derivative along the expansion d of the edge's weight
-     integer :: instant_first = 1
-     real(dp), allocatable :: instant_weight(:,:,:,:)
+     integer                         :: instant_first = 1
+     real(dp), allocatable           :: instant_weight(:,:,:,:)
 
    contains
 
@@ -296,19 +351,31 @@ module operation_residual_operator
 
   end type chain_block
 
-  ! the moments of a block at which a column of the manifold is read
-  ! or written: the history instants; the block's own instants and the
-  ! stages of its steps; every moment
+  ! The moments of a block at which a column of the manifold is read
+  ! or written
+  !
+  !      HISTORY_MOMENTS   the history instants, no stages
+  !      OWN_MOMENTS       the block's own instants, the stages
+  !      EVERY_MOMENT      every instant, the stages
   integer, parameter :: HISTORY_MOMENTS = 1, OWN_MOMENTS = 2, EVERY_MOMENT = 3
 
 contains
 
-  ! THE LAWS OF A RULE: the stationarities of its Lagrangian in each
-  ! multiplier, the rule itself where it pairs none
+  !===================================================================!
+  ! Returns the laws of a rule: the stationarities of its Lagrangian in
+  ! each multiplier, the rule itself where it pairs none
+  !
+  !      L = lambda_1 c_1 + lambda_2 c_2   -->   [c_1, c_2]
+  !      f, no multiplier                  -->   [f]
+  !===================================================================!
+
   function stationarities(rule) result(laws)
-    type(expression), intent(in) :: rule
+
+    type(expression), intent(in)  :: rule
     type(expression), allocatable :: laws(:)
+
     integer :: j
+
     if (rule % num_multipliers() == 0) then
        laws = [rule]
        return
@@ -317,43 +384,63 @@ contains
     do j = 1, rule % num_multipliers()
        laws(j) = euler_lagrange(rule, j)
     end do
+
   end function stationarities
 
   !===================================================================!
-  ! Build from the two stencils, the physics, and the points the
-  ! physics reads: at(p) is the offset of point p's tuple, whose
-  ! components follow in order, and primary(j) the row within it the
-  ! j-th rule governs. A residual without a rule is the linear map of
-  ! its stencils alone, the frozen linearization. Invalid input: a
-  ! fixed row without a value to match, an evaluation point whose
-  ! components run past the unknowns, a fixed row outside the
-  ! unknowns, or a row count that is not the rule count.
+  ! Creates the residual from the two stencils, the physics, and the
+  ! points the physics reads. A residual without a rule is the linear
+  ! map of its stencils alone, the frozen linearization.
+  !
+  !      primary_law       the primary stencil, on every row
+  !      rule              the physics; absent, the stencils alone
+  !      at                the offset of each point's tuple, whose
+  !                        components follow in order
+  !      unknowns          the count of unknowns
+  !      degrees           the primary law's components per point
+  !      primary           the row within a tuple the j-th rule governs
+  !      fixed_rows, fixed the fixed rows and their values
+  !      connected_law     the second stencil
+  !      fixed_rate        the design rate of each fixed value
+  !      prescribed        rows stated as affine relations of x
+  !      positions         the position of every point, a column each
+  !      summed_rows       the rows that read every point
+  !      projected         the projection of the law on the cells
+  !      tying             the tying rows
+  !      reduced           the reduced points
+  !      reduced_laws      the laws stated there, where varying(j)
+  !      laws              the rule's stationarities, formed elsewhere
+  !
+  ! Invalid input: a fixed row without a value to match, an evaluation
+  ! point whose components run past the unknowns, a fixed row outside
+  ! the unknowns, or a row count that is not the rule count.
   !===================================================================!
 
   function create(primary_law, rule, at, unknowns, degrees, primary, fixed_rows, fixed, &
        & connected_law, fixed_rate, prescribed, positions, summed_rows, projected, tying, reduced, &
        & reduced_laws, varying, laws) result(this)
 
-    type(stencil)         , intent(in) :: primary_law
-    type(expression)      , intent(in), optional :: rule
-    integer               , intent(in) :: at(:), unknowns, degrees, primary(:)
-    integer               , intent(in) :: fixed_rows(:)
-    real(dp)              , intent(in) :: fixed(:)
-    type(stencil)         , intent(in), optional :: connected_law
-    real(dp)              , intent(in), optional :: fixed_rate(:)
-    type(stencil)         , intent(in), optional :: prescribed
-    real(dp)              , intent(in), optional :: positions(:,:)
-    integer               , intent(in), optional :: summed_rows(:)
-    type(projection)      , intent(in), optional :: projected
-    logical               , intent(in), optional :: tying(:)
-    logical               , intent(in), optional :: reduced(:)
-    type(expression)      , intent(in), optional :: reduced_laws(:)
-    logical               , intent(in), optional :: varying(:)
-    type(expression)      , intent(in), optional :: laws(:)
-    type(residual_operator) :: this
+    type(stencil)   , intent(in)           :: primary_law
+    type(expression), intent(in), optional :: rule
+    integer         , intent(in)           :: at(:), unknowns, degrees, primary(:)
+    integer         , intent(in)           :: fixed_rows(:)
+    real(dp)        , intent(in)           :: fixed(:)
+    type(stencil)   , intent(in), optional :: connected_law
+    real(dp)        , intent(in), optional :: fixed_rate(:)
+    type(stencil)   , intent(in), optional :: prescribed
+    real(dp)        , intent(in), optional :: positions(:,:)
+    integer         , intent(in), optional :: summed_rows(:)
+    type(projection), intent(in), optional :: projected
+    logical         , intent(in), optional :: tying(:)
+    logical         , intent(in), optional :: reduced(:)
+    type(expression), intent(in), optional :: reduced_laws(:)
+    logical         , intent(in), optional :: varying(:)
+    type(expression), intent(in), optional :: laws(:)
+    type(residual_operator)                :: this
+
     type(continuous_domain) :: domain
-    integer :: j, k, variants, components, governed, e, n, q, nq, s, dimension
-    character(len=250) :: message
+    integer                 :: j, k, variants, components, governed, e, n, q, nq, s, dimension
+    character(len=250)      :: message
 
     if (size(fixed_rows) /= size(fixed)) then
        write(message,'(a,i0,a,i0)') 'operation_lagrangian: one value is required per fixed &
@@ -455,13 +542,13 @@ contains
        end do
        this % reduced_point = reduced
     end if
-    this % at      = at
+    this % at       = at
     this % unknowns = unknowns
     this % degrees  = degrees
     ! the rule states how many components a point stores; the degrees
     ! given are the primary law's portion of them
     this % connected_degrees = components - degrees
-    this % primary   = primary
+    this % primary    = primary
     this % fixed_rows = fixed_rows
     this % fixed      = fixed
     ! a fixed value that is data of the problem has a zero design rate
@@ -530,42 +617,66 @@ contains
 
   end function create
 
+  !===================================================================!
+  ! Returns the count of unknowns
+  !===================================================================!
+
   pure integer function num_unknowns(this)
+
     class(residual_operator), intent(in) :: this
+
     num_unknowns = this % unknowns
+
   end function num_unknowns
 
+  !===================================================================!
+  ! Returns the fixed rows
+  !===================================================================!
+
   pure function fixed_unknowns(this) result(c)
+
     class(residual_operator), intent(in) :: this
-    integer, allocatable :: c(:)
+    integer, allocatable                 :: c(:)
+
     c = this % fixed_rows
+
   end function fixed_unknowns
 
-  ! the rows the residual's own terms do not occupy: fixed and prescribed
+  !===================================================================!
+  ! Returns whether each row is one the residual's own terms do not
+  ! occupy: fixed or prescribed
+  !===================================================================!
+
   pure function fixed_indicator(this) result(is_fixed)
+
     class(residual_operator), intent(in) :: this
-    logical, allocatable :: is_fixed(:)
+    logical, allocatable                 :: is_fixed(:)
+
     allocate(is_fixed(this % unknowns), source=.false.)
     is_fixed(this % fixed_rows) = .true.
     if (allocated(this % prescribed_row)) is_fixed = is_fixed .or. this % prescribed_row
+
   end function fixed_indicator
 
   !===================================================================!
-  ! The prescribed rows written into r: the affine relation of the
+  ! Writes the prescribed rows into r: the affine relation of the
   ! state, or its partial along a direction, in place of the residual's
-  ! own terms on those rows.
+  ! own terms on those rows
   !===================================================================!
 
   subroutine write_prescribed(this, values, r, along)
+
     class(residual_operator), intent(in)    :: this
     real(dp)                , intent(in)    :: values(:)
     real(dp)                , intent(inout) :: r(:)
     logical                 , intent(in)    :: along
-    type(typed_field_domain) :: states
-    type(stored_field) :: given(1)
-    type(variation) :: varied(1)
+
+    type(typed_field_domain)  :: states
+    type(stored_field)        :: given(1)
+    type(variation)           :: varied(1)
     class(field), allocatable :: half
-    real(dp), allocatable :: y(:)
+    real(dp), allocatable     :: y(:)
+
     if (.not. allocated(this % prescribed)) return
     states = this % state_fields()
     ! the bound field and the variation are array variables, not
@@ -581,39 +692,72 @@ contains
     end if
     call half % real_vector(y)
     where (this % prescribed_row) r = y
+
   end subroutine write_prescribed
 
+  !===================================================================!
+  ! Sets the prescribed rows of r to zero
+  !===================================================================!
+
   pure subroutine zero_prescribed_rows(this, r)
+
     class(residual_operator), intent(in)    :: this
     real(dp)                , intent(inout) :: r(:)
+
     if (.not. allocated(this % prescribed_row)) return
     where (this % prescribed_row) r = 0.0_dp
+
   end subroutine zero_prescribed_rows
 
+  !===================================================================!
+  ! Returns the values of the fixed rows
+  !===================================================================!
+
   pure function fixed_values(this) result(h)
+
     class(residual_operator), intent(in) :: this
-    real(dp), allocatable :: h(:)
+    real(dp), allocatable                :: h(:)
+
     h = this % fixed
+
   end function fixed_values
 
+  !===================================================================!
+  ! Returns the components a point stores: the primary law's and the
+  ! connected law's
+  !===================================================================!
+
   pure integer function stride(this)
+
     class(residual_operator), intent(in) :: this
+
     stride = this % degrees + this % connected_degrees
+
   end function stride
 
   !===================================================================!
-  ! The coupling of the unknowns: an edge from every column to every
-  ! row of the stencils' entries. The physics placed at the points
-  ! reads a point's own tuple alone, so it couples no two points; a
-  ! projected law couples every node of an instance with every other.
+  ! Returns the coupling of the unknowns: an edge from every column to
+  ! every row of the stencils' entries. The physics placed at the
+  ! points reads a point's own tuple alone, so it couples no two
+  ! points; a projected law couples every node of an instance with
+  ! every other.
+  !
+  !      entry (row, column) of a stencil   -->   edge column -> row
+  !      nodes i, i2 of an instance         -->   edges from the
+  !                                               components of i2
+  !                                               to the rows of i
+  !      a summed row                       -->   no edge into it
   !===================================================================!
 
   function coupling(this) result(graph_of)
+
     class(residual_operator), intent(in) :: this
-    type(stored_directed_graph) :: graph_of
+    type(stored_directed_graph)          :: graph_of
+
     integer , allocatable :: heads(:), tails(:)
     real(dp), allocatable :: w(:)
-    logical, allocatable :: is_summed(:)
+    logical , allocatable :: is_summed(:)
+
     call this % terms(heads, tails, w)
     ! a projected law couples the nodes of each instance
     if (allocated(this % projected)) call this % projected_edges(heads, tails)
@@ -623,15 +767,23 @@ contains
     if (allocated(this % summed_rows)) is_summed(this % summed_rows) = .true.
     graph_of = stored_directed_graph(this % unknowns, tails=pack(tails, .not. is_summed(heads)), &
          & heads=pack(heads, .not. is_summed(heads)))
+
   end function coupling
 
-  ! every stencil's terms, as (row, column, weight)
+  !===================================================================!
+  ! Returns every stencil's terms, as (row, column, weight): the
+  ! primary, the connected and the prescribed, in that order
+  !===================================================================!
+
   subroutine terms(this, heads, tails, w)
+
     class(residual_operator), intent(in)  :: this
     integer , allocatable   , intent(out) :: heads(:), tails(:)
     real(dp), allocatable   , intent(out) :: w(:)
+
     integer , allocatable :: h(:), t(:)
     real(dp), allocatable :: v(:)
+
     call this % primary_law % entries(heads, tails, w)
     if (allocated(this % connected_law)) then
        call this % connected_law % entries(h, t, v)
@@ -645,28 +797,37 @@ contains
        tails = [tails, t]
        w     = [w, v]
     end if
+
   end subroutine terms
 
   !===================================================================!
-  ! THE PART of the residual an image forms: the rows of the points the
-  ! part owns, over the unknowns of the part in its own numbering, the
-  ! owned first and the halo after. The physics is stated at the owned
-  ! points, each stencil restricted to the owned rows, and the fixed
-  ! rows the part owns. Invalid input: the points' tuples not in the
-  ! order of the unknowns.
+  ! Returns the part of the residual an image forms: the rows of the
+  ! points the part owns, over the unknowns of the part in its own
+  ! numbering, the owned first and the halo after. The physics is
+  ! stated at the owned points, each stencil restricted to the owned
+  ! rows, and the fixed rows the part owns.
+  !
+  !      whole     1 2 3 4 5 6 7 8
+  !      part      owned [3 4 5 6] | halo [2 7]
+  !      numbering        1 2 3 4  |      5 6
+  !
+  ! Invalid input: the points' tuples not in the order of the unknowns.
   !===================================================================!
 
   function part_of(this, part) result(sub)
+
     class(residual_operator), intent(in)    :: this
     ! the part, given the terms of the summed rows it adds
     type(exchange)          , intent(inout) :: part
-    type(residual_operator) :: sub
+    type(residual_operator)                 :: sub
+
     type(stencil), allocatable :: connected, prescribed
-    integer , allocatable :: points(:), at(:), place_of(:), fixed_rows(:), summed(:), heads(:), tails(:)
-    integer , allocatable :: point_place(:)
-    real(dp), allocatable :: fixed(:), rate(:), weights(:)
-    logical , allocatable :: owned_fixed(:), owned_point(:)
-    integer :: w, npts, i
+    integer      , allocatable :: points(:), at(:), place_of(:), fixed_rows(:), summed(:), heads(:), tails(:)
+    integer      , allocatable :: point_place(:)
+    real(dp)     , allocatable :: fixed(:), rate(:), weights(:)
+    logical      , allocatable :: owned_fixed(:), owned_point(:)
+    integer                    :: w, npts, i
+
     w = this % stride()
     if (any(this % at /= [((i - 1) * w, i = 1, size(this % at))])) then
        error stop 'operation_lagrangian: a residual is cut into parts when its points'' tuples follow &
@@ -720,247 +881,430 @@ contains
             & prescribed=prescribed, positions=this % point_positions(:, points))
     end if
     sub % summed_by = part
+
   end function part_of
 
-  ! a stencil's rows the part owns, in the part's numbering, with their
-  ! constants
+  !===================================================================!
+  ! Returns a stencil's rows the part owns, in the part's numbering,
+  ! with their constants
+  !===================================================================!
+
   function part_stencil(op, part, summed) result(sub)
+
     type(stencil) , intent(in) :: op
     type(exchange), intent(in) :: part
     integer       , intent(in) :: summed(:)
-    type(stencil) :: sub
+    type(stencil)              :: sub
+
     integer , allocatable :: heads(:), tails(:), rows(:), columns(:)
     real(dp), allocatable :: w(:), weights(:), constants(:)
+
     call op % entries(heads, tails, w)
     call op % constants % real_vector(constants)
     call part % restricted_triples(heads, tails, w, rows, columns, weights, summed)
     sub = stencil(rows, columns, weights, merge(constants(part % whole_index), 0.0_dp, part % is_owned), &
          & label=op % name())
+
   end function part_stencil
 
+  !===================================================================!
+  ! Returns the primary law's components per point
+  !===================================================================!
+
   pure integer function num_degrees(this)
+
     class(residual_operator), intent(in) :: this
+
     num_degrees = this % degrees
+
   end function num_degrees
 
+  !===================================================================!
+  ! Returns the row within a tuple the first rule governs
+  !===================================================================!
+
   pure integer function primary_degree(this)
+
     class(residual_operator), intent(in) :: this
+
     primary_degree = this % primary(1)
+
   end function primary_degree
 
+  !===================================================================!
+  ! Returns the row within a tuple the j-th rule governs
+  !===================================================================!
+
   pure integer function primary_row(this, j)
+
     class(residual_operator), intent(in) :: this
     integer                 , intent(in) :: j
+
     primary_row = this % primary(j)
+
   end function primary_row
 
+  !===================================================================!
+  ! Returns the count of the rules, one per multiplier, without their
+  ! variants
+  !===================================================================!
+
   pure integer function num_rules(this)
+
     class(residual_operator), intent(in) :: this
+
     num_rules = this % laws
+
   end function num_rules
 
-  ! the rule j at point p: at an explicit point its variant there
+  !===================================================================!
+  ! Returns the rule j at point p: at a reduced point its variant there
+  !===================================================================!
+
   pure integer function law_at(this, j, p)
+
     class(residual_operator), intent(in) :: this
     integer                 , intent(in) :: j, p
+
     law_at = j
     if (.not. allocated(this % reduced_point)) return
     if (this % reduced_point(p)) law_at = this % variant(j)
+
   end function law_at
 
-  ! the rules at the explicit points restricted to a residual of the
+  !===================================================================!
+  ! Sets the rules at the reduced points of a residual formed of the
   ! points given of this one
+  !===================================================================!
+
   subroutine restrict_reduced_points(this, sub, points)
+
     class(residual_operator), intent(in)    :: this
     type(residual_operator) , intent(inout) :: sub
     integer                 , intent(in)    :: points(:)
+
     if (.not. allocated(this % reduced_point)) return
-    sub % rules          = this % rules
-    sub % variant        = this % variant
+    sub % rules         = this % rules
+    sub % variant       = this % variant
     sub % reduced_point = this % reduced_point(points)
+
   end subroutine restrict_reduced_points
 
+  !===================================================================!
+  ! Returns the j-th rule
+  !===================================================================!
+
   function rule_of(this, j) result(law)
+
     class(residual_operator), intent(in) :: this
     integer                 , intent(in) :: j
-    type(expression) :: law
+    type(expression)                     :: law
+
     law = this % rules(j)
+
   end function rule_of
 
+  !===================================================================!
+  ! Returns the count of evaluation points
+  !===================================================================!
+
   pure integer function num_points(this)
+
     class(residual_operator), intent(in) :: this
+
     num_points = size(this % at)
+
   end function num_points
 
+  !===================================================================!
+  ! Returns the offset of each point's tuple
+  !===================================================================!
+
   pure function points_at(this) result(at)
+
     class(residual_operator), intent(in) :: this
-    integer, allocatable :: at(:)
+    integer, allocatable                 :: at(:)
+
     at = this % at
+
   end function points_at
 
+  !===================================================================!
+  ! Returns the first degrees fixed values, or zeros where fewer are
+  ! fixed
+  !===================================================================!
+
   pure function first_fixed(this) result(x)
+
     class(residual_operator), intent(in) :: this
-    real(dp), allocatable :: x(:)
+    real(dp), allocatable                :: x(:)
+
     allocate(x(this % degrees), source=0.0_dp)
     if (size(this % fixed) >= this % degrees) x = this % fixed(1:this % degrees)
+
   end function first_fixed
 
+  !===================================================================!
+  ! Returns the design rate of each fixed value
+  !===================================================================!
+
   pure function fixed_rates(this) result(rate)
+
     class(residual_operator), intent(in) :: this
-    real(dp), allocatable :: rate(:)
+    real(dp), allocatable                :: rate(:)
+
     rate = this % fixed_rate
+
   end function fixed_rates
 
+  !===================================================================!
+  ! Returns the count of fixed rows
+  !===================================================================!
+
   pure integer function num_fixed(this)
+
     class(residual_operator), intent(in) :: this
+
     num_fixed = size(this % fixed_rows)
+
   end function num_fixed
 
+  !===================================================================!
+  ! Returns the name of the operation
+  !===================================================================!
+
   pure function residual_name(this) result(name)
+
     class(residual_operator), intent(in) :: this
-    character(len=:), allocatable :: name
+    character(len=:), allocatable        :: name
+
     associate (u1 => this); end associate
     name = 'residual operator'
+
   end function residual_name
 
+  !===================================================================!
+  ! Returns the highest exact degree. The discretization stencils are
+  ! linear in the state, so every partial above the first is the
+  ! physics expression's alone, or its variants' at the reduced points,
+  ! and is exact to every order when there is no physics.
+  !===================================================================!
+
   pure integer function residual_max_degree(this)
+
     class(residual_operator), intent(in) :: this
+
     integer :: j
-    ! the discretization stencils are linear in the state, so every
-    ! partial above the first is the physics expression's alone, or its
-    ! variants' at the explicit points, and is exact to every order when
-    ! there is no physics
+
     residual_max_degree = max_subset_width()
     if (allocated(this % physics)) residual_max_degree = this % physics % max_degree()
     if (allocated(this % variant)) then
        residual_max_degree = max(residual_max_degree, &
             & maxval([(this % rules(j) % max_degree(), j = this % laws + 1, size(this % rules))]))
     end if
+
   end function residual_max_degree
 
   !===================================================================!
-  ! A LAW NEED NOT BE DEFINED AT THE ZERO STATE. The discretization
-  ! stencils are linear in the state, so the zero state lies in the
-  ! residual's domain exactly when it lies in the domain of every one
-  ! of its rules: the radial oscillator's nu / q**3 excludes it, the
-  ! frozen linearization, whose rule is the zero expression, does not.
+  ! Returns whether the zero state lies in the residual's domain. A law
+  ! need not be defined there. The discretization stencils are linear
+  ! in the state, so the zero state lies in the residual's domain
+  ! exactly when it lies in the domain of every one of its rules: the
+  ! radial oscillator's nu / q**3 excludes it; the frozen
+  ! linearization, whose rule is the zero expression, does not.
   !===================================================================!
 
   pure logical function residual_defined_at_zero(this) result(defined)
+
     class(residual_operator), intent(in) :: this
+
     integer :: j
+
     defined = .true.
     do j = 1, size(this % rules)
        defined = defined .and. this % rules(j) % defined_at_zero()
     end do
+
   end function residual_defined_at_zero
 
+  !===================================================================!
+  ! Returns the physics; a residual without a rule, the frozen
+  ! linearization, stops the program
+  !===================================================================!
+
   type(expression) function rule(this) result(law)
+
     class(residual_operator), intent(in) :: this
+
     if (.not. allocated(this % physics)) then
        error stop 'operation_lagrangian: rule was read from a residual without a rule, the frozen linearization'
     end if
     law = this % physics
+
   end function rule
 
+  !===================================================================!
+  ! Returns the primary stencil
+  !===================================================================!
+
   type(stencil) function primary_stencil(this) result(law)
+
     class(residual_operator), intent(in) :: this
+
     law = this % primary_law
+
   end function primary_stencil
 
+  !===================================================================!
+  ! Returns whether the residual has a connected stencil
+  !===================================================================!
+
   pure logical function has_connected_stencil(this)
+
     class(residual_operator), intent(in) :: this
+
     has_connected_stencil = allocated(this % connected_law)
+
   end function has_connected_stencil
 
+  !===================================================================!
+  ! Returns the connected stencil
+  !===================================================================!
+
   type(stencil) function connected_stencil(this) result(law)
+
     class(residual_operator), intent(in) :: this
+
     law = this % connected_law
+
   end function connected_stencil
 
   !===================================================================!
-  ! Attach the connected law after construction - a spatial
-  ! discretization is laid over an already-built primary march, once
-  ! the mesh side of a coupled problem is known.
+  ! Sets the connected law after construction: a spatial
+  ! discretization is laid over an already built primary march, once
+  ! the mesh side of a coupled problem is known
   !===================================================================!
 
   subroutine attach_connected_stencil(this, law)
+
     class(residual_operator), intent(inout) :: this
-    type(stencil)            , intent(in)    :: law
+    type(stencil)           , intent(in)    :: law
+
     this % connected_law = law
+
   end subroutine attach_connected_stencil
 
+  !===================================================================!
+  ! Returns the point domain P as a graph, one vertex per evaluation
+  ! point, no edges
+  !===================================================================!
+
   type(stored_directed_graph) function point_domain(this) result(points)
+
     class(residual_operator), intent(in) :: this
+
     points = this % points
+
   end function point_domain
 
   !===================================================================!
-  ! THE UNKNOWN DOMAIN U: the graph the residual is evaluated over
-  ! (passed as the host of every apply, tangent and linearization),
-  ! and its vertex set, the domain of the state, of every direction
-  ! in the state and of the residual itself.
+  ! Returns the unknown domain U as a graph: the graph the residual is
+  ! evaluated over, passed as the host of every apply, tangent and
+  ! linearization
   !===================================================================!
 
   type(stored_directed_graph) function unknown_graph(this) result(unknowns)
+
     class(residual_operator), intent(in) :: this
+
     unknowns = this % unknown_vertices
+
   end function unknown_graph
 
+  !===================================================================!
+  ! Returns the vertex set of U: the domain of the state, of every
+  ! direction in the state and of the residual itself
+  !===================================================================!
+
   type(graph) function unknown_domain(this) result(domain)
+
     class(residual_operator), intent(in) :: this
+
     domain = this % unknown_vertices % vertex_set()
+
   end function unknown_domain
 
   !===================================================================!
-  ! THE DESIGN DOMAIN P: the vertex set of the evaluation points, the
-  ! domain of the design and of every direction in it, one value per
-  ! point.
+  ! Returns the design domain P: the vertex set of the evaluation
+  ! points, the domain of the design and of every direction in it
   !===================================================================!
 
   type(graph) function design_domain(this) result(domain)
+
     class(residual_operator), intent(in) :: this
+
     domain = this % points % vertex_set()
+
   end function design_domain
 
   !===================================================================!
-  ! THE TYPED SUPPORTS. The state, a direction in the state and a
-  ! tangent are fields on U with one value per unknown; the residual,
-  ! a costate and a forcing are fields on Y = U; the design and a
-  ! direction in the design are fields on P with one value per point.
+  ! Returns the typed support of the state, of a direction in the
+  ! state and of a tangent: fields on U with one value per unknown.
   ! Each support reads its extent from the residual's own graph.
   !===================================================================!
 
   type(typed_field_domain) function state_fields(this) result(fields)
+
     class(residual_operator), intent(in) :: this
+
     fields = typed_field_domain(this % unknown_vertices)
+
   end function state_fields
 
+  !===================================================================!
+  ! Returns the typed support of the residual, a costate and a
+  ! forcing: fields on Y = U
+  !===================================================================!
+
   type(typed_field_domain) function residual_fields(this) result(fields)
+
     class(residual_operator), intent(in) :: this
+
     fields = typed_field_domain(this % unknown_vertices)
+
   end function residual_fields
 
+  !===================================================================!
+  ! Returns the typed support of the design and of a direction in the
+  ! design: fields on P with designs values per point
+  !===================================================================!
+
   type(typed_field_domain) function design_fields(this) result(fields)
+
     class(residual_operator), intent(in) :: this
+
     fields = typed_field_domain(this % points, this % designs)
+
   end function design_fields
 
   !===================================================================!
-  ! THE FROZEN TUPLE (Q, nu) on U x P: the state x, one value per
-  ! unknown, and the design nu, one value per point. Every consumer -
-  ! the value, the explicit jacobian, the tangent and adjoint actions,
-  ! the higher partials - reads a tuple built here, so each
+  ! Returns the frozen tuple (Q, nu) on U x P: the state x, one value
+  ! per unknown, and the design nu, designs values per point. Every
+  ! consumer (the value, the explicit jacobian, the tangent and adjoint
+  ! actions, the higher partials) reads a tuple built here, so each
   ! linearizes the same function at the same point. Invalid input: a
   ! state or a design of another length.
   !===================================================================!
 
   function frozen_tuple(this, x, nu) result(inputs)
+
     class(residual_operator), intent(in) :: this
     real(dp)                , intent(in) :: x(:), nu(:)
-    type(stored_field) :: inputs(2)
+    type(stored_field)                   :: inputs(2)
+
     type(typed_field_domain) :: states, designs
-    character(len=250) :: message
+    character(len=250)       :: message
+
     if (size(x) /= this % unknowns) then
        write(message,'(a,i0,a,i0)') 'operation_lagrangian: the state must contain one component per &
             &degree per unknown point; size(x) = ', size(x), ', unknowns = ', this % unknowns
@@ -972,97 +1316,121 @@ contains
             & size(this % at) * this % designs
        error stop trim(message)
     end if
-    states  = this % state_fields()
-    designs = this % design_fields()
+    states    = this % state_fields()
+    designs   = this % design_fields()
     inputs(1) = states  % state(x)
     inputs(2) = designs % design(nu)
+
   end function frozen_tuple
 
   !===================================================================!
-  ! The residual's own domain: Y = U, one row per unknown, whatever
-  ! graph it is applied on.
+  ! Returns the residual's own domain: Y = U, one row per unknown,
+  ! whatever graph it is applied on
   !===================================================================!
 
   subroutine residual_domain(this, input_graph, domain, num_entries)
+
     class(residual_operator), intent(in)  :: this
     class(directed_graph)   , intent(in)  :: input_graph
     type(graph)             , intent(out) :: domain
     integer                 , intent(out) :: num_entries
+
     associate (u1 => input_graph); end associate
     domain      = this % unknown_domain()
     num_entries = this % unknowns
+
   end subroutine residual_domain
 
   !===================================================================!
-  ! Refuse a host graph other than U: the residual reads and writes
+  ! Refuses a host graph other than U: the residual reads and writes
   ! fields on its own unknown domain, and a graph of another identity
   ! with an equal vertex count would type them on a domain they are
-  ! not defined on.
+  ! not defined on
   !===================================================================!
 
   subroutine require_host(this, input_graph)
+
     class(residual_operator), intent(in) :: this
     class(directed_graph)   , intent(in) :: input_graph
+
     type(graph) :: given, own
+
     given = input_graph % vertex_set()
     own   = this % unknown_domain()
     if (.not. own % same_as(given)) then
        error stop 'operation_lagrangian: require_host received a graph that is not this residual''s own unknown graph'
     end if
+
   end subroutine require_host
 
   !===================================================================!
-  ! Refuse a field on another domain than the one stated, or with
-  ! another number of values: equal length is not the claim.
+  ! Refuses a field on another domain than the one stated, or with
+  ! another number of values: equal length is not the claim
   !===================================================================!
 
   subroutine require_field(given, num_given, domain, num_values, message)
+
     type(graph)     , intent(in) :: given, domain
     integer         , intent(in) :: num_given, num_values
     character(len=*), intent(in) :: message
+
     character(len=250) :: diagnostic
+
     if (.not. domain % same_as(given) .or. num_given /= num_values) then
        write(diagnostic,'(a,a,a,l1,a,i0,a,i0)') 'operation_lagrangian: ', message, &
             & '; domain matches = ', domain % same_as(given), ', num_given = ', num_given, &
             & ', num_values = ', num_values
        error stop trim(diagnostic)
     end if
+
   end subroutine require_field
 
   !===================================================================!
-  ! The state gathered one point at a time, primary components then
-  ! connected ones, in the order the physics reads a point's tuple.
+  ! Returns the state gathered one point at a time, primary components
+  ! then connected ones, in the order the physics reads a point's
+  ! tuple
+  !
+  !      x   [ ... | x(at(p) + 1 : at(p) + stride) | ... ]
+  !      y   [ point 1's tuple | point 2's tuple | ... ]
   !===================================================================!
 
   pure function gathered(this, x) result(y)
+
     class(residual_operator), intent(in) :: this
     real(dp)                , intent(in) :: x(:)
-    real(dp), allocatable :: y(:)
+    real(dp), allocatable                :: y(:)
+
     integer :: p
+
     allocate(y(size(this % at) * this % stride()))
     do p = 1, size(this % at)
        y((p - 1) * this % stride() + 1:p * this % stride()) = &
             & x(this % at(p) + 1:this % at(p) + this % stride())
     end do
+
   end function gathered
 
   !===================================================================!
-  ! The physics' inputs at the points: the state gathered per point
-  ! and the design read from the frozen tuple. The design is a field
-  ! on P with one value per point; another domain or extent is
-  ! refused.
+  ! Returns the physics' inputs at the points: the state gathered per
+  ! point and the design read from the frozen tuple; at the sites of a
+  ! projection, the tuples and the designs the sites read. The design
+  ! is a field on P with designs values per point; another domain or
+  ! extent is refused.
   !===================================================================!
 
   subroutine point_inputs(this, inputs, x, point_data)
-    class(residual_operator), intent(in) :: this
-    type(binding)            , intent(in) :: inputs(:)
-    real(dp)                 , intent(in) :: x(:)
+
+    class(residual_operator)       , intent(in)  :: this
+    type(binding)                  , intent(in)  :: inputs(:)
+    real(dp)                       , intent(in)  :: x(:)
     type(stored_field), allocatable, intent(out) :: point_data(:)
-    type(stored_field) :: state, design
+
+    type(stored_field)       :: state, design
     type(typed_field_domain) :: points, designs
-    type(continuous_domain) :: continuous
-    type(discrete_domain) :: domain
-    real(dp), allocatable :: design_values(:)
+    type(continuous_domain)  :: continuous
+    type(discrete_domain)    :: domain
+    real(dp), allocatable    :: design_values(:)
+
     if (.not. bound_on(inputs, this % argument(2), this % design_domain(), size(this % at) * this % designs)) then
        error stop 'operation_lagrangian: the design must be defined on the point domain with one value per &
             &design per point'
@@ -1083,13 +1451,24 @@ contains
        design  = designs % design(design_values)
     end if
     point_data = [state, design]
+
   end subroutine point_inputs
 
+  !===================================================================!
+  ! Adds every rule's value at every point into r on the row it
+  ! governs; under a projection, tested into the rows of the nodes
+  !
+  !      r(at(p) + primary(j) + 1) += governing(p, j)
+  !===================================================================!
+
   pure subroutine placed(this, governing, r)
+
     class(residual_operator), intent(in)    :: this
-    real(dp)                 , intent(in)    :: governing(:,:)
-    real(dp)                 , intent(inout) :: r(:)
+    real(dp)                , intent(in)    :: governing(:,:)
+    real(dp)                , intent(inout) :: r(:)
+
     integer :: p, j
+
     if (allocated(this % projected)) then
        call this % tested_into(governing, r)
        return
@@ -1100,22 +1479,27 @@ contains
                & r(this % at(p) + this % primary(j) + 1) + governing(p, j)
        end do
     end do
+
   end subroutine placed
 
   !===================================================================!
-  ! Every rule evaluated at the points, one column per rule: the
-  ! value, or the partial along the variations given.
+  ! Returns every rule evaluated at the points, or at the sites of a
+  ! projection, one column per rule: the value, or the partial along
+  ! the variations given; at a reduced point the rule's variant
   !===================================================================!
 
   subroutine governed(this, point_data, governing, variations)
-    class(residual_operator), intent(in) :: this
-    type(stored_field)      , intent(in) :: point_data(:)
-    real(dp), allocatable   , intent(out) :: governing(:,:)
+
+    class(residual_operator), intent(in)           :: this
+    type(stored_field)      , intent(in)           :: point_data(:)
+    real(dp), allocatable   , intent(out)          :: governing(:,:)
     type(variation)         , intent(in), optional :: variations(:)
-    class(field), allocatable :: half
-    real(dp), allocatable :: column(:)
+
+    class(field), allocatable       :: half
+    real(dp), allocatable           :: column(:)
     type(stored_field), allocatable :: bound(:)
-    integer :: j, coordinates
+    integer                         :: j, coordinates
+
     ! at the points, or at the sites of a projection
     if (allocated(this % projected)) then
        allocate(governing(this % sites % num_vertices(), this % laws))
@@ -1124,7 +1508,7 @@ contains
     end if
     do j = 1, this % laws
        governing(:, j) = evaluated(j)
-       ! at the explicit points the rule's variant, evaluated at every
+       ! at the reduced points the rule's variant, evaluated at every
        ! point and taken at those
        if (allocated(this % variant)) then
           if (this % variant(j) /= j) governing(:, j) = merge(evaluated(this % variant(j)), governing(:, j), &
@@ -1134,9 +1518,16 @@ contains
 
   contains
 
+    !-----------------------------------------------------------------!
+    ! Returns rule k at every point or site: its value, or its partial
+    ! along the variations
+    !-----------------------------------------------------------------!
+
     function evaluated(k) result(column)
-      integer, intent(in) :: k
+
+      integer, intent(in)   :: k
       real(dp), allocatable :: column(:)
+
       ! a rule that reads a coordinate is given the positions of the
       ! points as its third argument
       bound       = point_data
@@ -1155,19 +1546,26 @@ contains
          call this % rules(k) % apply(this % points, this % rules(k) % bind(bound), half)
       end if
       call half % real_vector(column)
+
     end function evaluated
 
   end subroutine governed
 
-  ! every rule's value at every point, on the real values of its tuple,
-  ! at a reduced point its variant
+  !===================================================================!
+  ! Returns every rule's value at every point, on the real values of
+  ! its tuple, at a reduced point its variant
+  !===================================================================!
+
   subroutine governed_at_points(this, inputs, x, governing)
+
     class(residual_operator), intent(in)  :: this
     type(binding)           , intent(in)  :: inputs(:)
     real(dp)                , intent(in)  :: x(:)
     real(dp), allocatable   , intent(out) :: governing(:,:)
+
     real(dp), allocatable :: nu(:), xs(:)
-    integer :: j, p, deg, nd
+    integer               :: j, p, deg, nd
+
     call bound_real_vector(inputs, this % argument(2), nu)
     xs  = this % gathered(x)
     deg = this % degrees
@@ -1179,17 +1577,27 @@ contains
                & nu((p - 1) * nd + 1:p * nd), this % point_positions(:, p))
        end do
     end do
+
   end subroutine governed_at_points
 
-  ! every rule's value at every site of the projection, on the real
-  ! values the basis forms there, at a reduced site its variant
+  !===================================================================!
+  ! Returns every rule's value at every site of the projection, on the
+  ! real values the basis forms there, at a reduced site its variant.
+  ! A rule is zero where its test functions vanish and at the sites of
+  ! another image's instance; divided over the images, the values are
+  ! then summed over them.
+  !===================================================================!
+
   subroutine governed_on_reals(this, inputs, x, governing)
+
     class(residual_operator), intent(in)  :: this
     type(binding)           , intent(in)  :: inputs(:)
     real(dp)                , intent(in)  :: x(:)
     real(dp), allocatable   , intent(out) :: governing(:,:)
+
     real(dp), allocatable :: design_values(:), xs(:), ns(:)
-    integer :: j, s, width, nd, nsites, coordinates, nq, k
+    integer               :: j, s, width, nd, nsites, coordinates, nq, k
+
     call bound_real_vector(inputs, this % argument(2), design_values)
     xs     = this % formed_at_sites(x)
     ns     = this % design_at_sites(design_values)
@@ -1222,29 +1630,43 @@ contains
        end do
     end do
     if (this % divided) call co_sum(governing)
+
   end subroutine governed_on_reals
 
-  ! whether this image forms instance n of the projection: every
-  ! instance on one image, or not divided; divided, the instances
-  ! whose number it owns, one after another of every num_images()
+  !===================================================================!
+  ! Returns whether this image forms instance n of the projection:
+  ! every instance where the instances are not divided; divided, the
+  ! instances dealt to the images in turn
+  !
+  !      instance   1  2  3  4  5  6  7
+  !      image      1  2  3  1  2  3  1      on three images
+  !===================================================================!
+
   logical function instance_owned(this, n)
+
     class(residual_operator), intent(in) :: this
     integer                 , intent(in) :: n
+
     instance_owned = .not. this % divided
     if (this % divided) instance_owned = mod(n - 1, num_images()) + 1 == this_image()
+
   end function instance_owned
 
   !===================================================================!
-  ! The first `coordinates` coordinates of every point's position as a
-  ! field on the points, one component per coordinate. A rule that
-  ! reads a coordinate the positions do not store stops the program.
+  ! Returns the first coordinates coordinates of every point's
+  ! position, or of every site's under a projection, as a field on the
+  ! points, one component per coordinate. A rule that reads a
+  ! coordinate the positions do not store stops the program.
   !===================================================================!
 
   function residual_positions(this, coordinates) result(positions)
+
     class(residual_operator), intent(in) :: this
     integer                 , intent(in) :: coordinates
-    type(stored_field) :: positions
+    type(stored_field)                   :: positions
+
     character(len=250) :: message
+
     if (coordinates > size(this % point_positions, 1)) then
        write(message,'(a,i0,a,i0)') 'operation_lagrangian: a rule reads a coordinate the positions of the &
             &points do not store; coordinates read = ', coordinates, ', coordinates stored = ', &
@@ -1260,37 +1682,55 @@ contains
     end if
     positions = stored_field('positions', this % points % vertex_set(), size(this % at), num_components=coordinates)
     call positions % set_real_vector(reshape(this % point_positions(1:coordinates, :), [coordinates * size(this % at)]))
+
   end function residual_positions
 
-  ! the point whose tuple contains an unknown: the last point whose
-  ! offset lies below it, the tuples being placed in order
+  !===================================================================!
+  ! Returns the point whose tuple contains an unknown: the last point
+  ! whose offset lies below it, the tuples being placed in order
+  !===================================================================!
+
   pure integer function point_of(this, row) result(p)
+
     class(residual_operator), intent(in) :: this
     integer                 , intent(in) :: row
+
     integer :: q
+
     p = 1
     do q = 1, size(this % at)
        if (this % at(q) < row .and. row <= this % at(q) + this % stride()) p = q
     end do
+
   end function point_of
 
+  !===================================================================!
+  ! Returns whether any fixed value has a nonzero design rate
+  !===================================================================!
+
   pure logical function any_fixed_rate(this) result(yes)
+
     class(residual_operator), intent(in) :: this
+
     yes = any(this % fixed_rate /= 0.0_dp)
+
   end function any_fixed_rate
 
   !===================================================================!
-  ! The state read from the frozen tuple: a field on U with one value
-  ! per unknown; another domain or extent is refused.
+  ! Returns the state read from the frozen tuple: a field on U with one
+  ! value per unknown; another domain or extent is refused
   !===================================================================!
 
   subroutine state_of(this, inputs, x, state)
+
     class(residual_operator), intent(in)  :: this
-    type(binding)             , intent(in)  :: inputs(:)
-    real(dp), allocatable, intent(out) :: x(:)
-    type(stored_field)   , intent(out) :: state
+    type(binding)           , intent(in)  :: inputs(:)
+    real(dp), allocatable   , intent(out) :: x(:)
+    type(stored_field)      , intent(out) :: state
+
     type(typed_field_domain) :: states
-    character(len=250) :: message
+    character(len=250)       :: message
+
     if (.not. bound_on(inputs, this % argument(1), this % unknown_domain(), this % unknowns)) then
        write(message,'(a,i0)') 'operation_lagrangian: the bound state must be defined on the unknown &
             &domain with one component per degree per unknown point; unknowns = ', this % unknowns
@@ -1299,18 +1739,23 @@ contains
     call bound_real_vector(inputs, this % argument(1), x)
     states = this % state_fields()
     state  = states % state(x)
+
   end subroutine state_of
 
   !===================================================================!
-  ! A direction in the state is a field on U of the state's extent; a
-  ! direction in the design is a field on P with one value per point.
+  ! Refuses a direction off its domain: a direction in the state is a
+  ! field on U of the state's extent; a direction in the design is a
+  ! field on P with designs values per point
   !===================================================================!
 
   subroutine require_direction(this, given)
+
     class(residual_operator), intent(in) :: this
     type(variation)         , intent(in) :: given
-    type(graph) :: along
+
+    type(graph)           :: along
     real(dp), allocatable :: v(:)
+
     along = given % domain()
     call given % direction(v)
     if (given % argument_is(this % argument(1))) then
@@ -1322,27 +1767,51 @@ contains
     else
        error stop 'operation_lagrangian: require_direction received a variation naming neither the state nor the design'
     end if
+
   end subroutine require_direction
 
+  !===================================================================!
+  ! Emits r as the residual field on Y = U
+  !===================================================================!
+
   subroutine placed_output(this, r, output)
-    class(residual_operator), intent(in) :: this
-    real(dp)                 , intent(in) :: r(:)
+
+    class(residual_operator) , intent(in)    :: this
+    real(dp)                 , intent(in)    :: r(:)
     class(field), allocatable, intent(inout) :: output
-    type(stored_field) :: out
+
+    type(stored_field)       :: out
     type(typed_field_domain) :: residuals
+
     residuals = this % residual_fields()
     out       = residuals % residual(r, this % name())
     if (allocated(output)) deallocate(output)
     allocate(output, source=out)
+
   end subroutine placed_output
 
+  !===================================================================!
+  ! Applies the residual at the frozen tuple: the stencils and the
+  ! rules placed on their rows, then the fixed, prescribed and summed
+  ! rows
+  !
+  !      r  = S_1(x) + S_2(x)                  the stencils
+  !      r(at(p) + primary(j) + 1) += rule_j   the physics at point p
+  !      r(row) = x(row) - h(row)              a fixed row
+  !      r(row) = the prescribed relation      a prescribed row
+  !      r(row) += the other parts' terms      a summed row
+  !===================================================================!
+
   subroutine residual_apply(this, input_graph, inputs, output)
-    class(residual_operator), intent(in)      :: this
-    class(directed_graph)    , intent(in)      :: input_graph
-    type(binding), intent(in), optional       :: inputs(:)
-    class(field), allocatable, intent(inout) :: output
-    type(stored_field) :: state
+
+    class(residual_operator) , intent(in)           :: this
+    class(directed_graph)    , intent(in)           :: input_graph
+    type(binding)            , intent(in), optional :: inputs(:)
+    class(field), allocatable, intent(inout)        :: output
+
+    type(stored_field)    :: state
     real(dp), allocatable :: r(:), governing(:,:), x(:)
+
     if (.not. present(inputs)) then
        error stop 'operation_lagrangian: residual_apply requires inputs (the state and the design), but the optional inputs argument was not given'
     end if
@@ -1354,28 +1823,32 @@ contains
     call this % write_prescribed(x, r, along=.false.)
     if (allocated(this % summed_by)) call this % summed_by % add_summed_rows(x, r)
     call this % placed_output(r, output)
+
   end subroutine residual_apply
 
   !===================================================================!
-  ! THE TWO TERMS OF THE RESIDUAL: the two stencils applied to the
-  ! state, summed into r, and the physics at the points, in
+  ! Returns the two terms of the residual: the two stencils applied to
+  ! the state, summed into r, and the physics at the points, in
   ! governing; or, along a direction v in the state, the partial
-  ! action of each in place of its value.
+  ! action of each in place of its value
   !===================================================================!
 
   subroutine discretized(this, inputs, state, x, r, governing, v)
-    class(residual_operator), intent(in) :: this
-    type(binding)            , intent(in) :: inputs(:)
-    type(stored_field)       , intent(in) :: state
-    real(dp)                 , intent(in) :: x(:)
-    real(dp), allocatable, intent(out) :: r(:), governing(:,:)
-    real(dp), intent(in), optional    :: v(:)
-    type(stored_field) :: direction
+
+    class(residual_operator), intent(in)           :: this
+    type(binding)           , intent(in)           :: inputs(:)
+    type(stored_field)      , intent(in)           :: state
+    real(dp)                , intent(in)           :: x(:)
+    real(dp), allocatable   , intent(out)          :: r(:), governing(:,:)
+    real(dp)                , intent(in), optional :: v(:)
+
+    type(stored_field)              :: direction
     type(stored_field), allocatable :: point_data(:)
-    type(typed_field_domain) :: points
-    type(variation) :: varied(1)
-    class(field), allocatable :: half
-    real(dp), allocatable :: coupled(:)
+    type(typed_field_domain)        :: points
+    type(variation)                 :: varied(1)
+    class(field), allocatable       :: half
+    real(dp), allocatable           :: coupled(:)
+
     call stencil_term(this % primary_law, r)
     if (allocated(this % connected_law)) then
        call stencil_term(this % connected_law, coupled)
@@ -1409,13 +1882,22 @@ contains
     else
        call this % governed(point_data, governing)
     end if
+
   contains
+
+    !-----------------------------------------------------------------!
+    ! Returns a stencil applied to the state, or its partial along v
+    !-----------------------------------------------------------------!
+
     subroutine stencil_term(op, y)
-      type(stencil), intent(in) :: op
+
+      type(stencil)        , intent(in)  :: op
       real(dp), allocatable, intent(out) :: y(:)
-      type(stored_field) :: along(1), bound(1)
-      type(variation) :: varied(1)
+
+      type(stored_field)       :: along(1), bound(1)
+      type(variation)          :: varied(1)
       type(typed_field_domain) :: domain
+
       ! array variables, not array constructors: the compiler in use
       ! does not release the allocatable components of a constructor's
       ! temporary
@@ -1429,24 +1911,46 @@ contains
          call op % apply(this % unknown_vertices, op % bind(bound), half)
       end if
       call half % real_vector(y)
+
     end subroutine stencil_term
+
   end subroutine discretized
+
+  !===================================================================!
+  ! Returns the explicit tangent in the state (which = 1) as triples;
+  ! in the design none is stated. Duplicate pairs are combined.
+  !
+  !      row                      entries
+  !      a row of the stencils    S_1 + S_2, unless fixed or prescribed
+  !      at(p) + primary(j) + 1   rule j's gradient at p, in the column
+  !                               at(p) + d + 1 of each component d it
+  !                               reads
+  !      a fixed row              1 on the diagonal
+  !      a prescribed row         the prescribed stencil's entries
+  !
+  ! Each rule's partials come from one reverse pass per point; a
+  ! component no leaf of the rule names has a zero column. Under a
+  ! projection, one pass per site, through the basis.
+  !===================================================================!
 
   subroutine residual_explicit_jacobian(this, input_graph, inputs, which, &
        & rows, columns, weights, jacobian_defined)
+
     class(residual_operator), intent(in)  :: this
-    class(directed_graph)    , intent(in)  :: input_graph
-    type(binding)             , intent(in)  :: inputs(:)
-    integer              , intent(in)  :: which
-    integer , allocatable, intent(out) :: rows(:), columns(:)
-    real(dp), allocatable, intent(out) :: weights(:)
-    logical              , intent(out) :: jacobian_defined
-    type(stored_field) :: state
+    class(directed_graph)   , intent(in)  :: input_graph
+    type(binding)           , intent(in)  :: inputs(:)
+    integer                 , intent(in)  :: which
+    integer , allocatable   , intent(out) :: rows(:), columns(:)
+    real(dp), allocatable   , intent(out) :: weights(:)
+    logical                 , intent(out) :: jacobian_defined
+
+    type(stored_field)    :: state
     real(dp), allocatable :: x(:), w(:), column(:), xs(:), nu(:), g(:)
     integer , allocatable :: r(:), c(:), reads(:), variant_reads(:)
     logical , allocatable :: is_fixed(:)
-    integer :: e, d, p, npts, n, num_triples, count, j, k, deg
-    real(dp) :: value
+    integer               :: e, d, p, npts, n, num_triples, count, j, k, deg
+    real(dp)              :: value
+
     jacobian_defined = which == 1
     if (.not. jacobian_defined) return
     call this % require_host(input_graph)
@@ -1515,9 +2019,15 @@ contains
 
   contains
 
-    ! the rule's partials in the components it reads, in its row at p
+    !-----------------------------------------------------------------!
+    ! Appends the rule's partials in the components it reads, in its
+    ! row at p
+    !-----------------------------------------------------------------!
+
     subroutine place(components)
+
       integer, intent(in) :: components(:)
+
       do k = 1, size(components)
          d = components(k)
          num_triples    = num_triples + 1
@@ -1525,18 +2035,26 @@ contains
          c(num_triples) = this % at(p) + d + 1
          w(num_triples) = g(d)
       end do
+
     end subroutine place
 
   end subroutine residual_explicit_jacobian
 
+  !===================================================================!
+  ! Appends a stencil's entries as triples, off the fixed rows
+  !===================================================================!
+
   subroutine stencil_triples(op, is_fixed, r, c, w, num_triples)
+
     type(stencil), intent(in)    :: op
     logical      , intent(in)    :: is_fixed(:)
     integer      , intent(inout) :: r(:), c(:)
     real(dp)     , intent(inout) :: w(:)
     integer      , intent(inout) :: num_triples
+
     real(dp), allocatable :: weights(:)
-    integer :: e, row
+    integer               :: e, row
+
     call op % weights % real_vector(weights)
     do e = 1, op % pattern % num_edges()
        row = op % pattern % edge_head(e)
@@ -1546,18 +2064,40 @@ contains
        c(num_triples) = op % pattern % edge_tail(e)
        w(num_triples) = weights(e)
     end do
+
   end subroutine stencil_triples
 
+  !===================================================================!
+  ! Applies the partial action along the variations
+  !
+  !      first order in the state    the stencils' and the rules'
+  !                                  partials; a fixed row v(row), a
+  !                                  prescribed row its partial, and
+  !                                  the summed rows' terms added
+  !      first order in the design   the rules' partials; a fixed row
+  !                                  -dh/dnu v(point), a prescribed
+  !                                  row zero
+  !      second order and above      the rules' partials; the fixed
+  !                                  and prescribed rows zero
+  !
+  ! A repeated partial of a fixed row in the design alone is refused
+  ! where any fixed value has a design rate: only the first rate is
+  ! stated.
+  !===================================================================!
+
   subroutine residual_partial_action(this, input_graph, inputs, variations, output)
-    class(residual_operator), intent(in)      :: this
-    class(directed_graph)    , intent(in)      :: input_graph
-    type(binding)             , intent(in)      :: inputs(:)
-    type(variation)          , intent(in)      :: variations(:)
+
+    class(residual_operator) , intent(in)    :: this
+    class(directed_graph)    , intent(in)    :: input_graph
+    type(binding)            , intent(in)    :: inputs(:)
+    type(variation)          , intent(in)    :: variations(:)
     class(field), allocatable, intent(inout) :: output
-    type(stored_field) :: state
+
+    type(stored_field)    :: state
     real(dp), allocatable :: r(:), governing(:,:), v(:), x(:)
-    integer :: i
-    character(len=250) :: message
+    integer               :: i
+    character(len=250)    :: message
+
     call this % require_owned(variations)
     if (size(variations) < 1 .or. size(variations) > this % max_degree()) then
        write(message,'(a,i0,a,i0)') 'operation_lagrangian: the requested order must lie within &
@@ -1606,17 +2146,27 @@ contains
        call this % zero_prescribed_rows(r)
     end if
     call this % placed_output(r, output)
+
   end subroutine residual_partial_action
 
+  !===================================================================!
+  ! Returns every rule's partial at the points along the variations,
+  ! each restated on the rules' own arguments; without physics, no
+  ! column
+  !===================================================================!
+
   subroutine physics_tangent(this, inputs, variations, x, governing)
-    class(residual_operator), intent(in) :: this
-    type(binding)             , intent(in) :: inputs(:)
-    type(variation)          , intent(in) :: variations(:)
-    real(dp)                 , intent(in) :: x(:)
-    real(dp), allocatable, intent(out) :: governing(:,:)
+
+    class(residual_operator), intent(in)  :: this
+    type(binding)           , intent(in)  :: inputs(:)
+    type(variation)         , intent(in)  :: variations(:)
+    real(dp)                , intent(in)  :: x(:)
+    real(dp), allocatable   , intent(out) :: governing(:,:)
+
     type(stored_field), allocatable :: point_data(:)
-    type(variation), allocatable :: at_points(:)
-    integer :: i
+    type(variation)   , allocatable :: at_points(:)
+    integer                         :: i
+
     if (.not. allocated(this % physics)) then
        allocate(governing(size(this % at), 0))
        return
@@ -1627,15 +2177,29 @@ contains
        at_points(i) = this % physics_variation(variations(i))
     end do
     call this % governed(point_data, governing, at_points)
+
   end subroutine physics_tangent
 
+  !===================================================================!
+  ! Returns a variation of the residual restated as one of the
+  ! physics
+  !
+  !      along        at the points              at the sites
+  !      the state    gathered per point         formed by the basis
+  !      the design   as given, on the rules'    that of each site's
+  !                   own argument               instance
+  !===================================================================!
+
   function physics_variation(this, given) result(at_points)
+
     class(residual_operator), intent(in) :: this
-    type(variation)          , intent(in) :: given
-    type(variation) :: at_points
-    type(stored_field) :: direction
+    type(variation)         , intent(in) :: given
+    type(variation)                      :: at_points
+
+    type(stored_field)       :: direction
     type(typed_field_domain) :: points
-    real(dp), allocatable :: v(:)
+    real(dp), allocatable    :: v(:)
+
     call given % direction(v)
     if (given % argument_is(this % argument(1)) .and. allocated(this % projected)) then
        points    = typed_field_domain(this % sites, this % physics % num_components())
@@ -1654,18 +2218,25 @@ contains
     else
        error stop 'operation_lagrangian: physics_variation received a variation naming neither the state nor the design'
     end if
+
   end function physics_variation
 
   !===================================================================!
-  ! THE RESIDUAL CONSTRAINED TO free UNKNOWNS OF ITS OWN NUMBERING,
-  ! the rest set to values. Ch. 4.6.3 of the dissertation names this
-  ! and linearize below the transpose-Jacobian-vector-product
-  ! routines. The primary and, if present, connected stencil each
-  ! restrict themselves the way a stencil already restricts for
-  ! multigrid; a residual adds only what a stencil does not state -
-  ! its own evaluation points and fixed rows, renumbered onto free. A
-  ! point split across the boundary (some but not all of its degrees
-  ! in free) is an invalid constraint.
+  ! Returns the residual constrained to the unknowns free, numbered in
+  ! the order free lists them, the rest set to values. Section 4.6.3 of
+  ! the dissertation names this and linearize below the transpose-
+  ! Jacobian-vector-product routines. The primary and, if present,
+  ! the connected stencil each restrict themselves, the way a stencil
+  ! already restricts for multigrid; a residual adds only what a
+  ! stencil does not state: its own evaluation points and fixed rows,
+  ! renumbered onto free.
+  !
+  !      unknowns   1  2  3  4  5  6
+  !      free          2     4  5          sub_of = [0 1 0 2 3 0]
+  !
+  ! A point split across the boundary (some but not all of its degrees
+  ! in free), a law projected on the cells and prescribed rows are
+  ! refused.
   !===================================================================!
 
   function constrain(this, free, values) result(sub)
@@ -1673,13 +2244,13 @@ contains
     class(residual_operator), intent(in) :: this
     integer                 , intent(in) :: free(:)
     real(dp)                , intent(in) :: values(:)
-    type(residual_operator) :: sub
+    type(residual_operator)              :: sub
 
     type(stencil), allocatable :: secondary
-    type(stencil) :: derived
-    integer , allocatable :: sub_of(:), at(:), fixed_rows(:), points(:)
-    real(dp), allocatable :: fixed(:), rate(:)
-    integer :: e, p, npts, ncar
+    type(stencil)              :: derived
+    integer , allocatable      :: sub_of(:), at(:), fixed_rows(:), points(:)
+    real(dp), allocatable      :: fixed(:), rate(:)
+    integer                    :: e, p, npts, ncar
 
     allocate(sub_of(this % unknowns), source=0)
     do e = 1, size(free)
@@ -1731,12 +2302,17 @@ contains
   end function constrain
 
   !===================================================================!
-  ! THE POINTS A CONSTRAINT RETAINS: the evaluation points whose
-  ! degree components all lie in free, in the order of this
-  ! residual's points; the constrained residual's j-th point is the
+  ! Returns the points a constraint retains: the evaluation points
+  ! whose degree components all lie in free, in the order of this
+  ! residual's points. The constrained residual's j-th point is the
   ! selected_points(j)-th point of this one, and a field on P
-  ! restricts to the constrained residual's P' by these indices. A
-  ! point split across the boundary (some but not all of its degrees
+  ! restricts to the constrained residual's P' by these indices.
+  !
+  !      degrees = 2, at = [0, 2, 4]
+  !      free = [3, 4, 5, 6]   -->   points = [2, 3]
+  !      free = [2, 3]         -->   point 1 split: refused
+  !
+  ! A point split across the boundary (some but not all of its degrees
   ! in free) is an invalid constraint.
   !===================================================================!
 
@@ -1744,12 +2320,12 @@ contains
 
     class(residual_operator), intent(in) :: this
     integer                 , intent(in) :: free(:)
-    integer, allocatable :: points(:)
+    integer, allocatable                 :: points(:)
 
     logical, allocatable :: chosen(:)
     integer, allocatable :: selected(:)
-    integer :: e, p, d, inside, npts
-    character(len=250) :: message
+    integer              :: e, p, d, inside, npts
+    character(len=250)   :: message
 
     if (any(free < 1) .or. any(free > this % unknowns)) then
        write(message,'(a,i0,a,i0,a,i0)') 'operation_lagrangian: a constraint must select unknowns &
@@ -1783,14 +2359,15 @@ contains
   end function selected_points
 
   !===================================================================!
-  ! THE EXPLICIT TANGENT, FROZEN INTO A LINEAR RESIDUAL. Ch. 4.6.3 of
-  ! the dissertation names this and constrain above the transpose-
-  ! Jacobian-vector-product routines. The frozen matrix states the
-  ! whole linear map, so the returned residual has no rule and no
-  ! fixed rows. transposed states which of
-  ! Jw = rhs or J^Tw = rhs the returned residual's own apply computes;
-  ! version_number identifies the returned residual (versioned,
-  ! this module's own procedure inherited from operation_action).
+  ! Returns the explicit tangent, frozen into a linear residual.
+  ! Section 4.6.3 of the dissertation names this and constrain above
+  ! the transpose-Jacobian-vector-product routines. The frozen matrix
+  ! states the whole linear map, so the returned residual has no rule
+  ! and no fixed rows. Its value is J w - rhs, or J^T w - rhs where
+  ! transposed, so that its zero solves J w = rhs or J^T w = rhs; the
+  ! returned residual is versioned by version_number.
+  !
+  !      R  --explicit_jacobian-->  J = D_Q R  -->  w |-> J w - rhs
   !===================================================================!
 
   function linearize(this, input_graph, inputs, rhs, transposed, version_number) result(lin)
@@ -1801,13 +2378,13 @@ contains
     real(dp)                , intent(in) :: rhs(:)
     logical                 , intent(in) :: transposed
     integer                 , intent(in) :: version_number
-    type(residual_operator) :: lin
+    type(residual_operator)              :: lin
 
-    type(stencil) :: a
+    type(stencil)         :: a
     integer , allocatable :: r(:), c(:)
     real(dp), allocatable :: w(:)
-    logical :: jacobian_defined
-    character(len=250) :: message
+    logical               :: jacobian_defined
+    character(len=250)    :: message
 
     if (size(rhs) /= this % unknowns) then
        write(message,'(a,i0,a,i0)') 'operation_lagrangian: one right side value is required per &
@@ -1839,16 +2416,22 @@ contains
   end function linearize
 
   !===================================================================!
-  ! THE PROJECTION'S SITES. The tuples the rules read at every site,
-  ! formed from the state by the basis, one tuple after another; the
-  ! design at every site, that of its instance's first node.
+  ! Returns the tuples the rules read at every site of the projection,
+  ! formed from the state by the basis, one tuple after another
+  !
+  !      y((s - 1) width + c) = sum over the nodes i and coefficients k
+  !                             of b(formed(0, c), k, i, q, e)
+  !                                x(at(p_i) + formed(k + 1, c) + 1)
   !===================================================================!
 
   pure function formed_at_sites(this, x) result(y)
+
     class(residual_operator), intent(in) :: this
     real(dp)                , intent(in) :: x(:)
-    real(dp), allocatable :: y(:)
+    real(dp), allocatable                :: y(:)
+
     integer :: width, nq, n, q, s, c, i, k, p, d, offset, e
+
     associate (pr => this % projected, el => this % projected % elements)
       width = size(pr % formed, 2)
       nq    = el % num_quadrature_points()
@@ -1872,13 +2455,22 @@ contains
          end do
       end do
     end associate
+
   end function formed_at_sites
 
+  !===================================================================!
+  ! Returns the design at every site of the projection: that of its
+  ! instance's first node
+  !===================================================================!
+
   pure function design_at_sites(this, v) result(w)
+
     class(residual_operator), intent(in) :: this
     real(dp)                , intent(in) :: v(:)
-    real(dp), allocatable :: w(:)
+    real(dp), allocatable                :: w(:)
+
     integer :: nq, n, q, s, p, nd
+
     nd = this % designs
     nq = this % projected % elements % num_quadrature_points()
     allocate(w(nd * size(this % projected % element_cell) * nq))
@@ -1889,20 +2481,27 @@ contains
           w((s - 1) * nd + 1:s * nd) = v((p - 1) * nd + 1:p * nd)
        end do
     end do
+
   end function design_at_sites
 
   !===================================================================!
-  ! Each rule's value at every site, times the weight and the test
-  ! function of every coefficient of every node the instance states,
-  ! added to that coefficient's row.
+  ! Adds each rule's value at every site, times the weight and the
+  ! test function of every coefficient of every node the instance
+  ! states, to that coefficient's row
+  !
+  !      r(at(p_i) + coefficient_row(k, f) + 1) +=
+  !                     governing(s, j) test(d, k, i, q, e)
   !===================================================================!
 
   pure subroutine tested_into(this, governing, r)
+
     class(residual_operator), intent(in)    :: this
     real(dp)                , intent(in)    :: governing(:,:)
     real(dp)                , intent(inout) :: r(:)
-    integer :: j, f, d, n, e, q, s, i, p, k, nq
+
+    integer  :: j, f, d, n, e, q, s, i, p, k, nq
     real(dp) :: value
+
     associate (pr => this % projected, el => this % projected % elements)
       nq = el % num_quadrature_points()
       do j = 1, this % laws
@@ -1926,44 +2525,50 @@ contains
          end do
       end do
     end associate
+
   end subroutine tested_into
 
   !===================================================================!
-  ! THE JACOBIAN OF THE PROJECTION, element by element. At each site of
-  ! an instance, the gradient of each rule in the tuple it reads, times
-  ! the weight and the test function of a row and the basis's
-  ! derivative that forms each component from each coefficient of each
-  ! node, is summed into the instance's matrix: its rows the node, the
-  ! coefficient and the equation; its columns the node and the
-  ! component of a node's tuple the basis reads. The entries of the
-  ! rows the instance states are then written once each, those of one
-  ! row and column of two instances summed when combined.
+  ! Returns the count of triples the projection's jacobian may state:
+  ! for every instance and every field, nodes x coefficients rows,
+  ! each reading nodes x the field's columns
   !===================================================================!
 
   integer function projected_count(this) result(count)
+
     class(residual_operator), intent(in) :: this
+
     integer , allocatable :: offsets(:), slot(:,:), columns_of(:), first(:), column(:)
-    integer :: nodes, nk
+    integer               :: nodes, nk
+
     nodes = size(this % projected % element_point, 1)
     nk    = this % projected % elements % num_coefficients()
     call this % projected_columns(offsets, slot, columns_of, first, column)
     count = size(this % projected % element_cell) * nodes * nk * nodes * sum(columns_of)
+
   end function projected_count
 
   !===================================================================!
-  ! THE COLUMNS EACH FIELD'S ROWS READ in an instance: of the
+  ! Returns the columns each field's rows read in an instance: of the
   ! components of a node's tuple the basis reads (offsets), those the
   ! rules testing the field read, in the order of offsets.
-  ! columns_of(f) of them, column(first(f):first(f) + columns_of(f) -
-  ! 1) their places in offsets, and slot(o, f) the rank of the o-th
-  ! offset among the field's, zero where it reads none.
+  !
+  !      offsets(o)        o = 1..no, the components the basis reads
+  !      columns_of(f)     the count of field f's columns
+  !      column(first(f) : first(f) + columns_of(f) - 1)
+  !                        their places in offsets
+  !      slot(o, f)        the rank of the o-th offset among the
+  !                        field's columns, zero where it reads none
   !===================================================================!
 
   subroutine projected_columns(this, offsets, slot, columns_of, first, column)
+
     class(residual_operator), intent(in)  :: this
     integer , allocatable   , intent(out) :: offsets(:), slot(:,:), columns_of(:), first(:), column(:)
+
     integer , allocatable :: reads(:), place(:)
-    integer :: no, nf, j, f, m, k2, o, r
+    integer               :: no, nf, j, f, m, k2, o, r
+
     associate (pr => this % projected)
       offsets = read_offsets(pr % formed)
       no      = size(offsets)
@@ -1997,8 +2602,15 @@ contains
 
   contains
 
+    !-----------------------------------------------------------------!
+    ! Marks, for the field f, every offset that forms one of the
+    ! components given
+    !-----------------------------------------------------------------!
+
     subroutine slots_of(components)
+
       integer, intent(in) :: components(:)
+
       associate (pr => this % projected)
         do m = 1, size(components)
            do k2 = 1, ubound(pr % formed, 1)
@@ -2007,15 +2619,23 @@ contains
            end do
         end do
       end associate
+
     end subroutine slots_of
 
   end subroutine projected_columns
 
-  ! the components of a node's tuple the basis reads, each once
+  !===================================================================!
+  ! Returns the components of a node's tuple the basis reads, each
+  ! once, in the order they are first read
+  !===================================================================!
+
   pure function read_offsets(formed) result(offsets)
-    integer, intent(in) :: formed(0:,:)
+
+    integer, intent(in)  :: formed(0:,:)
     integer, allocatable :: offsets(:)
+
     integer :: c, k
+
     offsets = [integer ::]
     do c = 1, size(formed, 2)
        do k = 1, ubound(formed, 1)
@@ -2024,19 +2644,51 @@ contains
           offsets = [offsets, formed(k, c)]
        end do
     end do
+
   end function read_offsets
 
+  !===================================================================!
+  ! Appends the jacobian of the projection as triples, element by
+  ! element. At each site of an instance, the gradient of each rule in
+  ! the tuple it reads, times the weight and the test function of a
+  ! row and the basis's derivative that forms each component from each
+  ! coefficient of each node, is summed into the instance's matrix: its
+  ! rows the node, the coefficient and the equation; its columns the
+  ! node and the component of a node's tuple the basis reads. The
+  ! entries of the rows the instance states are then written once
+  ! each, those of one row and column of two instances summed when
+  ! combined.
+  !
+  !      the block of field f in the instance's matrix, from base(f)
+  !
+  !                           node i2, column o = 1..columns_of(f)
+  !                         +----------------------------------+
+  !      node i,            |  tau g(comp) b(dd, k2, i2, q, e) |
+  !      coefficient k      |  summed over the sites           |
+  !                         +----------------------------------+
+  !
+  !      entry  base(f) + ((i - 1) nk + k) nodes columns_of(f)
+  !                     + (i2 - 1) columns_of(f) + o
+  !
+  ! Divided over the images, each image forms the matrices of the
+  ! instances it owns, and the matrices are summed over the images
+  ! before their rows are placed.
+  !===================================================================!
+
   subroutine projected_triples(this, x, nu, is_fixed, r, c, w, num_triples)
+
     class(residual_operator), intent(in)    :: this
     real(dp)                , intent(in)    :: x(:), nu(:)
     logical                 , intent(in)    :: is_fixed(:)
     integer                 , intent(inout) :: r(:), c(:)
     real(dp)                , intent(inout) :: w(:)
     integer                 , intent(inout) :: num_triples
+
     real(dp), allocatable :: xs(:), ns(:), g(:), local(:), matrices(:,:)
     integer , allocatable :: reads(:), offsets(:), place(:), slot(:,:), columns_of(:), first(:), column(:), base(:)
-    integer :: width, nd, nq, nodes, nk, nf, no, f, n, i, p, k, row, o, i2
-    integer :: at_row
+    integer               :: width, nd, nq, nodes, nk, nf, no, f, n, i, p, k, row, o, i2
+    integer               :: at_row
+
     width   = size(this % projected % formed, 2)
     nd      = this % designs
     xs      = this % formed_at_sites(x)
@@ -2101,13 +2753,20 @@ contains
 
   contains
 
-    ! the matrix of instance n: the partials of every rule at its sites,
-    ! through the basis, times the test functions, in its block
+    !-----------------------------------------------------------------!
+    ! Returns the matrix of instance n: the partials of every rule at
+    ! its sites, through the basis, times the test functions, in its
+    ! block
+    !-----------------------------------------------------------------!
+
     subroutine instance_matrix(n, local)
+
       integer , intent(in)  :: n
       real(dp), intent(out) :: local(:)
-      integer :: e, q, s, j, f, d, i, k, m, comp, dd, i2, k2, offset, o, at_row
+
+      integer  :: e, q, s, j, f, d, i, k, m, comp, dd, i2, k2, offset, o, at_row
       real(dp) :: value, tau
+
       associate (pr => this % projected, el => this % projected % elements)
         e     = pr % element_cell(n)
         local = 0.0_dp
@@ -2142,21 +2801,25 @@ contains
            end do
         end do
       end associate
+
     end subroutine instance_matrix
 
   end subroutine projected_triples
 
   !===================================================================!
-  ! The edges a projected law adds to the coupling: from every
+  ! Appends the edges a projected law adds to the coupling: from every
   ! component a node's tuple forms at a site to the row of every
-  ! coefficient of every equation of every node of the instance.
+  ! coefficient of every equation of every node the instance states
   !===================================================================!
 
   subroutine projected_edges(this, heads, tails)
+
     class(residual_operator), intent(in)    :: this
     integer , allocatable   , intent(inout) :: heads(:), tails(:)
+
     integer , allocatable :: offsets(:), h(:), t(:)
-    integer :: n, i, p, f, k, i2, p2, o, e
+    integer               :: n, i, p, f, k, i2, p2, o, e
+
     associate (pr => this % projected, el => this % projected % elements)
       offsets = [integer ::]
       do o = 1, size(pr % formed, 2)
@@ -2191,23 +2854,27 @@ contains
     end associate
     heads = [heads, h(1:e)]
     tails = [tails, t(1:e)]
+
   end subroutine projected_edges
 
   !===================================================================!
-  ! THE PROJECTION OF A PART: the instances with a node the part owns,
-  ! each node's point in the part's numbering, negative for a node of
-  ! the halo, whose rows another part states.
+  ! Returns the projection of a part: the instances with a node the
+  ! part owns, each node's point in the part's numbering, negative for
+  ! a node of the halo, whose rows another part states
   !===================================================================!
 
   function projected_part(this, place_of, owned) result(sub)
+
     class(residual_operator), intent(in) :: this
     ! the part's point of each point, zero outside the part, and
     ! whether the part owns it
     integer                 , intent(in) :: place_of(:)
     logical                 , intent(in) :: owned(:)
-    type(projection) :: sub
+    type(projection)                     :: sub
+
     logical, allocatable :: stated(:)
-    integer :: n, i, p, m
+    integer              :: n, i, p, m
+
     associate (pr => this % projected)
       allocate(stated(size(pr % element_cell)), source=.false.)
       do n = 1, size(pr % element_cell)
@@ -2238,31 +2905,44 @@ contains
          end do
       end do
     end associate
+
   end function projected_part
 
   !===================================================================!
-  ! A BLOCK AND THE POINTS OF THE MANIFOLD. tuple_at is the offset,
-  ! among the block's unknowns, of the tuple of the moment m at the
-  ! cell c. from_points reads one column of the tuples over the
-  ! instants, and of the stages of the step into each, into a vector
-  ! over the block's unknowns at the moments named; to_points writes
-  ! the column from the vector. The stages are left out when their
-  ! array is.
+  ! Returns the offset, among the block's unknowns, of the tuple of
+  ! the moment m at the cell c
   !===================================================================!
 
   pure integer function tuple_at(this, m, c)
+
     class(chain_block), intent(in) :: this
     integer           , intent(in) :: m, c
+
     tuple_at = this % rows % at((m - 1) * this % num_cells + c)
+
   end function tuple_at
+
+  !===================================================================!
+  ! Reads one column of the tuples over the instants, and of the
+  ! stages of the step into each, into a vector over the block's
+  ! unknowns at the moments named. The stages are left out when their
+  ! array is.
+  !
+  !      instant k of the block, cell c
+  !        tuple(:, c, first + k - 1)  -->  x at tuple_at(m_k, c)
+  !      stage i of the step into instant k + 1, cell c
+  !        stages(:, c, i, first + k)  -->  x at tuple_at(m_k + i, c)
+  !
+  !      where m_k = instant_moment(k)
+  !===================================================================!
 
   pure subroutine from_points(this, moments, lb, tuple, x, stages)
 
-    class(chain_block), intent(in)    :: this
-    integer           , intent(in)    :: moments
-    type(lower_bounds), intent(in)    :: lb
-    real(dp)          , intent(in)    :: tuple(:,:,lb % instant:)
-    real(dp)          , intent(inout) :: x(:)
+    class(chain_block), intent(in)           :: this
+    integer           , intent(in)           :: moments
+    type(lower_bounds), intent(in)           :: lb
+    real(dp)          , intent(in)           :: tuple(:,:,lb % instant:)
+    real(dp)          , intent(inout)        :: x(:)
     real(dp)          , intent(in), optional :: stages(:,:,:,lb % stage:)
 
     integer :: k, i, c, base, stride
@@ -2287,13 +2967,19 @@ contains
 
   end subroutine from_points
 
+  !===================================================================!
+  ! Writes the column of the tuples, and of the stages, from a vector
+  ! over the block's unknowns at the moments named: the inverse of
+  ! from_points
+  !===================================================================!
+
   pure subroutine to_points(this, moments, lb, x, tuple, stages)
 
-    class(chain_block), intent(in)    :: this
-    integer           , intent(in)    :: moments
-    type(lower_bounds), intent(in)    :: lb
-    real(dp)          , intent(in)    :: x(:)
-    real(dp)          , intent(inout) :: tuple(:,:,lb % instant:)
+    class(chain_block), intent(in)              :: this
+    integer           , intent(in)              :: moments
+    type(lower_bounds), intent(in)              :: lb
+    real(dp)          , intent(in)              :: x(:)
+    real(dp)          , intent(inout)           :: tuple(:,:,lb % instant:)
     real(dp)          , intent(inout), optional :: stages(:,:,:,lb % stage:)
 
     integer :: k, i, c, base, stride

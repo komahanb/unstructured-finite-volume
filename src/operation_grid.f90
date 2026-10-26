@@ -1,81 +1,101 @@
 !=====================================================================!
-! The discretisation of a coordinate: the operation that produces a
-! finite measure on a duration - points of the axis and the weight
-! at each point. A partition and a quadrature are the two views of
-! the one map: a partition's points are the instants and its weights
-! the steps, exact on piecewise constants; the gauss kind's points
-! are the Legendre nodes and its weights the rule's, exact on
-! polynomials to degree 2n - 1.
+! Module that states the discretisation of a coordinate: the operation
+! that produces a finite measure on a duration, points of the axis and
+! the weight at each point.
+!
+! A partition and a quadrature are the two views of the one map. A
+! partition's points are the instants and its weights the steps, exact
+! on piecewise constants; the gauss kind's points are the Legendre
+! nodes and its weights the rule's, exact on polynomials to degree
+! 2n - 1:
+!
+!      partition, n = 5    t_1     t_2     t_3     t_4     t_5
+!                          |-------|-------|-------|-------|
+!      dt                  0       dt_2    dt_3    dt_4    dt_5
+!
+!      gauss, n = 4        0                               duration
+!                          |---x_1-----x_2-----x_3-----x_4---|
+!      dt                      w_1     w_2     w_3     w_4
 !
 !      input graph    the instants
 !      input 1        the design, a real field
 !      output         dt, one per instant: the step that ends there
 !
-! The first instant has no step ending at it and has step zero, so a
-! grid over n instants is a partition of the duration into n-1
-! steps. Every concretion supplies one unnormalised weight per step
-! and nothing else; the weights are then scaled so that the steps sum
-! to the duration exactly, which is written here once.
+! The first instant of a partition has no step ending at it and has
+! step zero, so a grid over n instants is a partition of the duration
+! into n-1 steps. Every concretion supplies one unnormalised weight per
+! step and nothing else; the weights are then scaled so that the steps
+! sum to the duration exactly, which is written here once:
 !
-!      dt(k)  =  duration * w(k) / sum of the weights
+!      dt(k)  =  duration * w(k) / (sum of the weights)
 !
 ! Because the normalisation is part of the operation rather than
 ! something a caller does afterwards, the partials include it: a design
 ! that changes one weight changes every step, and the constraint that
-! the steps sum to the duration is satisfied along every direction. A grid
-! whose weights are the design is therefore a design on the simplex,
-! which is what grid design needs and what a caller normalising
-! explicitly would lose.
+! the steps sum to the duration is satisfied along every direction. A
+! grid whose weights are the design is therefore a design on the
+! simplex, which is what grid design needs and what a caller
+! normalising explicitly would lose.
 !
-!             THE PARTIALS
-!
-! The weights are computed over derivative_terms, so the value and
-! every mixed partial in the design are computed together and are
-! exact. A grid whose weights do not read the design has zero
+! The partials. The weights are computed over derivative_terms, so the
+! value and every mixed partial in the design are computed together
+! and are exact. A grid whose weights do not read the design has zero
 ! partials and returns them; it does not refuse the request.
 !
-!             WHAT IS REFUSED
-!
-! Fewer than two instants, since there is then no step; a weight that
-! is not positive, which would give a step of zero or of negative
-! length; and a variation on anything but the design.
+! What is refused: fewer than two instants, since there is then no
+! step; a weight that is not positive, which would give a step of zero
+! or of negative length; and a variation on anything but the design.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 
 module operation_grid
 
-  use iso_fortran_env, only : int64
-  use util_precision  , only : dp
-  use operation_action      , only : operation, variation, contract
-  use operation_action      , only : binding, seeded_argument, applied, emit_real
-  use view_directed         , only : directed_graph
-  use view_directed_stored  , only : stored_directed_graph
-  use field_calculus        , only : field, FIELD_REAL
-  use field_stored          , only : stored_field
-  use util_derivative_terms , only : derivative_terms, value, mixed_partial, &
+  use iso_fortran_env      , only : int64
+  use util_precision       , only : dp
+  use operation_action     , only : operation, variation, contract
+  use operation_action     , only : binding, seeded_argument, applied, emit_real
+  use view_directed        , only : directed_graph
+  use view_directed_stored , only : stored_directed_graph
+  use field_calculus       , only : field, FIELD_REAL
+  use field_stored         , only : stored_field
+  use util_derivative_terms, only : derivative_terms, value, mixed_partial, &
        & max_subset_width, operator(+), operator(*), operator(/)
 
   implicit none
 
   private
+
   public :: grid, uniform_grid, random_grid, designed_grid, fixed_grid, gauss_grid
   public :: partition, partitioned, gauss_node_weight
 
   ! One representation, the weight rule a case: uniform weighs every
   ! step one, random a bounded deterministic draw, designed the design
-  ! itself, fixed a stored partition stored as constants.
+  ! itself, fixed a stored partition stored as constants, gauss the
+  ! Gauss-Legendre rule
   integer, parameter :: GRID_UNIFORM  = 1
   integer, parameter :: GRID_RANDOM   = 2
   integer, parameter :: GRID_DESIGNED = 3
   integer, parameter :: GRID_FIXED    = 4
   integer, parameter :: GRID_GAUSS    = 5
 
+  !-------------------------------------------------------------------!
+  ! Type that models a grid: the rule of its kind, the duration it
+  ! partitions, the seed of the random kind and the steps of the fixed
+  ! one. The unnormalised weight of the step ending at instant k:
+  !
+  !      uniform     1
+  !      random      a deterministic draw in [1/2, 3/2) from seed and k
+  !      designed    design(k - 1)
+  !      fixed       steps(k - 1)
+  !      gauss       the k-th weight of the n-point Gauss-Legendre rule
+  !-------------------------------------------------------------------!
+
   type, extends(operation) :: grid
 
-     integer , private :: kind = GRID_UNIFORM
-     real(dp), private :: span = 1.0_dp
-     integer , private :: seed = 1
+     integer              , private :: kind = GRID_UNIFORM
+     real(dp)             , private :: span = 1.0_dp
+     integer              , private :: seed = 1
      real(dp), allocatable, private :: steps(:)
 
    contains
@@ -84,6 +104,7 @@ module operation_grid
      procedure :: apply          => grid_apply
      procedure :: partial_action => grid_partial_action
      procedure :: abscissae
+
      procedure, private :: weight_of
 
   end type grid
@@ -119,9 +140,9 @@ module operation_grid
 contains
 
   !===================================================================!
-  ! One representation for every kind: the rule, the duration it
-  ! partitions and the name reported. A duration that is not positive
-  ! stops the program: there is no partition of it.
+  ! Creates the one representation of every kind: the rule, the
+  ! duration it partitions and the name reported. A duration that is
+  ! not positive stops the program: there is no partition of it.
   !===================================================================!
 
   function grid_of(kind, span, label) result(this)
@@ -129,7 +150,7 @@ contains
     integer         , intent(in) :: kind
     real(dp)        , intent(in) :: span
     character(len=*), intent(in) :: label
-    type(grid) :: this
+    type(grid)                   :: this
 
     character(len=250) :: message
 
@@ -144,44 +165,57 @@ contains
 
   end function grid_of
 
+  !===================================================================!
+  ! Creates the uniform grid of a duration
+  !===================================================================!
+
   function create_uniform(span) result(this)
 
     real(dp), intent(in) :: span
-    type(grid) :: this
+    type(grid)           :: this
 
     this = grid_of(GRID_UNIFORM, span, 'uniform grid')
 
   end function create_uniform
 
+  !===================================================================!
+  ! Creates the random grid of a duration and a seed
+  !===================================================================!
+
   function create_random(span, seed) result(this)
 
     real(dp), intent(in) :: span
     integer , intent(in) :: seed
-    type(grid) :: this
+    type(grid)           :: this
 
     this = grid_of(GRID_RANDOM, span, 'random grid')
     this % seed = seed
 
   end function create_random
 
+  !===================================================================!
+  ! Creates the grid of a duration whose weights are the design
+  !===================================================================!
+
   function create_designed(span) result(this)
 
     real(dp), intent(in) :: span
-    type(grid) :: this
+    type(grid)           :: this
 
     this = grid_of(GRID_DESIGNED, span, 'designed grid')
 
   end function create_designed
 
   !===================================================================!
-  ! A grid whose partition is given: the steps, all positive, summing
-  ! to the duration they span. A nonpositive step stops the program.
+  ! Creates a grid whose partition is given: the steps, all positive,
+  ! summing to the duration they span. A nonpositive step stops the
+  ! program.
   !===================================================================!
 
   function create_fixed(steps) result(this)
 
     real(dp), intent(in) :: steps(:)
-    type(grid) :: this
+    type(grid)           :: this
 
     character(len=250) :: message
 
@@ -197,19 +231,23 @@ contains
   end function create_fixed
 
   !===================================================================!
-  ! The quadrature of a duration: every point of the graph applied on
-  ! is a node of the Gauss-Legendre rule, and the weights sum to the
-  ! duration.
+  ! Creates the quadrature of a duration: every point of the graph
+  ! applied on is a node of the Gauss-Legendre rule, and the weights
+  ! sum to the duration
   !===================================================================!
 
   function create_gauss(span) result(this)
 
     real(dp), intent(in) :: span
-    type(grid) :: this
+    type(grid)           :: this
 
     this = grid_of(GRID_GAUSS, span, 'gauss grid')
 
   end function create_gauss
+
+  !===================================================================!
+  ! Returns the duration the grid partitions
+  !===================================================================!
 
   pure real(dp) function duration(this)
 
@@ -220,8 +258,8 @@ contains
   end function duration
 
   !===================================================================!
-  ! The unnormalised weight of the step ending at instant k, of n:
-  ! the rule the kind names.
+  ! Returns the unnormalised weight of the step ending at instant k, of
+  ! n: the rule the kind names
   !===================================================================!
 
   pure function weight_of(this, design, k, n) result(w)
@@ -229,7 +267,7 @@ contains
     class(grid)           , intent(in) :: this
     type(derivative_terms), intent(in) :: design(:)
     integer               , intent(in) :: k, n
-    type(derivative_terms) :: w
+    type(derivative_terms)             :: w
 
     select case (this % kind)
     case (GRID_UNIFORM);  w = uniform_weight(this, design, k, n)
@@ -242,9 +280,9 @@ contains
   end function weight_of
 
   !===================================================================!
-  ! The given step ending at instant k: the (k-1)-th stored step, a
-  ! constant in the design. An instant outside the partition stops the
-  ! program.
+  ! Returns the given step ending at instant k: the (k-1)-th stored
+  ! step, a constant in the design. An instant outside the partition
+  ! stops the program.
   !===================================================================!
 
   pure function fixed_weight(this, design, k, n) result(w)
@@ -264,11 +302,8 @@ contains
   end function fixed_weight
 
   !===================================================================!
-  ! The k-th weight of the n-point Gauss-Legendre rule on [0, span],
-  ! a constant in the design. The node and weight on [-1, 1] come
-  ! from Newton's iteration on the Legendre polynomial through its recurrence,
-  ! seeded by the Chebyshev estimate; the iteration is stopped at the
-  ! arithmetic's spacing of the node.
+  ! Returns the k-th weight of the n-point Gauss-Legendre rule on
+  ! [0, span], a constant in the design
   !===================================================================!
 
   pure function gauss_weight(this, design, k, n) result(w)
@@ -278,12 +313,28 @@ contains
     integer               , intent(in) :: k, n
 
     type(derivative_terms) :: w
-    real(dp) :: node, weight
+    real(dp)               :: node, weight
 
     call gauss_node_weight(k, n, this % span, node, weight)
     w = derivative_terms(weight, design(1))
 
   end function gauss_weight
+
+  !===================================================================!
+  ! Returns the k-th node and weight of the n-point Gauss-Legendre rule
+  ! on [0, span]. The node on [-1, 1] comes from Newton's iteration on
+  ! the Legendre polynomial through its three-term recurrence,
+  !
+  !      j P_j(x)  =  (2j - 1) x P_(j-1)(x) - (j - 1) P_(j-2)(x) ,
+  !
+  ! seeded by the Chebyshev estimate cos(pi (k - 1/4) / (n + 1/2)),
+  ! negated so that the nodes ascend with k; the iteration is stopped
+  ! at the arithmetic's spacing of the node. The node and weight are
+  ! then mapped from [-1, 1] to [0, span]:
+  !
+  !      node    =  span (x + 1) / 2
+  !      weight  =  span / ((1 - x^2) P_n'(x)^2)
+  !===================================================================!
 
   pure subroutine gauss_node_weight(k, n, span, node, weight)
 
@@ -321,7 +372,7 @@ contains
   end subroutine gauss_node_weight
 
   !===================================================================!
-  ! THE RULES, one per kind.
+  ! Returns the uniform weight: one for every step
   !===================================================================!
 
   pure function uniform_weight(this, design, k, n) result(w)
@@ -329,7 +380,7 @@ contains
     class(grid)           , intent(in) :: this
     type(derivative_terms), intent(in) :: design(:)
     integer               , intent(in) :: k, n
-    type(derivative_terms) :: w
+    type(derivative_terms)             :: w
 
     associate (u1 => this, u2 => k, u3 => n); end associate
 
@@ -338,10 +389,11 @@ contains
   end function uniform_weight
 
   !===================================================================!
-  ! A deterministic weight in one half to three halves, mixed from
-  ! the seed and the instant. It is reproducible across runs, which
-  ! a drawn number would not be, and it is bounded away from zero, so
-  ! no step degenerates.
+  ! Returns a deterministic weight in one half to three halves, mixed
+  ! from the seed and the instant by two steps of a linear
+  ! congruential generator modulo 2^31. It is reproducible across runs,
+  ! which a drawn number would not be, and it is bounded away from
+  ! zero, so no step degenerates.
   !===================================================================!
 
   pure function random_weight(this, design, k, n) result(w)
@@ -349,7 +401,7 @@ contains
     class(grid)           , intent(in) :: this
     type(derivative_terms), intent(in) :: design(:)
     integer               , intent(in) :: k, n
-    type(derivative_terms) :: w
+    type(derivative_terms)             :: w
 
     integer(int64), parameter :: modulus    = 2147483648_int64
     integer(int64), parameter :: multiplier = 1103515245_int64
@@ -359,9 +411,9 @@ contains
 
     associate (u1 => n); end associate
 
-    ! modulo, not mod: mod takes the sign of its first argument, so
-    ! a negative seed would leave x below zero and the weight at or
-    ! below it. The two agree wherever the seed is positive.
+    ! modulo, not mod: mod takes the sign of its first argument, so a
+    ! negative seed would leave x below zero and the weight at or below
+    ! it. The two agree wherever the seed is positive.
     x = modulo(int(this % seed, int64) * 40503_int64 + int(k, int64) * 65537_int64, modulus)
     x = modulo(multiplier * x + increment, modulus)
     x = modulo(multiplier * x + increment, modulus)
@@ -371,8 +423,8 @@ contains
   end function random_weight
 
   !===================================================================!
-  ! The design itself, one entry per step. The step ending at instant
-  ! k is designed by entry k-1.
+  ! Returns the design itself, one entry per step: the step ending at
+  ! instant k is designed by entry k-1
   !===================================================================!
 
   pure function designed_weight(this, design, k, n) result(w)
@@ -380,7 +432,7 @@ contains
     class(grid)           , intent(in) :: this
     type(derivative_terms), intent(in) :: design(:)
     integer               , intent(in) :: k, n
-    type(derivative_terms) :: w
+    type(derivative_terms)             :: w
 
     associate (u1 => this, u2 => n); end associate
 
@@ -393,23 +445,23 @@ contains
   end function designed_weight
 
   !===================================================================!
-  ! The weights, scaled so that the steps sum to the duration. A
-  ! weight that is not positive stops the program.
+  ! Returns the weights, scaled so that the steps sum to the duration.
+  ! A weight that is not positive stops the program.
   !===================================================================!
 
   subroutine partitioned_terms(this, design, n, dt)
 
-    class(grid)           , intent(in) :: this
-    type(derivative_terms), intent(in) :: design(:)
-    integer               , intent(in) :: n
+    class(grid)                        , intent(in)  :: this
+    type(derivative_terms)             , intent(in)  :: design(:)
+    integer                            , intent(in)  :: n
     type(derivative_terms), allocatable, intent(out) :: dt(:)
 
     type(derivative_terms) :: total
-    integer :: k, first
-    character(len=250) :: message
+    integer                :: k, first
+    character(len=250)     :: message
 
-    ! a partition's first instant has no step; a quadrature
-    ! weighs every point
+    ! A partition's first instant has no step; a quadrature weighs
+    ! every point
     first = merge(1, 2, this % kind == GRID_GAUSS)
     if (n < 2) then
        write(message,'(a,i0)') 'operation_grid: a partition needs at least two instants; n = ', n
@@ -436,28 +488,42 @@ contains
 
   end subroutine partitioned_terms
 
+  !===================================================================!
+  ! Returns the uniform partition of a duration into n instants: the
+  ! steps and the instants
+  !===================================================================!
+
   subroutine partition_duration(duration, n, dt, t)
-    real(dp), intent(in) :: duration
-    integer , intent(in) :: n
+    real(dp)             , intent(in)  :: duration
+    integer              , intent(in)  :: n
     real(dp), allocatable, intent(out) :: dt(:), t(:)
     call partitioned(uniform_grid(duration), n, dt, t)
   end subroutine partition_duration
 
+  !===================================================================!
+  ! Returns the steps of a grid over a number of instants at a design,
+  ! by applying it on a graph of the instants with no arcs
+  !===================================================================!
+
   subroutine partition_values(steps, num_instants, design, dt)
-    class(grid), intent(in) :: steps
-    integer    , intent(in) :: num_instants
-    real(dp)   , intent(in) :: design(:)
+    class(grid)          , intent(in)  :: steps
+    integer              , intent(in)  :: num_instants
+    real(dp)             , intent(in)  :: design(:)
     real(dp), allocatable, intent(out) :: dt(:)
-    type(stored_directed_graph) :: instants
-    type(stored_field) :: design_field
+    type(stored_directed_graph)        :: instants
+    type(stored_field)                 :: design_field
     instants = stored_directed_graph(num_instants, tails=[integer ::], heads=[integer ::])
     design_field = stored_field('design', instants % vertex_set(), max(size(design), 1))
     call design_field % set_real_vector(padded(design))
     call applied(steps, instants, [design_field], dt)
   end subroutine partition_values
 
+  !===================================================================!
+  ! Returns the design, or one entry of zero for a design of none
+  !===================================================================!
+
   pure function padded(design) result(x)
-    real(dp), intent(in) :: design(:)
+    real(dp), intent(in)  :: design(:)
     real(dp), allocatable :: x(:)
     if (size(design) == 0) then
        allocate(x(1), source=0.0_dp)
@@ -466,11 +532,16 @@ contains
     end if
   end function padded
 
+  !===================================================================!
+  ! Returns the steps and the points of a grid over n instants, at the
+  ! design where one is given
+  !===================================================================!
+
   subroutine partitioned_values(steps, n, dt, t, design)
-    class(grid), intent(in) :: steps
-    integer    , intent(in) :: n
-    real(dp), allocatable, intent(out) :: dt(:), t(:)
-    real(dp), intent(in), optional :: design(:)
+    class(grid)          , intent(in)           :: steps
+    integer              , intent(in)           :: n
+    real(dp), allocatable, intent(out)          :: dt(:), t(:)
+    real(dp)             , intent(in), optional :: design(:)
     if (present(design)) then
        call partition(steps, n, design, dt)
     else
@@ -480,16 +551,17 @@ contains
   end subroutine partitioned_values
 
   !===================================================================!
-  ! The points of the axis at which the weights are located: a partition's are its
-  ! instants, accumulated from the steps; the gauss kind's are its
-  ! nodes. One weight per point either way.
+  ! Returns the points of the axis at which the weights are located: a
+  ! partition's are its instants, accumulated from the steps, t_1 = 0
+  ! and t_k = t_(k-1) + dt_k; the gauss kind's are its nodes. One
+  ! weight per point either way.
   !===================================================================!
 
   pure subroutine abscissae(this, n, dt, t)
 
-    class(grid), intent(in) :: this
-    integer    , intent(in) :: n
-    real(dp)   , intent(in) :: dt(:)
+    class(grid)          , intent(in)  :: this
+    integer              , intent(in)  :: n
+    real(dp)             , intent(in)  :: dt(:)
     real(dp), allocatable, intent(out) :: t(:)
 
     real(dp) :: weight
@@ -509,15 +581,20 @@ contains
 
   end subroutine abscissae
 
+  !===================================================================!
+  ! Writes the requested partial of each step into the output field,
+  ! one entry per instant
+  !===================================================================!
+
   subroutine placed(this, input_graph, dt, output)
 
-    class(grid)           , intent(in) :: this
-    class(directed_graph) , intent(in) :: input_graph
-    type(derivative_terms), intent(in) :: dt(:)
+    class(grid)              , intent(in)    :: this
+    class(directed_graph)    , intent(in)    :: input_graph
+    type(derivative_terms)   , intent(in)    :: dt(:)
     class(field), allocatable, intent(inout) :: output
 
     real(dp), allocatable :: values(:)
-    integer :: k
+    integer               :: k
 
     allocate(values(size(dt)))
     do k = 1, size(dt)
@@ -528,34 +605,39 @@ contains
 
   end subroutine placed
 
+  !===================================================================!
+  ! Applies the grid: its value, the partial action along no variation
+  !===================================================================!
+
   subroutine grid_apply(this, input_graph, inputs, output)
 
-    class(grid)          , intent(in)        :: this
-    class(directed_graph), intent(in)        :: input_graph
-    type(binding), intent(in), optional       :: inputs(:)
-    class(field), allocatable, intent(inout) :: output
+    class(grid)              , intent(in)           :: this
+    class(directed_graph)    , intent(in)           :: input_graph
+    type(binding)            , intent(in), optional :: inputs(:)
+    class(field), allocatable, intent(inout)        :: output
 
     call this % value_by_partial_action(input_graph, inputs, output)
 
   end subroutine grid_apply
 
   !===================================================================!
-  ! The design as terms seeded by the variations, which must all be
-  ! on the design; one naming another argument stops the program. A
-  ! design of no entries is read as one entry of zero.
+  ! Applies the partial action: the design as terms seeded by the
+  ! variations, which must all be on the design; one naming another
+  ! argument stops the program. A design of no entries is read as one
+  ! entry of zero.
   !===================================================================!
 
   subroutine grid_partial_action(this, input_graph, inputs, variations, output)
 
-    class(grid)          , intent(in)        :: this
-    class(directed_graph), intent(in)        :: input_graph
-    type(binding)         , intent(in)        :: inputs(:)
-    type(variation)      , intent(in)        :: variations(:)
+    class(grid)              , intent(in)    :: this
+    class(directed_graph)    , intent(in)    :: input_graph
+    type(binding)            , intent(in)    :: inputs(:)
+    type(variation)          , intent(in)    :: variations(:)
     class(field), allocatable, intent(inout) :: output
 
     type(derivative_terms), allocatable :: design(:), dt(:)
-    integer :: consumed
-    character(len=250) :: message
+    integer                             :: consumed
+    character(len=250)                  :: message
 
     call this % require_variations(variations)
     call seeded_argument(this, inputs, variations, 1, design, consumed)

@@ -1,39 +1,50 @@
 !=====================================================================!
-! THE FINITE ELEMENT METHOD ON A MESH: the law tested against a basis
-! on the cells, in place of being placed at the points. The unknown
-! and its multiplier are expanded in the same basis, and each row is
-! the law tested with one basis function: an inner product, which is
-! an integral, which the quadrature of the cells approximates.
+! Module that states the finite element method on a mesh: the law
+! tested against a basis on the cells, in place of being placed at the
+! points. The unknown and its multiplier are expanded in the same
+! basis, and each row is the law tested with one basis function: an
+! inner product, which is an integral, which the quadrature of the
+! cells approximates.
 !
-! THE ELEMENT of degree p on a cell: the polynomials of degree p, with
+! The element of degree p on a cell: the polynomials of degree p, with
 ! the jet of the unknown at the cell's nodes as its coefficients, to
 ! the order the law requires. The basis is dual to the coefficients:
 ! each basis function is the polynomial that its own coefficient reads
-! as one and every other as zero, a column of the inverse of the
-! square matrix of the coefficients of the polynomials. On a line the
-! cells are the segments between consecutive points and the nodes are
-! their ends: the value alone at degree one, the linear element; the
-! value and the slope at degree three, the Hermite cubic. The basis is
-! formed once on the reference segment [0, 1] and mapped to each
-! segment of length h: the coefficient of order k along the line is
-! the reference's divided by h^k, and a derivative of order o is the
-! reference's divided by h^o.
+! as one and every other as zero, a column of the inverse of the square
+! matrix of the coefficients of the polynomials.
 !
-! THE QUADRATURE of a segment: Gauss-Legendre of p + 1 points, exact
-! on the polynomials of degree 2p + 1, among them the product of two
-! basis functions.
+! On a line the cells are the segments between consecutive points and
+! the nodes are their ends: the value alone at degree one, the linear
+! element; the value and the slope at degree three, the Hermite cubic.
 !
-! THE TEST FUNCTION of a coefficient: its basis function divided by
-! its moment of the coefficient's order about the node, summed over
-! the node's cells - for the value the integral of the basis function,
+!          node i                                  node i+1
+!      -----o======================================o----- x
+!        q_i, q_i'      the segment, of length h    q_i+1, q_i+1'
+!              *         *              *         *
+!                  the p + 1 Gauss-Legendre points
+!
+! The basis is formed once on the reference segment [0, 1] and mapped
+! to each segment of length h, xi = (x - x_i) / h: the coefficient of
+! order k along the line is the reference's divided by h^k, and a
+! derivative of order o is the reference's divided by h^o, so
+!
+!      d^o phi_k / dx^o  =  h^(k - o)  d^o psi_k / dxi^o
+!
+! The quadrature of a segment: Gauss-Legendre of p + 1 points, exact on
+! the polynomials of degree 2p + 1, among them the product of two basis
+! functions.
+!
+! The test function of a coefficient: its basis function divided by its
+! moment of the coefficient's order about the node, summed over the
+! node's cells. For the value it is the integral of the basis function,
 ! the node's volume; for the slope the integral of the basis function
 ! times (x - x_i), h^3 / 30 on each side of the node for the Hermite
 ! cubic. A row is then the law's value, or its slope, about the node.
 !
-! IN SEVERAL COORDINATES the cells are those of a mesh read from a file
-! and its corners are the nodes, the points of the region; the element
-! is of degree one, the value at its corners its coefficients: the
-! polynomials of degree one on a triangle and a tetrahedron, the
+! In several coordinates the cells are those of a mesh read from a
+! file and its corners are the nodes, the points of the region. The
+! element is of degree one, the value at its corners its coefficients:
+! the polynomials of degree one on a triangle and a tetrahedron, the
 ! bilinear and trilinear ones on a quadrangle and a hexahedron, on the
 ! reference cell of unit side mapped to each cell by its own basis. The
 ! quadrature is the tensor product of Gauss-Legendre rules of three
@@ -48,22 +59,27 @@
 
 module operation_finite_element
 
-  use util_precision    , only : dp
-  use util_factorisation, only : dense_factorisation
-  use field_forms       , only : polynomial_form
-  use view_mesh         , only : mesh, values_of
-  use operation_stencil , only : stencil
-  use operation_grid    , only : gauss_node_weight
+  use util_precision                    , only : dp
+  use util_factorisation                , only : dense_factorisation
+  use field_forms                       , only : polynomial_form
+  use view_mesh                         , only : mesh, values_of
+  use operation_stencil                 , only : stencil
+  use operation_grid                    , only : gauss_node_weight
   use operation_derivative_approximation, only : derivative_approximation, element_quadrature
 
   implicit none
 
   private
+
   public :: finite_element
+
+  !-------------------------------------------------------------------!
+  ! Type that models the finite element method of a degree
+  !-------------------------------------------------------------------!
 
   type, extends(derivative_approximation) :: finite_element
 
-     ! the degree of the polynomials of an element
+     ! The degree of the polynomials of an element
      integer :: degree = 1
 
    contains
@@ -80,9 +96,14 @@ module operation_finite_element
 
 contains
 
+  !===================================================================!
+  ! Creates the method of a degree, one at least; its order is one
+  ! more than its degree
+  !===================================================================!
+
   function create(degree) result(this)
 
-    integer, intent(in) :: degree
+    integer, intent(in)  :: degree
     type(finite_element) :: this
 
     character(len=250) :: message
@@ -97,9 +118,9 @@ contains
   end function create
 
   !===================================================================!
-  ! No relation among the components a point stores: a stencil with
-  ! no entries over the cells. An axis outside the mesh's dimension
-  ! stops the program.
+  ! Returns no relation among the components a point stores: a stencil
+  ! with no entries over the cells. An axis outside the mesh's
+  ! dimension stops the program.
   !===================================================================!
 
   function derivative_rows(this, cells, axis, derivative) result(rows)
@@ -107,7 +128,7 @@ contains
     class(finite_element), intent(in) :: this
     type(mesh)           , intent(in) :: cells
     integer              , intent(in) :: axis, derivative
-    type(stencil) :: rows
+    type(stencil)                     :: rows
 
     character(len=250) :: message
 
@@ -122,6 +143,10 @@ contains
 
   end function derivative_rows
 
+  !===================================================================!
+  ! Returns true: the method projects the law on the cells
+  !===================================================================!
+
   pure logical function projects(this)
     class(finite_element), intent(in) :: this
     associate (u1 => this); end associate
@@ -129,13 +154,18 @@ contains
   end function projects
 
   !===================================================================!
-  ! THE ELEMENTS OF A LINE: each segment between consecutive points a
-  ! cell, its two ends its nodes, each storing the coefficients of
-  ! orders zero to order, and its p + 1 Gauss-Legendre points, at each
-  ! the jet of the basis to the order derivatives. Invalid input: a
-  ! mesh of several coordinates, or a degree other than 2 order + 1,
-  ! the degree of the polynomials the coefficients of two nodes
-  ! determine.
+  ! Returns the elements of a line: each segment between consecutive
+  ! points a cell, its two ends its nodes, each storing the
+  ! coefficients of orders zero to order, and its p + 1 Gauss-Legendre
+  ! points, at each the jet of the basis to the order derivatives.
+  !
+  !      set % basis(o, k, i, q, e)    derivative o of the basis function
+  !                                    of coefficient k at node i, at
+  !                                    point q of cell e
+  !
+  ! A mesh of several coordinates is passed to corner_elements. Invalid
+  ! input: a degree other than 2 order + 1, the degree of the
+  ! polynomials the coefficients of two nodes determine.
   !===================================================================!
 
   function elements(this, cells, order, derivatives) result(set)
@@ -143,13 +173,13 @@ contains
     class(finite_element), intent(in) :: this
     type(mesh)           , intent(in) :: cells
     integer              , intent(in) :: order, derivatives
-    type(element_quadrature) :: set
+    type(element_quadrature)          :: set
 
     real(dp), allocatable :: centre(:), reference(:,:,:), xi(:), w(:)
     integer , allocatable :: lower(:), upper(:)
-    integer :: ncells, nq, e, q, i, k, o, n
-    real(dp) :: h
-    character(len=250) :: message
+    integer               :: ncells, nq, e, q, i, k, o, n
+    real(dp)              :: h
+    character(len=250)    :: message
 
     if (cells % dimension > 1) then
        set = corner_elements(this, cells, order, derivatives)
@@ -162,7 +192,7 @@ contains
        error stop trim(message)
     end if
 
-    ! the segments: every face with a cell at each end, from the lower
+    ! The segments: every face with a cell at each end, from the lower
     ! point to the upper
     call values_of(cells % cell_centres, centre)
     allocate(lower(0), upper(0))
@@ -180,7 +210,7 @@ contains
     end do
     ncells = size(lower)
 
-    ! the reference basis, its jet at the reference quadrature points
+    ! The reference basis, its jet at the reference quadrature points
     nq = this % degree + 1
     allocate(xi(nq), w(nq))
     do q = 1, nq
@@ -188,6 +218,7 @@ contains
     end do
     call reference_jet(order, derivatives, xi, reference)
 
+    ! Each segment: the reference mapped to it, x = x_lower + h xi
     set % dimension   = 1
     set % order       = order
     set % derivatives = derivatives
@@ -215,10 +246,19 @@ contains
   end function elements
 
   !===================================================================!
-  ! THE TEST FUNCTIONS of a set of elements: each coefficient's basis
-  ! function divided by its moment of the coefficient's order about its
-  ! node, summed over the node's cells, times the weight. centre is
-  ! the positions of the points, the dimension's coordinates of each.
+  ! Forms the test functions of a set of elements: each coefficient's
+  ! basis function divided by its moment of the coefficient's order
+  ! about its node, summed over the node's cells, times the weight.
+  ! centre is the positions of the points, the dimension's coordinates
+  ! of each.
+  !
+  !      moment(k, p)  =  sum over the cells of node p of
+  !                       integral of phi_k (x_axis - c_axis)^o / o!
+  !
+  ! The coefficient k is numbered as the value first, then order
+  ! coefficients along each axis in turn: k = 0 is the value, and
+  ! k > 0 the order o = k - (axis - 1) order along axis
+  ! (k - 1) / order + 1.
   !===================================================================!
 
   subroutine tested(set, centre)
@@ -227,8 +267,8 @@ contains
     real(dp)                , intent(in)    :: centre(:)
 
     real(dp), allocatable :: moment(:,:)
-    real(dp) :: factorial
-    integer :: e, q, i, k, o, p, axis, d, m
+    real(dp)              :: factorial
+    integer               :: e, q, i, k, o, p, axis, d, m
 
     d = set % dimension
     allocate(moment(0:set % num_coefficients() - 1, size(centre) / d), source=0.0_dp)
@@ -267,18 +307,30 @@ contains
   end subroutine tested
 
   !===================================================================!
-  ! THE ELEMENTS OF A MESH OF SEVERAL COORDINATES: the cells the mesh of
-  ! corners keeps, all of one kind - triangles, quadrangles, tetrahedra
-  ! or hexahedra - each with its corners as its nodes, the value its
-  ! one coefficient, and the jet of its basis to the first derivatives
-  ! at the quadrature points. The basis on the reference cell is dual to
-  ! the values at the reference corners; a cell is the image of the
-  ! reference cell under its own basis, x(xi) = sum over the corners of
-  ! psi_a(xi) x_a, and the derivatives along x are those along xi
-  ! through the inverse transpose of that map's jacobian. Invalid input:
-  ! coefficients of a derivative, a degree other than one, second
-  ! derivatives, a mesh without its cells, or cells of several kinds or
-  ! of another kind.
+  ! Returns the elements of a mesh of several coordinates: the cells
+  ! the mesh of corners keeps, all of one kind, triangles, quadrangles,
+  ! tetrahedra or hexahedra, each with its corners as its nodes, the
+  ! value its one coefficient, and the jet of its basis to the first
+  ! derivatives at the quadrature points. The reference cells, their
+  ! corners in the order stored:
+  !
+  !      triangle         quadrangle         tetrahedron      hexahedron
+  !      3                4 ------ 3         4                bottom 1 2 3 4
+  !      | \              |        |         | \              as the quadrangle
+  !      |   \            |        |         |   3            at z = 0, top
+  !      |     \          |        |         | /   \          5 6 7 8 the same
+  !      1 ----- 2        1 ------ 2         1 ----- 2        at z = 1
+  !
+  ! The basis on the reference cell is dual to the values at the
+  ! reference corners; a cell is the image of the reference cell under
+  ! its own basis,
+  !
+  !      x(xi)  =  sum over the corners a of  psi_a(xi) x_a ,
+  !
+  ! and the derivatives along x are those along xi through the inverse
+  ! transpose of that map's jacobian. Invalid input: coefficients of a
+  ! derivative, a degree other than one, second derivatives, a mesh
+  ! without its cells, or cells of several kinds or of another kind.
   !===================================================================!
 
   function corner_elements(this, cells, order, derivatives) result(set)
@@ -286,16 +338,16 @@ contains
     class(finite_element), intent(in) :: this
     type(mesh)           , intent(in) :: cells
     integer              , intent(in) :: order, derivatives
-    type(element_quadrature) :: set
+    type(element_quadrature)          :: set
 
-    type(polynomial_form) :: shape
+    type(polynomial_form)     :: shape
     type(dense_factorisation) :: factors
-    real(dp), allocatable :: corner(:,:), xi(:,:), w(:), member(:), a(:,:), unit(:), coefficients(:), centre(:)
-    real(dp), allocatable :: value(:,:), slope(:,:,:), dphi(:)
-    integer , allocatable :: active(:)
-    real(dp) :: jacobian(3, 3), inverse(3, 3), determinant, gauss(3), gauss_weight(3), x(3)
-    integer :: d, nn, ne, nq, kind, e, q, i, j, r, l, m, u, v, s
-    logical :: simplex
+    real(dp), allocatable     :: corner(:,:), xi(:,:), w(:), member(:), a(:,:), unit(:), coefficients(:), centre(:)
+    real(dp), allocatable     :: value(:,:), slope(:,:,:), dphi(:)
+    integer , allocatable     :: active(:)
+    real(dp)                  :: jacobian(3, 3), inverse(3, 3), determinant, gauss(3), gauss_weight(3), x(3)
+    integer                   :: d, nn, ne, nq, kind, e, q, i, j, r, l, m, u, v, s
+    logical                   :: simplex
 
     if (order /= 0 .or. this % degree /= 1) then
        error stop 'operation_finite_element: in several coordinates the element is of degree one, the values at &
@@ -316,7 +368,8 @@ contains
        error stop 'operation_finite_element: the cells of a mesh are elements of one kind'
     end if
 
-    ! the reference cell's corners, and whether it is a simplex
+    ! The reference cell's corners, one column each, and whether it is
+    ! a simplex
     select case (kind)
     case (2)
        corner  = reshape([0, 0, 1, 0, 0, 1], [2, 3]) * 1.0_dp
@@ -338,9 +391,9 @@ contains
     end if
     nn = size(corner, 2)
 
-    ! the polynomials: of degree one on a simplex; on a box, each power
+    ! The polynomials: of degree one on a simplex; on a box, each power
     ! at most one, the members whose second derivative along every
-    ! coordinate vanishes
+    ! coordinate vanishes, 1, x, y, xy in two coordinates
     if (simplex) then
        shape  = polynomial_form(1, d)
        active = [(j, j = 1, d + 1)]
@@ -361,7 +414,8 @@ contains
        error stop 'operation_finite_element: the polynomials of the element number its corners'
     end if
 
-    ! the basis dual to the values at the corners
+    ! The basis dual to the values at the corners: row i of a is the
+    ! polynomials at corner i
     allocate(member(shape % num_members()), a(nn, nn), unit(nn))
     do i = 1, nn
        call shape % values(corner(:, i), spread(0.0_dp, 1, d), member)
@@ -372,8 +426,20 @@ contains
        error stop 'operation_finite_element: the values at the corners do not determine the polynomials'
     end if
 
-    ! the reference quadrature: Gauss-Legendre of three points on each
-    ! axis of the unit box, collapsed onto the simplex
+    ! The reference quadrature: Gauss-Legendre of three points on each
+    ! axis of the unit box, collapsed onto the simplex. On the triangle
+    ! xi_2 is scaled by 1 - xi_1, so the edge xi_1 = 1 collapses to the
+    ! corner (1, 0), and the weight by the same factor:
+    !
+    !      xi_2                         xi_2
+    !       1 +--------+                 1 +
+    !         | .  .  .|                   | .
+    !         | .  .  .|      -->          | .  .
+    !         | .  .  .|                   | .  .  .
+    !       0 +--------+ xi_1            0 +--------+ xi_1
+    !         0        1                   0        1
+    !
+    ! On the tetrahedron xi_3 is scaled by (1 - xi_1)(1 - xi_2) as well.
     do l = 1, 3
        call gauss_node_weight(l, 3, 1.0_dp, gauss(l), gauss_weight(l))
     end do
@@ -404,7 +470,7 @@ contains
        end do
     end do
 
-    ! the basis and its derivatives along xi at the reference points
+    ! The basis and its derivatives along xi at the reference points
     allocate(value(nn, nq), slope(d, nn, nq))
     do i = 1, nn
        unit    = 0.0_dp
@@ -420,8 +486,11 @@ contains
        end do
     end do
 
-    ! each cell: its corners, and at each quadrature point the weight,
-    ! the position and the basis's jet along x
+    ! Each cell: its corners, and at each quadrature point the weight,
+    ! the position and the basis's jet along x. The jacobian of the map
+    ! is jacobian(i, r) = d x_i / d xi_r, the weight w |det J|, and the
+    ! derivative along x_r is the sum over s of d xi_s / d x_r times
+    ! the derivative along xi_s
     set % dimension   = d
     set % order       = 0
     set % derivatives = derivatives
@@ -458,21 +527,28 @@ contains
 
   end function corner_elements
 
-  ! the unit vector of the axis r among d
+  !===================================================================!
+  ! Returns the unit vector of the axis r among d
+  !===================================================================!
+
   pure function unit_vector(r, d) result(e)
     integer, intent(in) :: r, d
-    integer :: e(d)
+    integer             :: e(d)
     e    = 0
     e(r) = 1
   end function unit_vector
 
-  ! the inverse of a jacobian of two or three coordinates, inverse(r, i)
-  ! the derivative of xi_r along x_i, and its determinant
+  !===================================================================!
+  ! Returns the inverse of a jacobian of two or three coordinates,
+  ! inverse(r, i) the derivative of xi_r along x_i, and its
+  ! determinant, by the adjugate
+  !===================================================================!
+
   pure subroutine inverted(jacobian, d, inverse, determinant)
     real(dp), intent(in)  :: jacobian(3, 3)
     integer , intent(in)  :: d
     real(dp), intent(out) :: inverse(3, 3), determinant
-    real(dp) :: j(3, 3)
+    real(dp)              :: j(3, 3)
     j = jacobian
     inverse = 0.0_dp
     if (d == 2) then
@@ -498,27 +574,31 @@ contains
   end subroutine inverted
 
   !===================================================================!
-  ! THE BASIS ON THE REFERENCE SEGMENT [0, 1], dual to the coefficients
-  ! of orders zero to order at its ends: jet(l, o, q) is the derivative
-  ! of order o, at the point xi(q), of the polynomial of degree
-  ! 2 order + 1 that the coefficient l reads as one and every other as
-  ! zero, the coefficients numbered by node and then by order. The
-  ! polynomials are the members of polynomial_form about zero, and the
-  ! square matrix of their coefficients is inverted by its
+  ! Returns the basis on the reference segment [0, 1], dual to the
+  ! coefficients of orders zero to order at its ends: jet(l, o, q) is
+  ! the derivative of order o, at the point xi(q), of the polynomial of
+  ! degree 2 order + 1 that the coefficient l reads as one and every
+  ! other as zero, the coefficients numbered by node and then by order:
+  !
+  !      l        1       2       ...   order+1        order+2   ...
+  !      reads    q(0)    q'(0)   ...   q^(order)(0)   q(1)      ...
+  !
+  ! The polynomials are the members of polynomial_form about zero, and
+  ! the square matrix of their coefficients is inverted by its
   ! factorisation.
   !===================================================================!
 
   subroutine reference_jet(order, derivatives, xi, jet)
 
-    integer , intent(in) :: order, derivatives
-    real(dp), intent(in) :: xi(:)
+    integer              , intent(in)  :: order, derivatives
+    real(dp)             , intent(in)  :: xi(:)
     real(dp), allocatable, intent(out) :: jet(:,:,:)
 
-    type(polynomial_form) :: shape
+    type(polynomial_form)     :: shape
     type(dense_factorisation) :: factors
-    real(dp), allocatable :: v(:,:), member(:), unit(:), a(:), dphi(:)
-    real(dp) :: ends(2)
-    integer :: n, l, i, k, o, q
+    real(dp), allocatable     :: v(:,:), member(:), unit(:), a(:), dphi(:)
+    real(dp)                  :: ends(2)
+    integer                   :: n, l, i, k, o, q
 
     n     = 2 * (order + 1)
     shape = polynomial_form(n - 1, 1)

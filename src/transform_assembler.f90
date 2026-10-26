@@ -1,13 +1,13 @@
 !=====================================================================!
-! The concrete graph assembler.
+! Module that states the concrete graph assembler.
 !
-! P inverse, and only that. It maps a part back into whole-graph
-! order and maps its data with it.
+! P inverse, and only that. It maps a part back into whole-graph order
+! and maps its data with it.
 !
 !         part 2   1   2   3
 !                  |   |   |
 !         whole    3   4   5           by the relation the partition
-!                                      wrote. The assembler is PASSED
+!                                      wrote. The assembler is passed
 !                                      r; it never constructs one and
 !                                      never stores one.
 !
@@ -16,15 +16,12 @@
 !         assemble( partition( G ) )     ==  G
 !         assemble( partition( G, D ) )  ==  ( G, D )
 !
-!=====================================================================!
-!
-!                   ONLY OWNED VALUES ARE COLLECTED
-!
-! A part reads halo copies of the cells along its boundary so it can compute its
-! own values. A halo value is a copy of a value another part owns.
-! Collecting both copies counts a conserved quantity twice - mass is
-! created, and only in parallel, only near a partition boundary, where
-! such an error is hardest to locate.
+! Only owned values are collected. A part reads halo copies of the
+! cells along its boundary so that it can compute its own values; a
+! halo value is a copy of a value another part owns. Collecting both
+! copies counts a conserved quantity twice: mass is created, and only
+! in parallel, only near a partition boundary, where such an error is
+! hardest to locate.
 !
 !            part 1                        part 2
 !       +---------------+            +---------------+
@@ -36,13 +33,9 @@
 !                    part 2 owns it and reports its value.
 !                    exactly one of them is collected.
 !
-!=====================================================================!
-!
-!                     WHAT ONE PART CAN AND CANNOT DO
-!
-! The contract passes the assembler a single part. So it can restore
-! everything that part owns, and it cannot construct what it was never
-! passed.
+! What one part can and cannot do. The contract passes the assembler a
+! single part, so it can restore everything that part owns, and it
+! cannot construct what it was never passed.
 !
 ! With one part, that is the whole graph and the round trip is exact.
 ! With several, each call fills in that part's own subset and leaves
@@ -50,57 +43,55 @@
 ! rebuilds the whole. The union of the owned sets is the whole graph
 ! and the sets do not overlap, which is what makes that sum correct.
 !
-! ASSEMBLER MEANS THIS AND NOTHING ELSE. No physics, no boundary
+! Assembler means this and nothing else: no physics, no boundary
 ! conditions, no residual, no matrix, no file, no solver behaviour.
-! Any of those added here obscures the one-line law the type exists
-! to keep visible.
+! Any of those added here obscures the one-line law the type exists to
+! keep visible.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 
 module transform_assembler
 
-  use util_precision  , only : dp
-  use view_directed , only : directed_graph
-  use relation_partition, only : partition_relation
-  use field_calculus, only : field
-  use graph_fractal      , only : graph
-  use map_set_store, only : set_store
-  use transform_structure, only : transform
-  use view_directed_stored         , only : stored_directed_graph
-  use field_stored   , only : stored_field
+  use util_precision      , only : dp
+  use view_directed       , only : directed_graph
+  use relation_partition  , only : partition_relation
+  use field_calculus      , only : field
+  use graph_fractal       , only : graph
+  use map_set_store       , only : set_store
+  use transform_structure , only : transform
+  use view_directed_stored, only : stored_directed_graph
+  use field_stored        , only : stored_field
 
   implicit none
 
   private
+
   public :: assembler
 
-  !===================================================================!
-  ! ASSEMBLER. The inverse transform: parts become the whole again,
-  ! along the same relation the partitioner wrote -
-  ! assemble(partition(G)) = G. defined_on_relation reports
-  ! whether a given relation belongs to a given part, so a caller
-  ! storing several relations is informed that it passed the wrong
-  ! one instead of receiving a wrong assembly. Only owned values are
-  ! collected; counting a halo copy twice would violate
-  ! conservation.
-  !===================================================================!
-  ! THE ASSEMBLER STORES NO STATE.
+  !-------------------------------------------------------------------!
+  ! Type that models the assembler: the inverse transform, parts
+  ! becoming the whole again along the same relation the partitioner
+  ! wrote, assemble(partition(G)) = G. defined_on_relation reports
+  ! whether a given relation belongs to a given part, so that a caller
+  ! storing several relations is informed that it passed the wrong one
+  ! instead of receiving a wrong assembly. Only owned values are
+  ! collected; counting a halo copy twice would violate conservation.
   !
-  ! An earlier version stored a bound relation, and that was one
-  ! owner too many. Partition and assembly are inverse operations
-  ! over ONE r, so r belongs to neither of them: the partition writes
-  ! it, and every operation that reads it is passed it. An assembler
-  ! that stored its own copy could be paired with a part the copy was
-  ! never written for, and the law it exists to enforce - one
-  ! relation per part - would be a convention rather than an
-  ! argument.
+  ! The assembler stores no state. An earlier version stored a bound
+  ! relation, and that was one owner too many. Partition and assembly
+  ! are inverse operations over one r, so r belongs to neither of
+  ! them: the partition writes it, and every operation that reads it
+  ! is passed it. An assembler that stored its own copy could be
+  ! paired with a part the copy was never written for, and the law it
+  ! exists to enforce, one relation per part, would be a convention
+  ! rather than an argument.
   !
   ! So: no state, no set_map, no label_map, no inclusion_map. What a
   ! set denotes is decided by the caller, and arrives at the semantic
-  ! boundary - as arguments to assemble_data, every time. WHERE a
-  ! member maps to arrives beside it, as r.
-  !===================================================================!
+  ! boundary, as arguments to assemble_data, every time. Where a member
+  ! maps to arrives beside it, as r.
+  !-------------------------------------------------------------------!
 
   type, extends(transform) :: assembler
 
@@ -116,14 +107,15 @@ module transform_assembler
 contains
 
   !===================================================================!
-  ! THE TRANSFORM'S GENERIC CHECK, AND IT IS A WEAK ONE BY DESIGN.
+  ! Returns whether the graph has members to map back: the transform's
+  ! generic check, and a weak one by design.
   !
-  ! With no relation passed there is exactly one predicate an
-  ! assembler can evaluate on a bare graph: whether it has members to
-  ! map back. The complete predicate - is this the part r was written
-  ! for - requires r, and r is not an argument here because
-  ! transform's contract does not involve relations. That predicate
-  ! is defined_on_relation below, and that is the check a caller
+  ! With no relation passed there is exactly one predicate an assembler
+  ! can evaluate on a bare graph: whether it has members to map back.
+  ! The complete predicate, whether this is the part r was written for,
+  ! requires r, and r is not an argument here because transform's
+  ! contract does not involve relations. That predicate is
+  ! defined_on_relation below, and that is the check a caller
   ! assembling parts must use.
   !===================================================================!
 
@@ -139,12 +131,13 @@ contains
   end function defined_on_graph
 
   !===================================================================!
-  ! THE COMPLETE CHECK: is this r the one written for this part?
+  ! Returns whether this r is the one written for this part: the
+  ! complete check.
   !
-  ! A PREDICATE, not an error stop. A caller stores one relation per
-  ! part - that is the law - so passing the wrong one is an error
-  ! that must be REPORTABLE. Stopping the program would leave no
-  ! caller to report it to.
+  ! A predicate, not an error stop. A caller stores one relation per
+  ! part, that is the law, so passing the wrong one is an error that
+  ! must be reportable. Stopping the program would leave no caller to
+  ! report it to.
   !===================================================================!
 
   logical function defined_on_relation(this, rel, part_graph)
@@ -160,24 +153,23 @@ contains
   end function defined_on_relation
 
   !===================================================================!
-  ! Map the part back to whole-graph order.
+  ! Maps the part back to whole-graph order.
   !
-  ! Every cell of the part is renumbered to its whole-graph index,
-  ! and every edge with it. The result is a graph again, and stores
-  ! no partition record - because a whole graph is not a part of
-  ! anything.
+  ! Every cell of the part is renumbered to its whole-graph index, and
+  ! every edge with it. The result is a graph again, and stores no
+  ! partition record, because a whole graph is not a part of anything.
   !===================================================================!
 
   subroutine assemble_graph(this, rel, part_graph, global_graph)
 
-    class(assembler), intent(in)               :: this
-    type(partition_relation), intent(in)       :: rel
-    class(directed_graph)    , intent(in)               :: part_graph
-    class(directed_graph)    , allocatable, intent(out) :: global_graph
+    class(assembler)                  , intent(in)  :: this
+    type(partition_relation)          , intent(in)  :: rel
+    class(directed_graph)             , intent(in)  :: part_graph
+    class(directed_graph), allocatable, intent(out) :: global_graph
 
     integer, allocatable :: tails(:), heads(:)
-    integer :: ne, e, nv_global, l, largest_entry
-    character(len=250) :: message
+    integer              :: ne, e, nv_global, l, largest_entry
+    character(len=250)   :: message
 
     if (.not. this % defined_on_relation(rel, part_graph)) then
        write(message,'(a,i0)') 'assemble_graph: rel was not written for this part; &
@@ -188,7 +180,7 @@ contains
     ne = part_graph % num_edges()
 
     ! The whole graph is at least as large as the largest whole-graph
-    ! index r records.
+    ! index r records
     largest_entry = 0
     do l = 1, part_graph % num_vertices()
        largest_entry = max(largest_entry, rel % global_vertex_index(l))
@@ -212,26 +204,28 @@ contains
   end subroutine assemble_graph
 
   !===================================================================!
-  ! Assemble the data back onto the whole graph.
+  ! Assembles the data back onto the whole graph.
   !
   ! The result is laid out on the whole graph. Only the entries this
-  ! part owns are written; everything else is left at zero, so adding
-  ! the results from every part rebuilds the whole field exactly once.
+  ! part owns are written; everything else is left at zero, so that
+  ! adding the results from every part rebuilds the whole field exactly
+  ! once. The field's side, vertices or edges, is found by its domain's
+  ! declared embedding.
   !===================================================================!
 
   subroutine assemble_data(this, rel, part_graph, part_data, global_graph, &
        & sets, global_data)
 
-    class(assembler) , intent(in)               :: this
-    type(partition_relation), intent(in)        :: rel
-    class(directed_graph)     , intent(in)               :: part_graph
-    class(field), intent(in)               :: part_data
-    class(directed_graph)     , intent(in)               :: global_graph
-    type(set_store)    , intent(inout)            :: sets
-    class(field), allocatable, intent(out) :: global_data
+    class(assembler)         , intent(in)    :: this
+    type(partition_relation) , intent(in)    :: rel
+    class(directed_graph)    , intent(in)    :: part_graph
+    class(field)             , intent(in)    :: part_data
+    class(directed_graph)    , intent(in)    :: global_graph
+    type(set_store)          , intent(inout) :: sets
+    class(field), allocatable, intent(out)   :: global_data
 
-    type(graph) :: dom
-    integer         :: n_dom
+    type(graph)        :: dom
+    integer            :: n_dom
     character(len=250) :: message
 
     if (.not. this % defined_on_relation(rel, part_graph)) then
@@ -251,8 +245,8 @@ contains
     class is (stored_field)
        dom   = part_data % domain()
        n_dom = part_data % num_entries()
-       ! Classify by embedding - a DECLARED predicate evaluated through
-       ! the set store, never the extension and never the graph.
+       ! Classify by embedding: a declared predicate evaluated through
+       ! the set store, never the extension and never the graph
        if (sets % subobject_of(dom, part_graph % vertex_set())) then
           call gather_field(part_data, dom, n_dom, part_graph, rel, &
                & part_graph % vertex_set(), part_graph % num_vertices(), &
@@ -274,38 +268,46 @@ contains
   end subroutine assemble_data
 
   !===================================================================!
-  ! One gather for both families and both coverages. A FULL part
-  ! field maps onto the GLOBAL carrier set, owned members only,
-  ! exactly the established assembly. A PROPER SUBSET maps through
-  ! the part->global map onto a new subobject of the global carrier
-  ! set - its mapped subdomain, no inserted zeros on members the
-  ! field never stored. A new ambient set means a new declared
-  ! subset: extension and values are mapped, tokens are not.
+  ! One gather for both families and both coverages. A full part field
+  ! maps onto the global carrier set, owned members only, exactly the
+  ! established assembly. A proper subset maps through the part->global
+  ! map onto a new subobject of the global carrier set, its mapped
+  ! subdomain, with no zeros inserted on members the field never
+  ! stored. A new ambient set means a new declared subset: extension and
+  ! values are mapped, tokens are not.
+  !
+  !   full coverage, part members 1 2 3 -> whole 3 4 5, member 3 a halo
+  !
+  !   part     [ a  b  c ]
+  !   whole    [ 0  0  a  b  0 ]     c is owned by another part: not written
+  !
+  !   proper subset: its owned members mapped, and declared as a new
+  !   subset of the whole carrier
   !===================================================================!
 
   subroutine gather_field(part_data, dom, n_dom, part_graph, rel, part_carrier, &
        &                  n_part_carrier, global_graph, on_vertices, &
        &                  sets, global_data)
 
-    type(stored_field)        , intent(in)               :: part_data
-    type(graph)    , intent(in)               :: dom
-    integer            , intent(in)               :: n_dom
-    class(directed_graph)       , intent(in)               :: part_graph
-    type(partition_relation), intent(in)          :: rel
-    type(graph)    , intent(in)               :: part_carrier
-    integer            , intent(in)               :: n_part_carrier
-    class(directed_graph)       , intent(in)               :: global_graph
-    logical            , intent(in)               :: on_vertices
-    type(set_store)    , intent(inout)            :: sets
-    class(field) , allocatable, intent(out) :: global_data
+    type(stored_field)       , intent(in)    :: part_data
+    type(graph)              , intent(in)    :: dom
+    integer                  , intent(in)    :: n_dom
+    class(directed_graph)    , intent(in)    :: part_graph
+    type(partition_relation) , intent(in)    :: rel
+    type(graph)              , intent(in)    :: part_carrier
+    integer                  , intent(in)    :: n_part_carrier
+    class(directed_graph)    , intent(in)    :: global_graph
+    logical                  , intent(in)    :: on_vertices
+    type(set_store)          , intent(inout) :: sets
+    class(field), allocatable, intent(out)   :: global_data
 
-    type(stored_field)           :: out
-    type(graph)       :: global_carrier
-    type(graph)       :: sg
+    type(stored_field)    :: out
+    type(graph)           :: global_carrier
+    type(graph)           :: sg
     real(dp), allocatable :: lv(:), fv(:)
     integer , allocatable :: global_members(:), origin(:)
-    integer :: nglobal, nlocal, num_components, l, c, f, own_part, n, at
-    character(len=250) :: message
+    integer               :: nglobal, nlocal, num_components, l, c, f, own_part, n, at
+    character(len=250)    :: message
 
     if (on_vertices) then
        nglobal        = global_graph % num_vertices()
@@ -334,7 +336,7 @@ contains
           error stop trim(message)
        end if
 
-       ! Full coverage: the established dense assembly, owned only.
+       ! Full coverage: the established dense assembly, owned only
        out = stored_field(part_data % name(), global_carrier, nglobal, num_components=num_components, &
             &      unit_name=part_data % units())
        allocate(fv(nglobal * num_components))
@@ -361,8 +363,8 @@ contains
 
     else
 
-       ! Proper subset: map the members to the global set and retain
-       ! only the owned ones.
+       ! Proper subset: the members mapped to the global set, only the
+       ! owned ones retained
        if (sets % num_members_of(dom) /= n_dom) then
           write(message,'(a,i0,a,i0)') 'gather_field: a subset field must fill its stated domain; &
                &num_members_of(dom) = ', sets % num_members_of(dom), ', n_dom = ', n_dom
@@ -390,13 +392,11 @@ contains
           global_members(n) = f
           origin(n) = l
        end do
-       !-------------------------------------------------------------!
-       ! A new ambient set means a new declared subset, so this
-       ! operation follows the subobject law: identity, extension,
-       ! label and embedding, together. Extension and values are
-       ! mapped to the global set; tokens are not, and the label is.
-       !-------------------------------------------------------------!
 
+       ! A new ambient set means a new declared subset, so this
+       ! operation follows the subobject law: identity, extension, label
+       ! and embedding, together. Extension and values are mapped to the
+       ! global set; tokens are not, and the label is.
        call sets % declare_subobject(sg, global_members(1:n), sets % label_of(dom), global_carrier)
 
        allocate(fv(n * num_components))

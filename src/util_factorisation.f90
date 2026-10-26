@@ -1,14 +1,22 @@
 !=====================================================================!
-! A factorisation retained: P A = L U with partial pivoting, formed
-! once from a square matrix and applied to every right side passed to
-! it, against A or against its transpose.
+! Module that states a factorisation retained: P A = L U with partial
+! pivoting, formed once from a square matrix and applied to every
+! right side passed to it, against A or against its transpose.
+!
+!      P A  =  L U        | 1          |   | u  u  u  u |
+!                         | l  1       |   |    u  u  u |
+!                         | l  l  1    |   |       u  u |
+!                         | l  l  l  1 |   |          u |
+!
+!      stored in place, one array: the l below the diagonal, the u on
+!      and above it, the unit diagonal of L implied
 !
 ! The purpose of retaining it is the operation count. A tangent solve,
 ! an adjoint solve and every order of an expansion read the same
 ! matrix frozen at the same state, so one factorisation serves them
-! all and each costs a substitution. Formed again per solve, each
-! would cost the factorisation again. Each factorisation is recorded
-! by its caller, so the count is measured rather than modelled.
+! all and each costs a substitution. Formed again per solve, each would
+! cost the factorisation again. Each factorisation is recorded by its
+! caller, so the count is measured rather than modelled.
 !
 ! Solving against the transpose uses the same factors. P A = L U gives
 ! A^T P^T = U^T L^T, so A^T x = b is U^T y = b, then L^T z = y, then
@@ -16,74 +24,103 @@
 ! in the reverse of the order they were made.
 !
 ! A pivot at or below the threshold given leaves the factorisation
-! singular: no further elimination is done, and a substitution
-! against it stops the program. Whether a singular pivot is an error
-! or an expected result is the caller's decision, read from singular().
+! singular: no further elimination is done, and a substitution against
+! it stops the program. Whether a singular pivot is an error or an
+! expected result is the caller's decision, read from singular().
 !
-! EQUILIBRATED, the matrix factorised is D_r A D_c, its rows and then
+! Equilibrated. The matrix factorised is D_r A D_c, its rows and then
 ! its columns scaled to a largest entry of one, and a substitution
-! scales its right side and its solution by them: x = D_c (D_r A
-! D_c)^-1 D_r b, and against the transpose x = D_r (D_c A^T D_r)^-1
-! D_c b. A system of rows of different units - positions, rotations
-! and reactions - is solved to the digits its scaled matrix allows.
+! scales its right side and its solution by them:
 !
-! BLOCK TRIANGULAR, the matrix is permuted, rows and columns alike, to
+!      x  =  D_c (D_r A D_c)^-1 D_r b
+!      x  =  D_r (D_c A^T D_r)^-1 D_c b       against the transpose
+!
+! A system of rows of different units, positions, rotations and
+! reactions, is solved to the digits its scaled matrix allows.
+!
+! Block triangular. The matrix is permuted, rows and columns alike, to
 ! the block lower triangular form its zero pattern allows, and only
-! its diagonal blocks are factorised. The blocks are the strongly
-! connected components of the graph of the pattern, an edge from i to
-! j where a_ij is not zero, found by Tarjan's algorithm. It emits a
-! component after every component it reads, which is the order of a
-! forward substitution: x_b = A_bb^-1 (b_b - sum over c before b of
-! A_bc x_c). Against the transpose the blocks are solved in reverse.
-! The matrix is nonsingular exactly where every diagonal block is.
-! The step of a family of s stages is such a matrix, each stage
-! reading the stages before it: its factorisation costs s blocks of
-! one stage, about s^2 times less than the whole. A row is the law of
-! the unknown of the same index, so the permutation is the same on
-! both sides.
+! its diagonal blocks are factorised:
 !
-! FROM ITS ENTRIES, the block triangular factorisation of a matrix
+!      | A_11             |     x_1 = A_11^-1  b_1
+!      | A_21 A_22        |     x_2 = A_22^-1 (b_2 - A_21 x_1)
+!      | A_31 A_32 A_33   |     x_3 = A_33^-1 (b_3 - A_31 x_1 - A_32 x_2)
+!
+! The blocks are the strongly connected components of the graph of the
+! pattern, an edge from i to j where a_ij is not zero, found by
+! Tarjan's algorithm. It emits a component after every component it
+! reads, which is the order of a forward substitution:
+! x_b = A_bb^-1 (b_b - sum over c before b of A_bc x_c). Against the
+! transpose the blocks are solved in reverse. The matrix is nonsingular
+! exactly where every diagonal block is. The step of a family of s
+! stages is such a matrix, each stage reading the stages before it:
+! its factorisation costs s blocks of one stage, about s^2 times less
+! than the whole. A row is the law of the unknown of the same index, so
+! the permutation is the same on both sides.
+!
+! From its entries. The block triangular factorisation of a matrix
 ! stated by its nonzero entries forms the diagonal blocks alone, and
 ! stores the entries below them by rows: no array of the order of the
-! matrix squared is formed, and a substitution reads the entries
-! below the blocks once each. Its scaling, its blocks and their
-! factors are those of the matrix the entries state.
+! matrix squared is formed, and a substitution reads the entries below
+! the blocks once each. Its scaling, its blocks and their factors are
+! those of the matrix the entries state.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 
 module util_factorisation
 
-  use util_precision  , only : dp
+  use util_precision, only : dp
 
   implicit none
 
   private
+
   public :: dense_factorisation
+
+  !-------------------------------------------------------------------!
+  ! Type that models the factorisation retained. One of three forms
+  ! is stored:
+  !
+  !      dense             lu, pivot_rows
+  !      block triangular  permutation, block_first, diagonal(:), and
+  !                        lu the permuted matrix
+  !      from its entries  permutation, block_first, diagonal(:), and
+  !                        the entries below the blocks by rows
+  !
+  ! row_scale and column_scale are stored when equilibrated.
+  !-------------------------------------------------------------------!
 
   type :: dense_factorisation
 
      real(dp), allocatable, private :: lu(:,:)
      real(dp), allocatable, private :: row_scale(:), column_scale(:)
      integer , allocatable, private :: pivot_rows(:)
-     integer , private :: n = 0
-     logical , private :: is_singular = .false.
-     ! block triangular: the unknowns in the order of the blocks, the
+     integer              , private :: n = 0
+     logical              , private :: is_singular = .false.
+
+     ! Block triangular: the unknowns in the order of the blocks, the
      ! first of each block in that order, the permuted matrix, and the
      ! factorisation of each diagonal block
-     integer , allocatable, private :: permutation(:), block_first(:)
+     integer                  , allocatable, private :: permutation(:), block_first(:)
      type(dense_factorisation), allocatable, private :: diagonal(:)
-     ! from its entries: the entries below the diagonal blocks, by the
+
+     ! From its entries: the entries below the diagonal blocks, by the
      ! rows of the permuted matrix, their columns permuted alike
      integer , allocatable, private :: lower_start(:), lower_column(:)
      real(dp), allocatable, private :: lower_value(:)
 
    contains
 
+     ! The factorisation
      procedure :: factorise
      procedure :: factorise_entries
+
+     ! The substitutions against it
      procedure :: substitute
      procedure :: substituted
+
+     ! What it is
      procedure :: order
      procedure :: singular
 
@@ -92,25 +129,25 @@ module util_factorisation
 contains
 
   !===================================================================!
-  ! L U of a square matrix, in place in a copy. A matrix that is not
-  ! square stops the program. A pivot at or below the threshold leaves
-  ! the factorisation singular rather than dividing by it; given the
-  ! scale of each column, at or below the threshold times its column's
-  ! scale, which equilibrated is one.
+  ! Factorises a square matrix, L U in place in a copy. A matrix that
+  ! is not square stops the program. A pivot at or below the threshold
+  ! leaves the factorisation singular rather than dividing by it; given
+  ! the scale of each column, at or below the threshold times its
+  ! column's scale, which equilibrated is one.
   !===================================================================!
 
   recursive subroutine factorise(this, a, threshold, scales, equilibrated, block_triangular)
 
-    class(dense_factorisation), intent(inout) :: this
-    real(dp)                  , intent(in)    :: a(:,:)
-    real(dp)                  , intent(in)    :: threshold
+    class(dense_factorisation), intent(inout)        :: this
+    real(dp)                  , intent(in)           :: a(:,:)
+    real(dp)                  , intent(in)           :: threshold
     real(dp)                  , intent(in), optional :: scales(:)
     logical                   , intent(in), optional :: equilibrated, block_triangular
 
     real(dp), allocatable :: row(:)
-    real(dp) :: factor
-    integer  :: n, k, p, j, b
-    character(len=150) :: message
+    real(dp)              :: factor
+    integer               :: n, k, p, j, b
+    character(len=150)    :: message
 
     n = size(a, 1)
     if (size(a, 2) /= n) then
@@ -125,7 +162,7 @@ contains
     if (allocated(this % row_scale)) deallocate(this % row_scale, this % column_scale)
     if (present(equilibrated)) then
        if (equilibrated) then
-          ! the rows' largest entries and their scaling, by sweeps of
+          ! The rows' largest entries and their scaling, by sweeps of
           ! the columns, the array's memory order
           allocate(this % row_scale(n), source=0.0_dp)
           do k = 1, n
@@ -170,18 +207,22 @@ contains
     allocate(row(n))
 
     ! Right-looking elimination, column by column: the multipliers of
-    ! column k are formed at once, and each later column is updated
-    ! as a whole, so every inner sweep runs down a column, which is
-    ! the array's memory order.
+    ! column k are formed at once, and each later column is updated as
+    ! a whole, so every inner sweep runs down a column, which is the
+    ! array's memory order.
+    !
+    !      column k      k+1 .. n
+    !         u_kk   |   u_kj  ...        row k, after the exchange
+    !         l_ik   |   a_ij - l_ik u_kj  every later column, at once
     do k = 1, n
 
        p = k - 1 + maxloc(abs(this % lu(k:n, k)), dim=1)
        this % pivot_rows(k) = p
 
        if (p /= k) then
-          row              = this % lu(k, :)
-          this % lu(k, :)  = this % lu(p, :)
-          this % lu(p, :)  = row
+          row             = this % lu(k, :)
+          this % lu(k, :) = this % lu(p, :)
+          this % lu(p, :) = row
        end if
 
        if (allocated(this % row_scale)) then
@@ -211,13 +252,20 @@ contains
   end subroutine factorise
 
   !===================================================================!
-  ! THE BLOCK TRIANGULAR FACTORISATION OF A MATRIX OF ORDER n STATED BY
-  ! ITS ENTRIES: weights(e) at row rows(e) and column columns(e), the
+  ! Factorises a matrix of order n stated by its entries, block
+  ! triangular: weights(e) at row rows(e) and column columns(e), the
   ! weights of an entry stated more than once summed in the order
-  ! given. Its scaling, its blocks and the factors of each are those
-  ! of factorise on the matrix the entries state, with block_triangular
+  ! given. Its scaling, its blocks and the factors of each are those of
+  ! factorise on the matrix the entries state, with block_triangular
   ! and, without equilibrated, the largest entry of each column the
   ! scale of its pivots. An entry outside 1..n stops the program.
+  !
+  !      the entries by rows, compressed
+  !
+  !      start(i) .. start(i + 1) - 1     the entries of row i
+  !      column(e), value(e)              their columns, ascending, and
+  !                                       values, duplicates summed and
+  !                                       zeros dropped
   !===================================================================!
 
   subroutine factorise_entries(this, n, rows, columns, weights, threshold, equilibrated)
@@ -229,8 +277,8 @@ contains
 
     integer , allocatable :: start(:), column(:), place(:), edge_start(:), edge(:), position(:)
     real(dp), allocatable :: value(:), scales(:), block(:,:)
-    integer :: e, i, j, k, b, m, filled
-    real(dp) :: summed
+    integer               :: e, i, j, k, b, m, filled
+    real(dp)              :: summed
 
     if (any(rows < 1) .or. any(rows > n) .or. any(columns < 1) .or. any(columns > n)) then
        error stop 'util_factorisation: an entry of the matrix lies outside its order'
@@ -243,7 +291,7 @@ contains
     if (allocated(this % permutation)) deallocate(this % permutation, this % block_first, this % diagonal)
     if (allocated(this % lower_start)) deallocate(this % lower_start, this % lower_column, this % lower_value)
 
-    ! the entries by rows, each row in the order given, then by columns
+    ! The entries by rows, each row in the order given, then by columns
     ! within it, an entry stated more than once summed from zero in that
     ! order and an entry of zero dropped
     allocate(start(n + 1), source=0)
@@ -282,7 +330,7 @@ contains
     end do
     start(n + 1) = filled + 1
 
-    ! the rows and then the columns scaled to a largest entry of one; or
+    ! The rows and then the columns scaled to a largest entry of one; or
     ! the largest entry of each column, the scale of its pivots
     if (equilibrated) then
        allocate(this % row_scale(n), this % column_scale(n), source=0.0_dp)
@@ -309,7 +357,7 @@ contains
        end do
     end if
 
-    ! the blocks: the components of the pattern, an edge from i to j
+    ! The blocks: the components of the pattern, an edge from i to j
     ! where the scaled entry is not zero and i /= j
     allocate(edge_start(n + 1))
     allocate(edge(filled))
@@ -327,7 +375,7 @@ contains
     allocate(position(n))
     position(this % permutation) = [(i, i = 1, n)]
 
-    ! each diagonal block formed and factorised; the entries below it
+    ! Each diagonal block formed and factorised; the entries below it
     ! stored by its rows
     allocate(this % lower_start(n + 1), this % lower_column(filled), this % lower_value(filled))
     allocate(this % diagonal(size(this % block_first) - 1))
@@ -339,7 +387,7 @@ contains
          do i = first, last
             this % lower_start(i) = k + 1
             do e = start(this % permutation(i)), start(this % permutation(i) + 1) - 1
-               ! a scaled entry of zero is no edge, and may lie above the
+               ! A scaled entry of zero is no edge, and may lie above the
                ! blocks
                if (value(e) == 0.0_dp) cycle
                j = position(column(e))
@@ -368,13 +416,16 @@ contains
 
   contains
 
-    ! the entries of a row in the order of their columns, entries of
-    ! one column in the order given
+    !-----------------------------------------------------------------!
+    ! Sorts the entries of a row by their columns, by insertion, so
+    ! that the entries of one column keep the order given
+    !-----------------------------------------------------------------!
+
     pure subroutine ordered(c, v)
       integer , intent(inout) :: c(:)
       real(dp), intent(inout) :: v(:)
-      integer  :: p, q, inserted_column
-      real(dp) :: inserted_value
+      integer                 :: p, q, inserted_column
+      real(dp)                :: inserted_value
       do p = 2, size(c)
          inserted_column = c(p)
          inserted_value  = v(p)
@@ -393,9 +444,9 @@ contains
   end subroutine factorise_entries
 
   !===================================================================!
-  ! x with A x = b, or with A^T x = b where transposed. A right side of
-  ! the wrong extent, or a factorisation left singular or never formed,
-  ! stops the program.
+  ! Returns x with A x = b, or with A^T x = b where transposed. A right
+  ! side of the wrong extent, or a factorisation left singular or never
+  ! formed, stops the program.
   !===================================================================!
 
   subroutine substitute(this, b, x, transposed)
@@ -411,9 +462,20 @@ contains
   end subroutine substitute
 
   !===================================================================!
-  ! The same substitution into a vector already of the order of the
-  ! matrix: a relaxation that solves one block per unknown block many
-  ! times allocates nothing per solve.
+  ! Returns the same substitution into a vector already of the order
+  ! of the matrix: a relaxation that solves one block per unknown block
+  ! many times allocates nothing per solve.
+  !
+  ! In block triangular form the blocks are solved in order, or in
+  ! reverse against the transpose, each right side less the blocks
+  ! already solved:
+  !
+  !      forward      b = 1 .. nb     y_b = A_bb^-1 (y_b - sum over c < b of A_bc y_c)
+  !      transpose    b = nb .. 1     y_b = A_bb^-T (y_b - sum over c > b of A_cb^T y_c)
+  !
+  ! From its entries, the sum against the transpose is scattered from
+  ! each block as it is solved, into the right sides of the blocks
+  ! before it.
   !===================================================================!
 
   recursive subroutine substituted(this, b, x, transposed)
@@ -424,9 +486,9 @@ contains
     logical                   , intent(in)  :: transposed
 
     real(dp), allocatable :: y(:), part(:)
-    real(dp) :: stored
-    integer  :: n, i, j, k, nb
-    character(len=150) :: message
+    real(dp)              :: stored
+    integer               :: n, i, j, k, nb
+    character(len=150)    :: message
 
     n = this % n
 
@@ -447,7 +509,7 @@ contains
     if (allocated(this % row_scale)) x = b * merge(this % column_scale, this % row_scale, transposed)
 
     if (allocated(this % permutation)) then
-       ! the blocks in order, or in reverse against the transpose, each
+       ! The blocks in order, or in reverse against the transpose, each
        ! right side less the blocks already solved
        nb = size(this % diagonal)
        y  = x(this % permutation)
@@ -469,7 +531,7 @@ contains
             end if
             call this % diagonal(k) % substituted(y(first:last), part(first:last), transposed)
             y(first:last) = part(first:last)
-            ! against the transpose, from its entries, the block solved
+            ! Against the transpose, from its entries, the block solved
             ! less from the right sides of the blocks before it
             if (allocated(this % lower_start) .and. transposed) then
                do i = first, last
@@ -489,14 +551,15 @@ contains
 
        do k = 1, n
           if (this % pivot_rows(k) /= k) then
-             stored                    = x(k)
+             stored                  = x(k)
              x(k)                    = x(this % pivot_rows(k))
-             x(this % pivot_rows(k))  = stored
+             x(this % pivot_rows(k)) = stored
           end if
        end do
 
        ! L y = b, then U x = y, each a sweep of columns: once x(j) is
-       ! computed its column is subtracted from every entry below (or above).
+       ! computed its column is subtracted from every entry below (or
+       ! above)
        do j = 1, n - 1
           x(j+1:n) = x(j+1:n) - x(j) * this % lu(j+1:n, j)
        end do
@@ -508,8 +571,8 @@ contains
 
     else
 
-       ! U^T y = b, then L^T z = y: the transposes run down columns
-       ! as dot products, which are the same contiguous sweeps.
+       ! U^T y = b, then L^T z = y: the transposes run down columns as
+       ! dot products, which are the same contiguous sweeps
        do i = 1, n
           x(i) = (x(i) - dot_product(this % lu(1:i-1, i), x(1:i-1))) / this % lu(i, i)
        end do
@@ -520,9 +583,9 @@ contains
 
        do k = n, 1, -1
           if (this % pivot_rows(k) /= k) then
-             stored                    = x(k)
+             stored                  = x(k)
              x(k)                    = x(this % pivot_rows(k))
-             x(this % pivot_rows(k))  = stored
+             x(this % pivot_rows(k)) = stored
           end if
        end do
 
@@ -532,12 +595,18 @@ contains
   end subroutine substituted
 
   !===================================================================!
-  ! THE STRONGLY CONNECTED COMPONENTS of the graph of the pattern of a,
-  ! an edge from i to j where a_ij is not zero and i /= j, by Tarjan's
-  ! algorithm, its recursion on a stack of its own. The vertices
-  ! in the order the components are emitted, each component after
-  ! every component it reaches, and the first of each component in
-  ! that order, with n + 1 after the last.
+  ! Returns the strongly connected components of the graph of the
+  ! pattern of a, an edge from i to j where a_ij is not zero and
+  ! i /= j, by Tarjan's algorithm: the vertices in the order the
+  ! components are emitted, each component after every component it
+  ! reaches, and the first of each component in that order, with n + 1
+  ! after the last.
+  !
+  !      a pattern          its graph               the permutation
+  !      | x . . |          1 <---- 2               [ 1 | 3 2 ]
+  !      | x x x |                 ^ |              block_first = 1 2 4
+  !      | . x x |                 | v
+  !                                 3
   !===================================================================!
 
   subroutine strong_components(a, permutation, block_first)
@@ -546,10 +615,10 @@ contains
     integer, allocatable, intent(out) :: permutation(:), block_first(:)
 
     integer, allocatable :: count(:), start(:), edge(:)
-    integer :: n, i, j
+    integer              :: n, i, j
 
     n = size(a, 1)
-    ! the edges of each vertex, in compressed rows, from a sweep of the
+    ! The edges of each vertex, in compressed rows, from a sweep of the
     ! columns
     allocate(count(n), source=0)
     do j = 1, n
@@ -577,9 +646,20 @@ contains
   end subroutine strong_components
 
   !===================================================================!
-  ! THE STRONGLY CONNECTED COMPONENTS of the graph whose edges from
-  ! vertex i are edge(start(i):start(i + 1) - 1), as strong_components
-  ! states them.
+  ! Returns the strongly connected components of the graph whose edges
+  ! from vertex i are edge(start(i):start(i + 1) - 1), as
+  ! strong_components states them. The recursion of Tarjan's algorithm
+  ! runs on a stack of its own:
+  !
+  !      visit(1:depth)    the vertices of the search, root first
+  !      next(depth)       the next edge of visit(depth) to follow
+  !      path(1:top)       the vertices not yet in a component, the
+  !                        stack of the algorithm
+  !      index, low        the number of each vertex in the visit, and
+  !                        the least number it reaches on the path
+  !
+  ! A vertex whose low is its own index closes a component: the path
+  ! is popped down to it.
   !===================================================================!
 
   subroutine components_of_edges(start, edge, permutation, block_first)
@@ -589,7 +669,7 @@ contains
 
     integer, allocatable :: index(:), low(:), path(:), next(:), visit(:)
     logical, allocatable :: on_path(:)
-    integer :: n, v, w, top, depth, number, filled, root, blocks
+    integer              :: n, v, w, top, depth, number, filled, root, blocks
 
     n = size(start) - 1
     allocate(index(n), low(n), source=0)
@@ -607,10 +687,10 @@ contains
        depth = 1
        visit(depth) = v
        next(depth)  = start(v)
-       number   = number + 1
-       index(v) = number
-       low(v)   = number
-       top      = top + 1
+       number     = number + 1
+       index(v)   = number
+       low(v)     = number
+       top        = top + 1
        path(top)  = v
        on_path(v) = .true.
        do while (depth > 0)
@@ -622,10 +702,10 @@ contains
                 depth = depth + 1
                 visit(depth) = w
                 next(depth)  = start(w)
-                number   = number + 1
-                index(w) = number
-                low(w)   = number
-                top      = top + 1
+                number     = number + 1
+                index(w)   = number
+                low(w)     = number
+                top        = top + 1
                 path(top)  = w
                 on_path(w) = .true.
              else if (on_path(w)) then
@@ -633,7 +713,7 @@ contains
              end if
              cycle
           end if
-          ! every edge of v visited: v closes a component where it is
+          ! Every edge of v visited: v closes a component where it is
           ! its own root
           if (low(v) == index(v)) then
              blocks = blocks + 1
@@ -656,6 +736,11 @@ contains
 
   end subroutine components_of_edges
 
+  !===================================================================!
+  ! Returns the order of the matrix factorised; zero before a
+  ! factorisation
+  !===================================================================!
+
   pure integer function order(this) result(n)
 
     class(dense_factorisation), intent(in) :: this
@@ -663,6 +748,10 @@ contains
     n = this % n
 
   end function order
+
+  !===================================================================!
+  ! Returns whether the factorisation was left singular
+  !===================================================================!
 
   pure logical function singular(this) result(is_rank_deficient)
 

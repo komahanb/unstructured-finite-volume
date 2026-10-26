@@ -1,48 +1,74 @@
 !=====================================================================!
-! THE FINITE-DIFFERENCE METHOD ON A MESH: at every cell, the formula
-! over the cell's neighbours that is exact on the polynomials of
-! degree p, one formula per derivative the residual names. The
-! weights are those of the fit of the polynomial form on the
-! neighbourhood (operation_fitting, operation_fitted_balance), grown
-! ring by ring until the form's members are independent on it; this
+! Module that states the finite-difference method on a mesh. At every
+! cell it forms, over the cell's neighbours, the formula that is exact
+! on the polynomials of degree p, one formula per derivative the
+! residual names:
+!
+!                 o   o   o
+!                   \ | /          a ring of neighbours, grown ring
+!             o --- cell --- o     by ring until the form's members
+!                   / | \          are independent on it
+!                 o   o   o
+!
+! The weights are those of the fit of the polynomial form on the
+! neighbourhood (operation_fitting, operation_fitted_balance). This
 ! module names the method and its order p.
 !
-! THE ORDER OF ACCURACY p, and the degree of the fit each derivative
+! The order of accuracy p, and the degree of the fit each derivative
 ! reads. A derivative of order m from a fit of degree d has a
-! truncation error O(h^(d + 1 - m)), and on a neighbourhood symmetric
-! about the cell the odd and even members are orthogonal, so that an
-! even d gives O(h^d) for the first and the second derivative alike.
-! A first derivative therefore reads the fit of degree p, and a
-! second derivative the fit of degree p rounded up to even: with
-! that, every order from two is O(h^p) in both, and the second
-! derivatives never come from an odd degree - whose laplacian on the
-! quadrilateral box has the odd-even grid mode in its kernel, so that
-! the discrete equations are singular (measured: at order 3 as a
-! plain cubic fit every linear solve reaches its cycle limit with the
-! residual unreduced).
+! truncation error O(h^(d + 1 - m)). On a neighbourhood symmetric
+! about the cell the odd and even members are orthogonal, so an even d
+! gives O(h^d) for the first and the second derivative alike:
+!
+!   derivative   degree of the fit read          error
+!   first        p                               O(h^p)
+!   second       p, rounded up to even           O(h^p)
+!
+! With that, every order from two is O(h^p) in both, and the second
+! derivatives never come from an odd degree. The laplacian of an odd
+! degree on the quadrilateral box has the odd-even grid mode in its
+! kernel, so that the discrete equations are singular:
+!
+!   +1  -1  +1  -1
+!   -1  +1  -1  +1     the odd-even grid mode
+!   +1  -1  +1  -1
+!
+! Measured: at order 3, as a plain cubic fit, every linear solve
+! reaches its cycle limit with the residual unreduced.
 !
 ! At degree two the form is restricted to the pure powers 1, x, x^2,
-! y, y^2: on a cell and its face neighbours their second derivatives
-! are the central differences and the laplacian's kernel is the
-! constants alone, whereas the form with the mixed member over two
-! rings has a grid mode in its kernel.
+! y, y^2. On a cell and its face neighbours their second derivatives
+! are the central differences, and the laplacian's kernel is the
+! constants alone; the form with the mixed member over two rings has a
+! grid mode in its kernel:
+!
+!           o
+!           |
+!      o -- c -- o      1, x, x^2, y, y^2 on the cell c and its four
+!           |           face neighbours: the central differences
+!           o
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 
 module operation_finite_difference
 
-  use util_precision          , only : dp
-  use field_forms             , only : polynomial_form
-  use view_mesh               , only : mesh
-  use operation_stencil       , only : stencil
-  use operation_fitted_balance, only : fitted_derivative_stencil
+  use util_precision                    , only : dp
+  use field_forms                       , only : polynomial_form
+  use view_mesh                         , only : mesh
+  use operation_stencil                 , only : stencil
+  use operation_fitted_balance          , only : fitted_derivative_stencil
   use operation_derivative_approximation, only : derivative_approximation
 
   implicit none
 
   private
+
   public :: finite_difference
+
+  !-------------------------------------------------------------------!
+  ! Type that models the finite-difference method of an order p
+  !-------------------------------------------------------------------!
 
   type, extends(derivative_approximation) :: finite_difference
 
@@ -58,9 +84,14 @@ module operation_finite_difference
 
 contains
 
+  !===================================================================!
+  ! Creates the method of the given order, at least two, so that it
+  ! can form a second derivative
+  !===================================================================!
+
   function create(order) result(this)
 
-    integer, intent(in) :: order
+    integer, intent(in)     :: order
     type(finite_difference) :: this
 
     character(len=250) :: message
@@ -75,8 +106,8 @@ contains
   end function create
 
   !===================================================================!
-  ! The rows of the derivative of one order along one axis of the
-  ! mesh, at every cell: a stencil with one row per cell over its
+  ! Returns the rows of the derivative of one order along one axis of
+  ! the mesh, at every cell: a stencil with one row per cell over its
   ! neighbours and no constant. An axis outside the mesh's dimension,
   ! or a derivative above the order, stops the program.
   !===================================================================!
@@ -86,12 +117,12 @@ contains
     class(finite_difference), intent(in) :: this
     type(mesh)              , intent(in) :: cells
     integer                 , intent(in) :: axis, derivative
-    type(stencil) :: rows
+    type(stencil)                        :: rows
 
     type(polynomial_form) :: shape
-    integer, allocatable :: orders(:), pure(:)
-    integer :: degree
-    character(len=250) :: message
+    integer, allocatable  :: orders(:), pure(:)
+    integer               :: degree
+    character(len=250)    :: message
 
     if (axis < 1 .or. axis > cells % dimension) then
        write(message,'(a,i0,a,i0)') 'operation_finite_difference: the axis must be one of the mesh; &
@@ -104,11 +135,12 @@ contains
        error stop trim(message)
     end if
 
-    ! the degree read: the order for a first derivative, the order
+    ! The degree read: the order for a first derivative, the order
     ! rounded up to even for a second
     degree = this % order
     if (derivative >= 2) degree = degree + mod(degree, 2)
 
+    ! The form, of the pure powers alone at degree two
     shape = polynomial_form(degree, cells % dimension)
     if (degree == 2) then
        call shape % pure_members(pure)

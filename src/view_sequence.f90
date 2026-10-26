@@ -1,12 +1,11 @@
 !=====================================================================!
-! SEQUENCE VIEW
+! Module that states the sequence view: one view of a graph. The
+! kernel supplies the structure, graph -> branch -> graph, and never
+! the word sequence. A finite sequence is representable over that
+! structure; it is not encoded by it.
 !
-! One view of a graph. The kernel supplies the structure - graph, branch,
-! graph - and never the word sequence. A finite sequence is
-! REPRESENTABLE over that structure; it is not encoded by it.
-!
-! THE REPRESENTATION LAW. A sequence is represented by a BRANCH, not by
-! a graph:
+! The representation law. A sequence is represented by a branch, not
+! by a graph:
 !
 !     NULL            the empty sequence
 !     KNOWN -> cell   a nonempty sequence, beginning at that cell
@@ -17,30 +16,36 @@
 !     branch(1) = KNOWN -> element      the element, always KNOWN
 !     branch(2)                         the rest, again a sequence branch
 !
-! So [a,b,c] is (a, (b, (c, NULL))), and the empty sequence has no cell
-! and needs no graph. A containing graph writes
+! So [a, b, c] is (a, (b, (c, NULL))):
+!
+!   b --KNOWN--> cell --branch(2)--> cell --branch(2)--> cell --branch(2)--> NULL
+!                 |                   |                   |
+!              branch(1)           branch(1)           branch(1)
+!                 a                   b                   c
+!
+! The empty sequence has no cell and needs no graph. A containing
+! graph writes
 !
 !     container % branch(i) = null_branch()
 !
 ! for the empty sequence, which is why these procedures take a branch.
 !
-! TWO DISTINCT FAILURE CONDITIONS.
+! Two distinct failure conditions:
 !
 !     malformed     a cell whose branch(1) is NULL or UNKNOWN. The
 !                   representation is wrong. Refused, always.
 !     unknown       a chain of cells that reaches UNKNOWN. The
 !                   representation is correct and the result is not yet
 !                   determined. Refused only when the result depends on
-!                   the unknown part -
-!                   sequence_element(b, 1) succeeds on a sequence whose
-!                   tail is UNKNOWN.
+!                   the unknown part: sequence_element(b, 1) succeeds on
+!                   a sequence whose tail is UNKNOWN.
 !
 ! NULL is not UNKNOWN here either: NULL ends a sequence, UNKNOWN
 ! withholds it.
 !
-! COMPLEXITY. size is O(n) and element(k) is O(k), and this is the
-! semantic view, not the low-cost representation. Where repeated indexed
-! access matters, compile to a contiguous representation.
+! Complexity. size is O(n) and element(k) is O(k): this is the
+! semantic view, not the low-cost representation. Where repeated
+! indexed access matters, compile to a contiguous representation.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -53,6 +58,7 @@ module view_sequence
   implicit none
 
   private
+
   public :: sequence_defined, sequence_num_elements
   public :: sequence_element, sequence_has
   public :: sequence_empty, sequence_first, sequence_rest
@@ -60,9 +66,10 @@ module view_sequence
 contains
 
   !===================================================================!
-  ! Is the whole extent known: does the chain of cells reach NULL. False when
-  ! it reaches UNKNOWN. A malformed cell is refused rather than
-  ! reported, because it is not a state of the sequence.
+  ! Returns whether the whole extent is known: whether the chain of
+  ! cells reaches NULL. False when it reaches UNKNOWN. A malformed cell
+  ! is refused rather than reported, because it is not a state of the
+  ! sequence.
   !===================================================================!
 
   recursive logical function sequence_defined(b) result(known_extent)
@@ -80,8 +87,8 @@ contains
   end function sequence_defined
 
   !===================================================================!
-  ! The number of elements. The result depends on the whole chain of
-  ! cells, so an unknown extent is refused.
+  ! Returns the number of elements. The result depends on the whole
+  ! chain of cells, so an unknown extent is refused.
   !===================================================================!
 
   recursive integer function sequence_num_elements(b) result(n)
@@ -100,15 +107,15 @@ contains
   end function sequence_num_elements
 
   !===================================================================!
-  ! The k-th element, counting from one. Only the first k cells are
-  ! traversed, so an unknown tail beyond k is not an error.
+  ! Returns the k-th element, counting from one. Only the first k cells
+  ! are traversed, so an unknown tail beyond k is not an error.
   !===================================================================!
 
   recursive function sequence_element(b, k) result(element)
 
     type(branch), intent(in) :: b
     integer     , intent(in) :: k
-    type(graph), pointer     :: element
+    type(graph) , pointer    :: element
 
     character(len=100) :: message
 
@@ -126,13 +133,14 @@ contains
   end function sequence_element
 
   !===================================================================!
-  ! Does the sequence contain this graph, by identity. Returned as
-  ! soon as it is found; refused if the chain of cells reaches UNKNOWN
-  ! first, because then the result depends on the unknown part.
+  ! Returns whether the sequence contains this graph, by identity. It
+  ! returns as soon as the graph is found, and refuses if the chain of
+  ! cells reaches UNKNOWN first, because then the result depends on the
+  ! unknown part.
   !
-  ! This is one traversal. A caller looping sequence_element instead
-  ! would be O(n^2), which is why membership is here and not derived
-  ! outside.
+  ! This is one traversal. A caller looping over sequence_element
+  ! instead would be O(n^2), which is why membership is here and not
+  ! derived outside.
   !===================================================================!
 
   recursive logical function sequence_has(b, g) result(found)
@@ -162,10 +170,12 @@ contains
   end function sequence_has
 
   !===================================================================!
-  ! The three primitives: a sequence is empty, or it is a first
-  ! element followed by the rest. Every traversal above is a
-  ! recursion over these three, so the chain of cells is read in one
-  ! place.
+  ! Returns whether the sequence is empty.
+  !
+  ! This is the first of the three primitives: a sequence is empty, or
+  ! it is a first element followed by the rest. Every traversal above
+  ! is a recursion over these three, so the chain of cells is read in
+  ! one place.
   !===================================================================!
 
   logical function sequence_empty(b) result(empty)
@@ -177,14 +187,14 @@ contains
   end function sequence_empty
 
   !===================================================================!
-  ! The first element. An empty or unknown sequence has none and
-  ! stops the program, as does a malformed cell.
+  ! Returns the first element. An empty or unknown sequence has none
+  ! and stops the program, as does a malformed cell.
   !===================================================================!
 
   function sequence_first(b) result(element)
 
     type(branch), intent(in) :: b
-    type(graph), pointer     :: element
+    type(graph) , pointer    :: element
 
     type(graph), pointer :: cell
 
@@ -196,7 +206,7 @@ contains
   end function sequence_first
 
   !===================================================================!
-  ! The sequence after the first element, refused on the same
+  ! Returns the sequence after the first element, refused on the same
   ! grounds. A copy of the branch stores the reference and owns
   ! nothing, which is what lets the result be returned by value.
   !===================================================================!
@@ -216,8 +226,8 @@ contains
   end function sequence_rest
 
   !===================================================================!
-  ! The two guards. require_cell refuses a malformed representation;
-  ! require_reachable refuses a step that cannot be taken.
+  ! Refuses a malformed representation: a cell whose element is not
+  ! KNOWN
   !===================================================================!
 
   subroutine require_cell(cell)
@@ -233,6 +243,11 @@ contains
     end if
 
   end subroutine require_cell
+
+  !===================================================================!
+  ! Refuses a step that cannot be taken: from a NULL or an UNKNOWN
+  ! branch
+  !===================================================================!
 
   subroutine require_reachable(b)
 

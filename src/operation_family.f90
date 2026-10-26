@@ -1,46 +1,56 @@
 !=====================================================================!
-! The time-marching family: an edge function on a scheme's coupling
-! that also declares how the scheme marches.
+! Module that states the time-marching family: an edge function on a
+! scheme's coupling that also declares how the scheme marches.
 !
 ! One type stores every family as data. A multistep family (Adams,
-! BDF) is an order p and the functional its coefficients are read
-! from; a Runge-Kutta family (DIRK) is a tableau; Newmark is the
-! coefficient pair beta and gamma. The constructors below fix the
-! data, and every query is one procedure
-! that reads it. The coefficients produced are dimensionless: the
-! weight an edge finally stores is the coefficient times a power of
-! the step, and that power is fixed by the two degrees the edge
-! joins, which operation_weight multiplies in.
+! BDF) is an order p and the functional its coefficients are read from;
+! a Runge-Kutta family (DIRK) is a tableau; Newmark is the coefficient
+! pair beta and gamma. The constructors below fix the data, and every
+! query is one procedure that reads it. The coefficients produced are
+! dimensionless: the weight an edge finally stores is the coefficient
+! times a power of the step, and that power is fixed by the two degrees
+! the edge joins, which operation_weight multiplies in.
 !
-!=====================================================================!
+!      family      its data              its rows
+!      adams(p)    the order p           a value from its derivative's
+!                                        quadrature over the last step
+!      bdf(p)      the order p           a derivative from the slope of
+!                                        the interpolant at t_k
+!      dirk        the tableau (a, b)    stages Q_i and q_k from the
+!                                        stage derivatives
+!      newmark     beta and gamma        q and q' from q'' at two instants
 !
-!                    THE TWO LAGRANGE FUNCTIONALS
-!
-! A multistep family interpolates through the instants behind k at
-! the nodes
+! The two Lagrange functionals. A multistep family interpolates through
+! the instants behind k at the nodes
 !
 !      u_j  =  -(t_k - t_(k-j)) / dt_k ,     u_0 = 0 ,
 !
-! and every coefficient is either the slope at zero of a Lagrange
-! basis function through those nodes (a difference) or its integral
-! over the last step (a quadrature). On a uniform grid every u_j is
-! -j and the tabulated coefficients result; they are the uniform
-! value of the formula, not a separate case.
+! and every coefficient is either the slope at zero of a Lagrange basis
+! function through those nodes (a difference) or its integral over the
+! last step (a quadrature). On a uniform grid every u_j is -j and the
+! tabulated coefficients result; they are the uniform value of the
+! formula, not a separate case.
+!
+!      instants    t_(k-2)       t_(k-1)        t_k
+!      nodes u       -2            -1            0          uniform steps
+!                     |-------------|-------------|
+!                                    the last step [-1, 0]
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 
 module operation_family
 
-  use util_precision  , only : dp
-  use operation_edge_function , only : edge_function
+  use util_precision            , only : dp
+  use operation_edge_function   , only : edge_function
   use view_directed_connectivity, only : connectivity_graph
-  use util_derivative_terms   , only : derivative_terms, value, &
+  use util_derivative_terms     , only : derivative_terms, value, &
        & operator(+), operator(-), operator(*), operator(/)
 
   implicit none
 
   private
+
   public :: family
   public :: adams_family, bdf_family, dirk_family
   public :: newmark_family
@@ -50,8 +60,8 @@ module operation_family
   public :: adams, bdf, dirk, chain
   public :: enrichment
 
-  ! the families by order: adams(p) and bdf(p) the multistep families
-  ! of order p, dirk(p) the tabulated tableau of order p
+  ! The families by order: adams(p) and bdf(p) the multistep families of
+  ! order p, dirk(p) the tabulated tableau of order p
   interface adams
      module procedure adams_family
   end interface adams
@@ -64,11 +74,16 @@ module operation_family
      module procedure dirk_of_order
   end interface dirk
 
-  !===================================================================!
-  ! A CHAIN OF FAMILIES over the instants: scheme(k) approximates the
-  ! derivative from instant from(k) to the instant before from(k+1),
-  ! the last to the end. from(1) is one and the list rises.
-  !===================================================================!
+  !-------------------------------------------------------------------!
+  ! Type that models a chain of families over the instants: scheme(k)
+  ! approximates the derivative from instant from(k) to the instant
+  ! before from(k+1), the last to the end. from(1) is one and the list
+  ! rises.
+  !
+  !      instants    1   2   3 | 4   5   6   7   8
+  !      from        1         | 4
+  !      scheme      bdf(1)    | bdf(2)
+  !-------------------------------------------------------------------!
 
   type :: chain
 
@@ -86,68 +101,70 @@ module operation_family
      module procedure create_chain
   end interface chain
 
-  ! the family, or the chain of families, one order higher: the
+  ! The family, or the chain of families, one order higher: the
   ! discretization along time an estimate of the error compares with
   interface enrichment
      module procedure family_enrichment
      module procedure chain_enrichment
   end interface enrichment
 
-  ! The coupling geometries a family reads its edges by.
-
+  ! The coupling geometries a family reads its edges by
   integer, parameter :: FAMILY_ADAMS   = 1
   integer, parameter :: FAMILY_BDF     = 2
   integer, parameter :: FAMILY_DIRK    = 3
   integer, parameter :: FAMILY_NEWMARK = 4
 
-  !===================================================================!
-  ! A family is its label, its geometry and its data: the order of a
-  ! multistep family, the tableau (a, b) of a DIRK family, or beta and
-  ! gamma of a Newmark family. Every unstaged family has one stage
-  ! with weight one, so b = [1]. The order is read by the multistep
-  ! geometries only; a one-step family stores one, its history depth.
-  !===================================================================!
+  !-------------------------------------------------------------------!
+  ! Type that models a family: its label, its geometry and its data,
+  ! the order of a multistep family, the tableau (a, b) of a DIRK
+  ! family, or beta and gamma of a Newmark family. Every unstaged
+  ! family has one stage with weight one, so b = [1]. The order is read
+  ! by the multistep geometries only; a one-step family stores one, its
+  ! history depth.
+  !-------------------------------------------------------------------!
 
   type, extends(edge_function) :: family
 
-     integer , private :: geometry = FAMILY_BDF
-     integer , private :: order    = 1
+     integer , private              :: geometry = FAMILY_BDF
+     integer , private              :: order    = 1
      real(dp), private, allocatable :: a(:,:)
      real(dp), private, allocatable :: b(:)
-     real(dp), private :: beta  = 0.0_dp
-     real(dp), private :: gamma = 0.0_dp
+     real(dp), private              :: beta  = 0.0_dp
+     real(dp), private              :: gamma = 0.0_dp
 
    contains
 
-     procedure :: history_depth    => family_history_depth
-     procedure :: accuracy         => family_accuracy
-     procedure :: step_ratio_bound => family_step_ratio_bound
-     procedure :: num_stages       => family_num_stages
-     procedure :: stage_weight     => family_stage_weight
-     procedure :: stage_abscissa   => family_stage_abscissa
-     procedure :: step_quadrature  => family_step_quadrature
-     procedure :: primary_degree   => family_primary_degree
-     procedure :: row_pattern      => family_row_pattern
+     procedure :: history_depth      => family_history_depth
+     procedure :: accuracy           => family_accuracy
+     procedure :: step_ratio_bound   => family_step_ratio_bound
+     procedure :: num_stages         => family_num_stages
+     procedure :: stage_weight       => family_stage_weight
+     procedure :: stage_abscissa     => family_stage_abscissa
+     procedure :: step_quadrature    => family_step_quadrature
+     procedure :: primary_degree     => family_primary_degree
+     procedure :: row_pattern        => family_row_pattern
      procedure :: block_connectivity => family_block_connectivity
      procedure :: stage_connectivity => family_stage_connectivity
-     procedure :: edge_coefficient => family_edge_coefficient
+     procedure :: edge_coefficient   => family_edge_coefficient
 
   end type family
 
 contains
 
   !===================================================================!
-  ! The constructors. An order below one, a non-square tableau, or a
-  ! tableau entry above the diagonal stops the program.
+  ! Creates a family of a geometry from its data. The public
+  ! constructors below check the data first: an order below one, a
+  ! non-square tableau, or a tableau entry above the diagonal stops the
+  ! program.
   !===================================================================!
 
   function create(label, geometry, order, a, b, beta, gamma) result(this)
 
-    character(len=*), intent(in) :: label
-    integer         , intent(in) :: geometry, order
-    real(dp)        , intent(in) :: a(:,:), b(:)
-    real(dp), optional, intent(in) :: beta, gamma
-    type(family) :: this
+    character(len=*), intent(in)           :: label
+    integer         , intent(in)           :: geometry, order
+    real(dp)        , intent(in)           :: a(:,:), b(:)
+    real(dp)        , optional, intent(in) :: beta, gamma
+    type(family)                           :: this
 
     this % geometry = geometry
     this % order    = order
@@ -159,10 +176,14 @@ contains
 
   end function create
 
+  !===================================================================!
+  ! Creates the Adams-Moulton family of an order
+  !===================================================================!
+
   function adams_family(order) result(this)
 
     integer, intent(in) :: order
-    type(family) :: this
+    type(family)        :: this
 
     character(len=250) :: message
 
@@ -175,10 +196,14 @@ contains
 
   end function adams_family
 
+  !===================================================================!
+  ! Creates the backward differentiation family of an order
+  !===================================================================!
+
   function bdf_family(order) result(this)
 
     integer, intent(in) :: order
-    type(family) :: this
+    type(family)        :: this
 
     character(len=250) :: message
 
@@ -190,13 +215,24 @@ contains
 
   end function bdf_family
 
+  !===================================================================!
+  ! Creates the diagonally implicit Runge-Kutta family of a tableau:
+  ! square, one weight per stage, nothing above the diagonal
+  !
+  !      c_1 | a_11
+  !      c_2 | a_21  a_22                 c_i = sum over j of a_ij
+  !      c_3 | a_31  a_32  a_33
+  !      ----+-----------------
+  !          | b_1   b_2   b_3
+  !===================================================================!
+
   function dirk_family(a, b) result(this)
 
     real(dp), intent(in) :: a(:,:)
     real(dp), intent(in) :: b(:)
-    type(family) :: this
+    type(family)         :: this
 
-    integer :: i, j
+    integer            :: i, j
     character(len=250) :: message
 
     if (size(a, 1) /= size(a, 2) .or. size(b) /= size(a, 1)) then
@@ -218,7 +254,8 @@ contains
   end function dirk_family
 
   !===================================================================!
-  ! Newmark is the pair (beta, gamma) and nothing else: its rows
+  ! Creates the Newmark family. Newmark is the pair (beta, gamma) and
+  ! nothing else: its rows
   !
   !    q_k  = q_(k-1) + h q'_(k-1) + h^2 (1/2 - beta) q''_(k-1)
   !                                + h^2 beta q''_k
@@ -232,7 +269,7 @@ contains
   function newmark_family(beta, gamma) result(this)
 
     real(dp), intent(in) :: beta, gamma
-    type(family) :: this
+    type(family)         :: this
 
     this = create('newmark', FAMILY_NEWMARK, 1, reshape([1.0_dp], [1, 1]), &
          & [1.0_dp], beta=beta, gamma=gamma)
@@ -240,7 +277,8 @@ contains
   end function newmark_family
 
   !===================================================================!
-  ! The queries, each one read from the data.
+  ! Requires a second-order state of a Newmark family; each query below
+  ! reads the family's data
   !===================================================================!
 
   pure subroutine require_newmark_equation(this, equation_degree)
@@ -254,6 +292,12 @@ contains
     end if
 
   end subroutine require_newmark_equation
+
+  !===================================================================!
+  ! Returns the history depth, the instants behind a step the family
+  ! reads: p - 1 for adams(p), at least one; p for bdf(p); one for a
+  ! one-step family
+  !===================================================================!
 
   pure integer function family_history_depth(this, equation_degree)
 
@@ -272,9 +316,12 @@ contains
 
   end function family_history_depth
 
-  ! the order of accuracy: p of adams(p) and bdf(p), the order of a
-  ! tableau by its order conditions, for Newmark two at gamma = 1/2
-  ! and one otherwise
+  !===================================================================!
+  ! Returns the order of accuracy: p of adams(p) and bdf(p), the order
+  ! of a tableau by its order conditions, for Newmark two at
+  ! gamma = 1/2 and one otherwise
+  !===================================================================!
+
   pure integer function family_accuracy(this)
 
     class(family), intent(in) :: this
@@ -290,11 +337,14 @@ contains
 
   end function family_accuracy
 
-  ! the largest ratio of a step to the step before it that the family
-  ! is known to march stably: 1 + sqrt(2) for bdf(2), Grigorieff's
-  ! sufficient condition for zero-stability on variable steps; no
-  ! bound, the largest number, for a family of one step, and none
-  ! stated here for another multistep family
+  !===================================================================!
+  ! Returns the largest ratio of a step to the step before it that the
+  ! family is known to march stably: 1 + sqrt(2) for bdf(2),
+  ! Grigorieff's sufficient condition for zero-stability on variable
+  ! steps; no bound, the largest number, for a family of one step, and
+  ! none stated here for another multistep family
+  !===================================================================!
+
   pure real(dp) function family_step_ratio_bound(this)
 
     class(family), intent(in) :: this
@@ -303,6 +353,12 @@ contains
     if (this % geometry == FAMILY_BDF .and. this % order == 2) family_step_ratio_bound = 1.0_dp + sqrt(2.0_dp)
 
   end function family_step_ratio_bound
+
+  !===================================================================!
+  ! Returns the primary degree, the one the law determines and no row
+  ! of the family derives: zero for BDF, which derives the derivatives
+  ! from the values; the top degree for every other family
+  !===================================================================!
 
   pure integer function family_primary_degree(this, equation_degree)
 
@@ -314,6 +370,10 @@ contains
 
   end function family_primary_degree
 
+  !===================================================================!
+  ! Returns the number of stages, one for an unstaged family
+  !===================================================================!
+
   pure integer function family_num_stages(this)
 
     class(family), intent(in) :: this
@@ -321,6 +381,10 @@ contains
     family_num_stages = size(this % b)
 
   end function family_num_stages
+
+  !===================================================================!
+  ! Returns the weight b_i of a stage
+  !===================================================================!
 
   pure real(dp) function family_stage_weight(this, i)
 
@@ -334,9 +398,12 @@ contains
 
   end function family_stage_weight
 
-  ! the abscissa of a stage within the step, the row sum of the
+  !===================================================================!
+  ! Returns the abscissa of a stage within the step, the row sum of the
   ! tableau: the stage's time is the instant behind plus the abscissa
   ! times the step
+  !===================================================================!
+
   pure real(dp) function family_stage_abscissa(this, i)
 
     class(family), intent(in) :: this
@@ -350,41 +417,43 @@ contains
   end function family_stage_abscissa
 
   !===================================================================!
-  ! The interpolatory quadrature over the step [t_(k-1), t_k], on the
-  ! instants the family's rows read, so that it is of the order of the
-  ! scheme: min(order, k) for a multistep family; for Newmark the two
-  ! instants k - 1 and k its rows read (offsets 1 and 0), which is the
-  ! trapezoidal rule, weights (1/2, 1/2), exact on linear integrands,
-  ! global error -(h^2/12) [f'(T) - f'(0)] + O(h^4), the second order
-  ! of the pair with gamma = 1/2. A rule on a third instant would read
-  ! history the family does not hold. At k = 1 the single node has
-  ! the measure dt_1 = 0. A staged family integrates over its stages
-  ! with the tableau weights b, not over instants, and stops the
+  ! Returns the interpolatory quadrature over the step [t_(k-1), t_k],
+  ! on the instants the family's rows read, so that it is of the order
+  ! of the scheme: min(order, k) for a multistep family; for Newmark
+  ! the two instants k - 1 and k its rows read (offsets 1 and 0), which
+  ! is the trapezoidal rule, weights (1/2, 1/2), exact on linear
+  ! integrands, global error -(h^2/12) [f'(T) - f'(0)] + O(h^4), the
+  ! second order of the pair with gamma = 1/2. A rule on a third instant
+  ! would read history the family does not hold. At k = 1 the single
+  ! node has the measure dt_1 = 0. A staged family integrates over its
+  ! stages with the tableau weights b, not over instants, and stops the
   ! program here. An instant outside the block stops the program.
   !
-  ! The complete rule keeps the full node count at every step after
-  ! the first: at a step k with fewer than n instants behind it the
-  ! nodes are the instants 1 .. n, those ahead of the step included,
-  ! and the weights are the integrals over [t_(k-1), t_k] of the
-  ! Lagrange basis through them; the rule is then of order n at every
-  ! step. It is the quadrature of an enriched functional (the
-  ! functional-error estimator), never of the family's own F_h. The
-  ! instant each weight multiplies is returned in instant, ordered k,
-  ! k - 1, .., 1, then k + 1, .., n.
+  ! The complete rule keeps the full node count at every step after the
+  ! first: at a step k with fewer than n instants behind it the nodes
+  ! are the instants 1 .. n, those ahead of the step included, and the
+  ! weights are the integrals over [t_(k-1), t_k] of the Lagrange basis
+  ! through them; the rule is then of order n at every step. It is the
+  ! quadrature of an enriched functional (the functional-error
+  ! estimator), never of the family's own F_h. The instant each weight
+  ! multiplies is returned in instant, ordered k, k - 1, .., 1, then
+  ! k + 1, .., n.
+  !
+  !      n = 4, k = 2    instant    2   1 | 3   4      behind, then ahead
   !===================================================================!
 
   pure subroutine family_step_quadrature(this, dt, k, weight, complete, instant)
 
-    class(family)         , intent(in) :: this
-    type(derivative_terms), intent(in) :: dt(:)
-    integer               , intent(in) :: k
-    type(derivative_terms), allocatable, intent(out) :: weight(:)
-    logical               , intent(in) , optional :: complete
-    integer  , allocatable, intent(out), optional :: instant(:)
+    class(family)                      , intent(in)            :: this
+    type(derivative_terms)             , intent(in)            :: dt(:)
+    integer                            , intent(in)            :: k
+    type(derivative_terms), allocatable, intent(out)           :: weight(:)
+    logical                            , intent(in) , optional :: complete
+    integer               , allocatable, intent(out), optional :: instant(:)
 
     type(derivative_terms), allocatable :: u(:)
-    integer :: num_nodes, n, j
-    logical :: ahead
+    integer                             :: num_nodes, n, j
+    logical                             :: ahead
 
     if (k < 1 .or. k > size(dt)) then
        error stop 'operation_family: this quadrature was evaluated at an instant outside the block'
@@ -419,19 +488,23 @@ contains
   end subroutine family_step_quadrature
 
   !===================================================================!
-  ! The row pattern: the offsets an edge reads and the degree at each,
-  ! for the row that head_degree a degree. Adams reads the value at
-  ! offset one and the derivative at the p previous instants; BDF
-  ! reads the degree below at offsets 0..p; Newmark reads q and q'
-  ! from the previous instant and q'' from the previous and current
-  ! instants; DIRK has no derived rows.
+  ! Returns the row pattern: the offsets an edge reads and the degree at
+  ! each, for the row that determines head_degree.
+  !
+  !      family      head degree d     reads
+  !      adams(p)    0 .. top - 1      d at offset 1; d + 1 at offsets
+  !                                    0 .. p - 1
+  !      bdf(p)      1 .. top          d - 1 at offsets 0 .. p
+  !      newmark     0 (q)             q, q', q'' at offset 1; q'' at 0
+  !      newmark     1 (q')            q', q'' at offset 1; q'' at 0
+  !      dirk                          no derived rows
   !===================================================================!
 
   pure subroutine family_row_pattern(this, head_degree, equation_degree, &
        & offset, tail_degree)
 
-    class(family), intent(in) :: this
-    integer      , intent(in) :: head_degree, equation_degree
+    class(family)       , intent(in)  :: this
+    integer             , intent(in)  :: head_degree, equation_degree
     integer, allocatable, intent(out) :: offset(:), tail_degree(:)
 
     integer :: i
@@ -443,7 +516,7 @@ contains
           allocate(offset(0), tail_degree(0))
           return
        end if
-       offset        = [1, (i, i = 0, this % order - 1)]
+       offset      = [1, (i, i = 0, this % order - 1)]
        tail_degree = [head_degree, (head_degree + 1, i = 0, this % order - 1)]
     case (FAMILY_BDF)
        if (head_degree < 1 .or. head_degree > equation_degree) then
@@ -470,21 +543,22 @@ contains
   end subroutine family_row_pattern
 
   !===================================================================!
-  ! The connectivity of the family over a block of n instants at nd
-  ! degrees: the row pattern placed at every instant it fits behind,
-  ! instant outer, degree inner, the primary degree omitted. The edge
-  ! order is the order the coupling's relation is formed in.
+  ! Returns the connectivity of the family over a block of n instants
+  ! at nd degrees: the row pattern placed at every instant it fits
+  ! behind, instant outer, degree inner, the primary degree omitted.
+  ! The edge order is the order the coupling's relation is formed in.
+  ! The first pass counts the edges, the second places them.
   !===================================================================!
 
   function family_block_connectivity(this, nd, n) result(connectivity)
 
     class(family), intent(in) :: this
     integer      , intent(in) :: nd, n
-    type(connectivity_graph) :: connectivity
+    type(connectivity_graph)  :: connectivity
 
     integer, allocatable :: tails(:), heads(:), tail_degree(:), head_degree(:)
     integer, allocatable :: offset(:), degrees_of(:)
-    integer :: primary, kk, d, e, counted, pass
+    integer              :: primary, kk, d, e, counted, pass
 
     primary = this % primary_degree(nd - 1)
     do pass = 1, 2
@@ -498,10 +572,10 @@ contains
              do e = 1, size(offset)
                 counted = counted + 1
                 if (pass == 2) then
-                   tails(counted)         = kk - offset(e)
-                   heads(counted)         = kk
+                   tails(counted)       = kk - offset(e)
+                   heads(counted)       = kk
                    tail_degree(counted) = degrees_of(e)
-                   head_degree(counted)    = d
+                   head_degree(counted) = d
                 end if
              end do
           end do
@@ -515,31 +589,39 @@ contains
   end function family_block_connectivity
 
   !===================================================================!
-  ! The connectivity of the tableau over one step at nd degrees, on
-  ! the vertices 1 (the instant behind), 2..s+1 (the stages) and s+2
-  ! (the instant ahead). Below the top degree, stage i reads its own
-  ! degree at the instant behind and the degree above at stages 1..i,
-  ! and the instant ahead reads its own degree at the instant behind
-  ! and the degree above at every stage:
+  ! Returns the connectivity of the tableau over one step at nd
+  ! degrees, on the vertices 1 (the instant behind), 2..s+1 (the
+  ! stages) and s+2 (the instant ahead). Below the top degree, stage i
+  ! reads its own degree at the instant behind and the degree above at
+  ! stages 1..i, and the instant ahead reads its own degree at the
+  ! instant behind and the degree above at every stage:
   !
   !    Q_i = q_(k-1) + h sum_(j<=i) a_ij Q'_j ,  q_k = q_(k-1) + h sum_j b_j Q'_j .
   !
-  ! The top degree has no row of the family: at every stage and at
-  ! the instant ahead it is the law's own row - at the instant ahead,
-  ! whose lower degrees the family fixes, a law that reads no
-  ! component of top degree in its form at the first instant
-  ! (operation_lagrangian, initial_form). Degree outer, stage inner;
-  ! within a row the instant behind precedes the stages.
+  !      s = 2       vertex 1     2      3      4
+  !                  q_(k-1)      Q_1    Q_2    q_k
+  !
+  !      Q_1   <--   q_(k-1), Q'_1
+  !      Q_2   <--   q_(k-1), Q'_1, Q'_2
+  !      q_k   <--   q_(k-1), Q'_1, Q'_2
+  !
+  ! The top degree has no row of the family: at every stage and at the
+  ! instant ahead it is the law's own row; at the instant ahead, whose
+  ! lower degrees the family fixes, a law that reads no component of
+  ! top degree in its form at the first instant (operation_lagrangian,
+  ! initial_form). Degree outer, stage inner; within a row the instant
+  ! behind precedes the stages. Each degree below the top has
+  ! s (s + 1) / 2 + 2 s + 1 edges.
   !===================================================================!
 
   function family_stage_connectivity(this, nd) result(connectivity)
 
     class(family), intent(in) :: this
     integer      , intent(in) :: nd
-    type(connectivity_graph) :: connectivity
+    type(connectivity_graph)  :: connectivity
 
     integer, allocatable :: tails(:), heads(:), tail_degree(:), head_degree(:)
-    integer :: s, d, i, j, at
+    integer              :: s, d, i, j, at
 
     s  = size(this % b)
     at = (nd - 1) * (s * (s + 1) / 2 + 2 * s + 1)
@@ -570,6 +652,7 @@ contains
 
   contains
 
+    ! The edge from the instant behind, at degree d, into a vertex
     subroutine behind(head)
       integer, intent(in) :: head
       at = at + 1
@@ -582,9 +665,14 @@ contains
   end function family_stage_connectivity
 
   !===================================================================!
-  ! The dimensionless coefficient on one edge. An edge from an earlier
-  ! instant, a source degree the geometry does not read, or an offset
-  ! beyond the order stops the program.
+  ! Returns the dimensionless coefficient on one edge. An edge from an
+  ! earlier instant, a source degree the geometry does not read, or an
+  ! offset beyond the order stops the program.
+  !
+  !      adams(p)    1 at offset 1; the quadrature weight of offset i
+  !      bdf(p)      the slope at zero of the basis of offset j
+  !      newmark     1, 1/2 - beta, beta, 1 - gamma, gamma as in its rows
+  !      dirk        1 from the instant behind; a_ij, or b_j into q_k
   !===================================================================!
 
   pure function family_edge_coefficient(this, dt, tail, head, &
@@ -593,7 +681,7 @@ contains
     class(family)         , intent(in) :: this
     type(derivative_terms), intent(in) :: dt(:)
     integer               , intent(in) :: tail, head, tail_degree, head_degree
-    type(derivative_terms) :: c
+    type(derivative_terms)             :: c
 
     integer :: i, j, s
 
@@ -706,16 +794,17 @@ contains
   end function family_edge_coefficient
 
   !===================================================================!
-  ! The n Lagrange nodes ending at instant k, scaled by dt(k) and
-  ! negated so that the step just taken is the interval [-1, 0]. A
-  ! step read that is not positive stops the program.
+  ! Returns the n Lagrange nodes ending at instant k, scaled by dt(k)
+  ! and negated so that the step just taken is the interval [-1, 0]:
+  ! u_0 = 0 and u_j = u_(j-1) - dt(k - j + 1) / dt(k). A step read that
+  ! is not positive stops the program.
   !===================================================================!
 
   pure function nodes(dt, k, n) result(u)
 
     type(derivative_terms), intent(in) :: dt(:)
     integer               , intent(in) :: k, n
-    type(derivative_terms) :: u(0:n-1)
+    type(derivative_terms)             :: u(0:n-1)
 
     integer :: j
 
@@ -732,19 +821,19 @@ contains
   end function nodes
 
   !===================================================================!
-  ! The n Lagrange nodes at the instants 1 .. n of a step k below n,
-  ! in the order of the complete rule (k, k - 1, .., 1, k + 1, .., n),
-  ! scaled by dt(k) so that the step just taken is [-1, 0]: the
-  ! instants behind by the backward recurrence of nodes, those ahead
-  ! by the steps following k. A step read that is not positive stops
-  ! the program.
+  ! Returns the n Lagrange nodes at the instants 1 .. n of a step k
+  ! below n, in the order of the complete rule (k, k - 1, .., 1,
+  ! k + 1, .., n), scaled by dt(k) so that the step just taken is
+  ! [-1, 0]: the instants behind by the backward recurrence of nodes,
+  ! those ahead by the steps following k. A step read that is not
+  ! positive stops the program.
   !===================================================================!
 
   pure function nodes_ahead(dt, k, n) result(u)
 
     type(derivative_terms), intent(in) :: dt(:)
     integer               , intent(in) :: k, n
-    type(derivative_terms) :: u(0:n-1)
+    type(derivative_terms)             :: u(0:n-1)
 
     integer :: j
 
@@ -762,18 +851,21 @@ contains
   end function nodes_ahead
 
   !===================================================================!
-  ! The slope at zero of the j-th Lagrange basis function through the
-  ! nodes u.
+  ! Returns the slope at zero of the j-th Lagrange basis function
+  ! through the nodes u,
+  !
+  !      l_j'(0)  =  sum over m /= j of  1/(u_j - u_m)  prod over
+  !                  i /= j, m of  (0 - u_i)/(u_j - u_i)
   !===================================================================!
 
   pure function slope_at_zero(u, j) result(s)
 
     type(derivative_terms), intent(in) :: u(0:)
     integer               , intent(in) :: j
-    type(derivative_terms) :: s
+    type(derivative_terms)             :: s
 
     type(derivative_terms) :: term
-    integer :: m, i, n
+    integer                :: m, i, n
 
     n = ubound(u, 1)
     s = derivative_terms(0.0_dp, u(j))
@@ -790,19 +882,19 @@ contains
   end function slope_at_zero
 
   !===================================================================!
-  ! The monomial coefficients of the j-th Lagrange basis function
-  ! through the nodes u, by repeated multiplication of the linear
-  ! factors.
+  ! Returns the monomial coefficients of the j-th Lagrange basis
+  ! function through the nodes u, by repeated multiplication of the
+  ! linear factors (x - u_m)/(u_j - u_m)
   !===================================================================!
 
   pure function basis_polynomial(u, j) result(c)
 
     type(derivative_terms), intent(in) :: u(0:)
     integer               , intent(in) :: j
-    type(derivative_terms) :: c(0:ubound(u, 1))
+    type(derivative_terms)             :: c(0:ubound(u, 1))
 
     type(derivative_terms) :: shifted(0:ubound(u, 1))
-    integer :: m, l, n
+    integer                :: m, l, n
 
     n = ubound(u, 1)
     do l = 0, n
@@ -823,18 +915,19 @@ contains
   end function basis_polynomial
 
   !===================================================================!
-  ! The integral over [-1, 0] of the j-th Lagrange basis function
-  ! through the nodes u.
+  ! Returns the integral over [-1, 0] of the j-th Lagrange basis
+  ! function through the nodes u: the integral of x^n there is
+  ! (-1)^n / (n + 1)
   !===================================================================!
 
   pure function integral_over_step(u, j) result(w)
 
     type(derivative_terms), intent(in) :: u(0:)
     integer               , intent(in) :: j
-    type(derivative_terms) :: w
+    type(derivative_terms)             :: w
 
     type(derivative_terms) :: c(0:ubound(u, 1))
-    integer :: n
+    integer                :: n
 
     c = basis_polynomial(u, j)
     w = derivative_terms(0.0_dp, u(j))
@@ -845,7 +938,12 @@ contains
   end function integral_over_step
 
   !===================================================================!
-  ! The tabulated DIRK families.
+  ! Returns the implicit midpoint rule, the first of the tabulated DIRK
+  ! families
+  !
+  !      1/2 | 1/2
+  !      ----+----
+  !          | 1
   !===================================================================!
 
   function implicit_midpoint() result(this)
@@ -856,10 +954,20 @@ contains
 
   end function implicit_midpoint
 
+  !===================================================================!
+  ! Returns Crouzeix's two-stage DIRK of order three,
+  ! g = (3 + sqrt(3)) / 6
+  !
+  !        g   | g
+  !      1 - g | 1 - 2g    g
+  !      ------+-------------
+  !            | 1/2      1/2
+  !===================================================================!
+
   function crouzeix_two_stage() result(this)
 
     type(family) :: this
-    real(dp) :: g
+    real(dp)     :: g
 
     g = (3.0_dp + sqrt(3.0_dp)) / 6.0_dp
     this = dirk_family(reshape([g, 1.0_dp - 2.0_dp * g, 0.0_dp, g], [2, 2]), &
@@ -867,10 +975,21 @@ contains
 
   end function crouzeix_two_stage
 
+  !===================================================================!
+  ! Returns Crouzeix's three-stage DIRK of order four,
+  ! g = cos(pi/18) / sqrt(3) + 1/2 and w = 1 / (6 (1 - 2g)^2)
+  !
+  !      g     | g
+  !      1/2   | 1/2 - g     g
+  !      1 - g | 2g          1 - 4g     g
+  !      ------+------------------------------
+  !            | w           1 - 2w     w
+  !===================================================================!
+
   function crouzeix_three_stage() result(this)
 
     type(family) :: this
-    real(dp) :: g, w, pi
+    real(dp)     :: g, w, pi
 
     pi = acos(-1.0_dp)
     g  = cos(pi / 18.0_dp) / sqrt(3.0_dp) + 0.5_dp
@@ -884,16 +1003,17 @@ contains
   end function crouzeix_three_stage
 
   !===================================================================!
-  ! The tabulated DIRK family of an order: the implicit midpoint rule
-  ! at two, Crouzeix's two stages at three, Crouzeix's three stages at
-  ! four. Another order stops the program.
+  ! Returns the tabulated DIRK family of an order: the implicit
+  ! midpoint rule at two, Crouzeix's two stages at three, Crouzeix's
+  ! three stages at four, and Hairer and Wanner's five stages at four
+  ! with stages = 5. Another order stops the program.
   !===================================================================!
 
   function dirk_of_order(order, stages) result(this)
 
-    integer, intent(in) :: order
+    integer, intent(in)           :: order
     integer, intent(in), optional :: stages
-    type(family) :: this
+    type(family)                  :: this
 
     character(len=250) :: message
 
@@ -921,13 +1041,18 @@ contains
 
   end function dirk_of_order
 
+  !===================================================================!
+  ! Creates a chain of families, one first instant per scheme, from(1)
+  ! one and the list rising
+  !===================================================================!
+
   function create_chain(schemes, from) result(this)
 
     type(family), intent(in) :: schemes(:)
     integer     , intent(in) :: from(:)
-    type(chain) :: this
+    type(chain)              :: this
 
-    integer :: k
+    integer            :: k
     character(len=250) :: message
 
     if (size(schemes) /= size(from)) then
@@ -950,26 +1075,33 @@ contains
 
   end function create_chain
 
+  !===================================================================!
+  ! Returns the number of blocks of the chain
+  !===================================================================!
+
   pure integer function num_blocks(this)
     class(chain), intent(in) :: this
     num_blocks = size(this % scheme)
   end function num_blocks
 
   !===================================================================!
-  ! THE CHAIN AT ANOTHER COUNT of instants: a chain of one block per
-  ! instant, whose blocks from the m-th to the last are of one family,
-  ! extends to n instants, n >= m, one block per instant, the blocks
-  ! from the m-th of that family. Invalid input: a chain of another
-  ! form, which is written for its count, or n below m.
+  ! Returns the chain at another count of instants: a chain of one
+  ! block per instant, whose blocks from the m-th to the last are of
+  ! one family, extends to n instants, n >= m, one block per instant,
+  ! the blocks from the m-th of that family. Invalid input: a chain of
+  ! another form, which is written for its count, or n below m.
+  !
+  !      given       bdf(1)  bdf(2)  bdf(2)                 m = 2
+  !      n = 5       bdf(1)  bdf(2)  bdf(2)  bdf(2)  bdf(2)
   !===================================================================!
 
   function chain_extension(this, n) result(extended)
 
     class(chain), intent(in) :: this
     integer     , intent(in) :: n
-    type(chain) :: extended
+    type(chain)              :: extended
 
-    integer :: nb, m, k
+    integer            :: nb, m, k
     character(len=250) :: message
 
     nb = size(this % scheme)
@@ -995,6 +1127,8 @@ contains
 
   contains
 
+    ! Whether two families are the same: geometry, order, pair and
+    ! tableau alike
     pure logical function same_family(a, b)
       type(family), intent(in) :: a, b
       same_family = a % geometry == b % geometry .and. a % order == b % order .and. a % beta == b % beta &
@@ -1004,10 +1138,16 @@ contains
 
   end function chain_extension
 
+  !===================================================================!
+  ! Returns Hairer and Wanner's five-stage L-stable SDIRK of order
+  ! four, every diagonal entry 1/4, its weights its last row (stiffly
+  ! accurate)
+  !===================================================================!
+
   function hairer_wanner_five_stage() result(this)
 
     type(family) :: this
-    real(dp) :: a(5, 5)
+    real(dp)     :: a(5, 5)
 
     a = 0.0_dp
     a(1, 1:1) = [1.0_dp / 4.0_dp]
@@ -1021,18 +1161,18 @@ contains
   end function hairer_wanner_five_stage
 
   !===================================================================!
-  ! THE ENRICHMENT of a family: the family of the same geometry one
-  ! order higher - adams(p + 1) for adams(p), bdf(p + 1) for bdf(p),
-  ! for a tableau of order q the tabulated DIRK of order q + 1, its
-  ! order read from the order conditions of the tableau. Invalid input:
-  ! bdf(6), above which the BDF families are not zero-stable; Newmark;
-  ! a tableau of order four, above the tabulated ones.
+  ! Returns the enrichment of a family: the family of the same geometry
+  ! one order higher, adams(p + 1) for adams(p), bdf(p + 1) for
+  ! bdf(p), for a tableau of order q the tabulated DIRK of order q + 1,
+  ! its order read from the order conditions of the tableau. Invalid
+  ! input: bdf(6), above which the BDF families are not zero-stable;
+  ! Newmark; a tableau of order four, above the tabulated ones.
   !===================================================================!
 
   function family_enrichment(this) result(enriched)
 
     class(family), intent(in) :: this
-    type(family) :: enriched
+    type(family)              :: enriched
 
     select case (this % geometry)
     case (FAMILY_ADAMS)
@@ -1050,11 +1190,15 @@ contains
 
   end function family_enrichment
 
-  ! the chain of the enrichments, block by block, on the same instants
+  !===================================================================!
+  ! Returns the chain of the enrichments, block by block, on the same
+  ! instants
+  !===================================================================!
+
   function chain_enrichment(this) result(enriched)
 
     class(chain), intent(in) :: this
-    type(chain) :: enriched
+    type(chain)              :: enriched
 
     integer :: b
 
@@ -1067,12 +1211,18 @@ contains
   end function chain_enrichment
 
   !===================================================================!
-  ! The classical order of a tableau, to four: the highest q whose
-  ! order conditions are all met, c the row sums of a - sum b = 1,
-  ! b . c = 1/2, b . c^2 = 1/3, b . a c = 1/6, b . c^3 = 1/4,
-  ! b . (c a c) = 1/8, b . a c^2 = 1/12, b . a a c = 1/24. A condition
-  ! is met to the rounding of its sum: n epsilon times the sum of the
-  ! magnitudes of its n terms, and of the rational it equals.
+  ! Returns the classical order of a tableau, to four: the highest q
+  ! whose order conditions are all met, c the row sums of a,
+  !
+  !      order 1     sum b = 1
+  !      order 2     b . c = 1/2
+  !      order 3     b . c^2 = 1/3            b . a c = 1/6
+  !      order 4     b . c^3 = 1/4            b . (c a c) = 1/8
+  !                  b . a c^2 = 1/12         b . a a c = 1/24
+  !
+  ! A condition is met to the rounding of its sum: n epsilon times the
+  ! sum of the magnitudes of its n terms, and of the rational it
+  ! equals.
   !===================================================================!
 
   pure integer function tableau_order(this)
@@ -1080,7 +1230,7 @@ contains
     class(family), intent(in) :: this
 
     real(dp), allocatable :: c(:)
-    integer :: s, i, j, k
+    integer               :: s, i, j, k
 
     s = size(this % b)
     c = [(sum(this % a(i, :)), i = 1, s)]
@@ -1101,7 +1251,7 @@ contains
 
   contains
 
-    ! whether the terms sum to the rational to the rounding of the sum
+    ! Whether the terms sum to the rational to the rounding of the sum
     pure logical function satisfied(terms, rational)
       real(dp), intent(in) :: terms(:), rational
       satisfied = abs(sum(terms) - rational) <= real(size(terms) + 1, dp) * epsilon(1.0_dp) &

@@ -1,43 +1,57 @@
 !=====================================================================!
-! The coupling a weight action reads: a connectivity_graph, and on it
-! the two fields every such action takes - the step at each vertex,
-! read off the graph's own edge degree labels. A family, a scheme
-! weight and a step scaling all read exactly this tuple, so it is
-! built here and nowhere else; weights_of applies any of them to it
-! and reads the result out as a vector.
+! Module that states the coupling a weight action reads: a
+! connectivity_graph, and on it the three fields every such action
+! takes, the step at each vertex and the two degree labels the graph's
+! edges store:
+!
+!   field          on              from
+!   dt             the vertices    the steps given
+!   tail degree    the edges       connectivity % tail_degree(e)
+!   head degree    the edges       connectivity % head_degree(e)
+!
+! A family, a scheme weight and a step scaling all read exactly this
+! tuple, so it is built here and nowhere else; weights_of applies any
+! of them to it and reads the result out as a vector.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 
 module operation_coupling
 
-  use util_precision      , only : dp
-  use field_stored        , only : stored_field
+  use util_precision            , only : dp
+  use field_stored              , only : stored_field
   use view_directed_connectivity, only : connectivity_graph
-  use operation_action    , only : operation, applied
-  use operation_edge_function, only : edge_function
-  use operation_family    , only : family
-  use operation_weight    , only : scheme_weight
-  use util_derivative_terms, only : derivative_terms, coefficient
+  use operation_action          , only : operation, applied
+  use operation_edge_function   , only : edge_function
+  use operation_family          , only : family
+  use operation_weight          , only : scheme_weight
+  use util_derivative_terms     , only : derivative_terms, coefficient
 
   implicit none
 
   private
+
   public :: coupling_inputs, weights_of, weights_terms
   public :: matrix_scheme_connectivity, connectivity_terms
 
+  !-------------------------------------------------------------------!
+  ! Type that models one connectivity of a scheme placed in a matrix:
+  ! its graph, the step each vertex reads, and the row and the column
+  ! of each edge within one node
+  !-------------------------------------------------------------------!
+
   type :: matrix_scheme_connectivity
      type(connectivity_graph) :: graph
-     integer, allocatable :: step_of(:)
-     integer, allocatable :: row(:), column(:)
+     integer, allocatable     :: step_of(:)
+     integer, allocatable     :: row(:), column(:)
   end type matrix_scheme_connectivity
 
 contains
 
   !===================================================================!
-  ! The step at every vertex and the two degree labels every edge
-  ! already stores, read out as the tuple an edge_function's
-  ! contract expects.
+  ! Returns the step at every vertex and the two degree labels every
+  ! edge already stores, as the tuple an edge_function's contract
+  ! expects
   !===================================================================!
 
   subroutine coupling_inputs(connectivity, steps, inputs)
@@ -61,15 +75,16 @@ contains
   end subroutine coupling_inputs
 
   !===================================================================!
-  ! An action applied to that coupling, its result read out.
+  ! Returns an action applied to that coupling, its result read out as
+  ! one real per edge
   !===================================================================!
 
   subroutine weights_of(action, connectivity, steps, w)
 
-    class(operation)         , intent(in)  :: action
-    type(connectivity_graph) , intent(in)  :: connectivity
-    real(dp)                 , intent(in)  :: steps(:)
-    real(dp), allocatable    , intent(out) :: w(:)
+    class(operation)        , intent(in)  :: action
+    type(connectivity_graph), intent(in)  :: connectivity
+    real(dp)                , intent(in)  :: steps(:)
+    real(dp), allocatable   , intent(out) :: w(:)
 
     type(stored_field), allocatable :: inputs(:)
 
@@ -79,35 +94,43 @@ contains
   end subroutine weights_of
 
   !===================================================================!
-  ! Every coefficient of an action's weights over n directions in the
-  ! steps, the steps seeded subset by subset: seeds(k, m) is the total
-  ! derivative of step k along the subset with mask m, for m = 1 to
-  ! 2^n - 1, and table(e, m) is the total derivative of edge e's
-  ! weight along that subset, the value at m = 0. Singleton seeds
-  ! alone give the mixed partials; the total derivatives of the steps
-  ! along subsets of designs give the weights' total derivatives along
-  ! the same, every set partition included by the product rule. The
-  ! action computes the weights over derivative terms, so every number
-  ! is exact. Invalid input: a seed table of other than one row per
-  ! vertex and 2^n - 1 columns, or an action that is not an edge
-  ! function.
+  ! Returns every coefficient of an action's weights over n directions
+  ! in the steps, the steps seeded subset by subset. seeds(k, m) is the
+  ! total derivative of step k along the subset with mask m, for m = 1
+  ! to 2^n - 1, and table(e, m) is the total derivative of edge e's
+  ! weight along that subset, the value at m = 0:
+  !
+  !   n = 2      mask m    subset     table(e, m)
+  !              0         {}         the weight
+  !              1         {1}        its derivative along 1
+  !              2         {2}        its derivative along 2
+  !              3         {1, 2}     the mixed derivative
+  !
+  ! Singleton seeds alone give the mixed partials. The total
+  ! derivatives of the steps along subsets of designs give the
+  ! weights' total derivatives along the same, every set partition
+  ! included by the product rule. The action computes the weights over
+  ! derivative terms, so every number is exact. Invalid input: a seed
+  ! table of other than one row per vertex and 2^n - 1 columns, or an
+  ! action that is not an edge function.
   !===================================================================!
 
   subroutine weights_terms(action, connectivity, steps, seeds, table)
 
-    class(operation)         , intent(in)  :: action
-    type(connectivity_graph) , intent(in)  :: connectivity
-    real(dp)                 , intent(in)  :: steps(:), seeds(:,:)
-    real(dp), allocatable    , intent(out) :: table(:,:)
+    class(operation)        , intent(in)  :: action
+    type(connectivity_graph), intent(in)  :: connectivity
+    real(dp)                , intent(in)  :: steps(:), seeds(:,:)
+    real(dp), allocatable   , intent(out) :: table(:,:)
 
     type(derivative_terms), allocatable :: dt(:)
-    type(derivative_terms) :: c
-    integer :: n, k, m, e, ne, nv
-    character(len=250) :: message
+    type(derivative_terms)              :: c
+    integer                             :: n, k, m, e, ne, nv
+    character(len=250)                  :: message
 
     nv = connectivity % num_vertices()
     ne = connectivity % num_edges()
 
+    ! The number of directions, from the number of nonempty subsets
     n = 0
     do while (2**n - 1 < size(seeds, 2))
        n = n + 1
@@ -120,6 +143,7 @@ contains
        error stop trim(message)
     end if
 
+    ! The steps as derivative terms, seeded
     allocate(dt(nv))
     do k = 1, nv
        dt(k) = derivative_terms(steps(k), n)
@@ -128,6 +152,7 @@ contains
        end do
     end do
 
+    ! Every edge's weight, and its coefficient along every subset
     allocate(table(ne, 0:2**n - 1))
     select type (action)
     class is (edge_function)
@@ -146,24 +171,30 @@ contains
   end subroutine weights_terms
 
   !===================================================================!
-  ! THE TIME DISCRETIZATION STENCIL'S TRIPLES over a connectivity,
-  ! repeated at every node: the row, the column and, at column m of
-  ! w, minus the total derivative of the weight along the subset of
-  ! designs with mask m, the steps seeded by seeds; column 0 is minus
-  ! the weight itself.
+  ! Returns the triples of the time discretization's stencil over a
+  ! scheme's connectivities, repeated at every node: the row, the
+  ! column and, at column m of w, minus the total derivative of the
+  ! weight along the subset of designs with mask m, the steps seeded by
+  ! seeds; column 0 is minus the weight itself.
+  !
+  !   node 1                     node 2                          ...
+  !   rows 1 .. degrees          rows degrees + 1 .. 2 degrees
+  !
+  !   each edge e at node i:   row    = row(e)    + (i - 1) degrees
+  !                            column = column(e) + (i - 1) degrees
   !===================================================================!
 
   subroutine connectivity_terms(scheme, connectivity, nodes, degrees, dt, seeds, r, c, w)
 
-    class(family)       , intent(in) :: scheme
-    type(matrix_scheme_connectivity), intent(in) :: connectivity(:)
-    integer             , intent(in) :: nodes, degrees
-    real(dp)            , intent(in) :: dt(:), seeds(:,:)
-    integer , allocatable, intent(out) :: r(:), c(:)
-    real(dp), allocatable, intent(out) :: w(:,:)
+    class(family)                   , intent(in)  :: scheme
+    type(matrix_scheme_connectivity), intent(in)  :: connectivity(:)
+    integer                         , intent(in)  :: nodes, degrees
+    real(dp)                        , intent(in)  :: dt(:), seeds(:,:)
+    integer , allocatable           , intent(out) :: r(:), c(:)
+    real(dp), allocatable           , intent(out) :: w(:,:)
 
     real(dp), allocatable :: table(:,:)
-    integer :: k, e, i, count, n, ne
+    integer               :: k, e, i, count, n, ne
 
     count = 0
     do k = 1, size(connectivity)

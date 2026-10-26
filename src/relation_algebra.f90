@@ -1,10 +1,10 @@
 !=====================================================================!
-! LEVEL 2 OF THE TOWER. THE RELATION ALGEBRA
+! Module that states level 2 of the tower, the relation algebra.
 !
-! The level defines one operation family: HOW RELATIONS GENERATE
-! RELATIONS. It contains exactly the three primitives its first
-! caller - the calculator tower's dependency derivation - requires,
-! and no more (AGENTS.md 9, CALCULATOR.md 9):
+! The level defines one operation family: how relations generate
+! relations. It contains exactly the three primitives its first
+! caller, the calculator tower's dependency derivation, requires, and
+! no more (AGENTS.md 9, CALCULATOR.md 9):
 !
 !      restrict_slot     P|_S       retain the tuples whose i-th part
 !                                   is a member of the subobject S;
@@ -17,6 +17,11 @@
 !      compose_binary    T o P      (a, c) wherever some b has
 !                                   (a, b) in P and (b, c) in T
 !
+!   R                  restrict_slot(R, 2, {b1})     project_slots(R, [3, 1])
+!   (a1, b1, c1)       (a1, b1, c1)                  (c1, a1)
+!   (a2, b2, c1)       (a3, b1, c2)                  (c1, a2)
+!   (a3, b1, c2)                                     (c2, a3)
+!
 ! No natural join, no union, no intersection, no identity relation,
 ! no general permutation: each is added when a caller requires it.
 ! The calculator's derivation reads
@@ -25,66 +30,65 @@
 !      composed with
 !      T_flow restricted to the input ports, projected to X x O,
 !
-! and returns the one dependency (+, x) - the standard
-! join-then-project, factored through a smaller algebra.
+! and returns the one dependency (+, x): the standard join then
+! project, factored through a smaller algebra.
 !
-!                      SEMANTICS, THEN COST
+! Semantics, then cost. Every result here is materialized: restriction
+! and projection return stored_relations, and composition returns the
+! existing csr_relation, with no second binary storage and no deferred
+! view hierarchy added before a caller requires it.
 !
-! Every result here is MATERIALIZED: restriction and projection
-! return stored_relations, composition returns the existing
-! csr_relation - no second binary storage, no deferred view hierarchy
-! added before a caller requires it.
-!
-! The costs, parametrically - the semantic pass is only the first
-! part of each cost, because materialization inherits the
-! constructors' own validation and duplicate collapse:
+! The costs, parametrically. The semantic pass is only the first part
+! of each cost, because materialization inherits the constructors' own
+! validation and duplicate collapse:
 !
 !      restrict    tuple filtering O(|R| * T_has(allowed)), then
 !                  stored_relation materialization: carrier
-!                  membership validation per slot, and its current
-!                  QUADRATIC upper bound, duplicate collapse
+!                  membership validation per slot, and, as its current
+!                  quadratic upper bound, duplicate collapse
 !
 !      project     slot extraction O(m |R|), then the same generic
-!                  stored_relation materialization costs - and here
-!                  the collapse has effect, since projection can
-!                  make tuples equal
+!                  stored_relation materialization costs; here the
+!                  collapse has effect, since projection can make
+!                  tuples equal
 !
 !      compose     witness search O(|R| |S|), then csr_relation
 !                  materialization, whose cost depends on the
-!                  carriers' local_index complexity and the number
-!                  of witness pairs produced before collapse
+!                  carriers' local_index complexity and the number of
+!                  witness pairs produced before collapse
 !
-! None of this is on a hot path, and none of it is optimized before
-! a caller requires it; when a caller composes large relations, an
+! None of this is on a hot path, and none of it is optimized before a
+! caller requires it; when a caller composes large relations, an
 ! indexed composition can be added beside this one.
 !
 ! Set semantics are enforced by the constructors: a projection that
 ! collapses many tuples to one, or a composition reached through two
-! witnesses, stores the tuple once - relations are sets everywhere.
+! witnesses, stores the tuple once. Relations are sets everywhere.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 
 module relation_algebra
 
-  use graph_fractal      , only : graph
-  use relation_finitary       , only : relation, stored_relation
-  use map_set        , only : set_map
-  use map_inclusion  , only : inclusion_map, declared_subobject
-  use relation_binary, only : group_by_key, csr_relation
+  use graph_fractal    , only : graph
+  use relation_finitary, only : relation, stored_relation
+  use map_set          , only : set_map
+  use map_inclusion    , only : inclusion_map, declared_subobject
+  use relation_binary  , only : group_by_key, csr_relation
 
   implicit none
 
   private
+
   public :: restrict_slot, project_slots, compose_binary
 
 contains
 
   !===================================================================!
-  ! Restriction: R|_S at one slot. The allowed domain must EMBED in
-  ! the slot's own domain - is_subobject_of, never a cardinality
-  ! coincidence - so restricting by the full domain itself is the
-  ! valid identity restriction. Rejected inputs:
+  ! Returns the restriction R|_S at one slot. The allowed domain must
+  ! embed in the slot's own domain, by is_subobject_of and never by a
+  ! coincidence of cardinality, so that restricting by the full domain
+  ! itself is the valid identity restriction. Rejected inputs:
   !
   !      a slot index outside the signature
   !      an allowed domain that does not embed in the slot
@@ -95,15 +99,15 @@ contains
 
     class(relation)    , intent(in) :: r
     integer            , intent(in) :: slot_index
-    type(graph)    , intent(in) :: allowed
+    type(graph)        , intent(in) :: allowed
     type(set_map)      , intent(in) :: sets
     type(inclusion_map), intent(in) :: inclusions
 
     type(graph), allocatable :: domains(:)
     type(graph)              :: d
-    integer, allocatable         :: table(:,:), restricted_tuples(:,:)
-    integer                      :: k, j, n
-    character(len=150) :: message
+    integer, allocatable     :: table(:,:), restricted_tuples(:,:)
+    integer                  :: k, j, n
+    character(len=150)       :: message
 
     if (slot_index < 1 .or. slot_index > r % arity()) then
        write(message,'(a,i0,a,i0)') 'relation_algebra: restrict_slot requires a slot index in &
@@ -111,13 +115,10 @@ contains
        error stop trim(message)
     end if
 
-    !----------------------------------------------------------------!
-    ! The embedding is a DECLARED predicate, so the inclusion map
+    ! The embedding is a declared predicate, so the inclusion map
     ! evaluates it; the membership below is an extensional predicate,
-    ! so the set map evaluates it. Two predicates, two maps, and
-    ! neither is stored in the graph.
-    !----------------------------------------------------------------!
-
+    ! so the set map evaluates it. Two predicates, two maps, and neither
+    ! is stored in the graph.
     d = r % domain(slot_index)
     if (.not. declared_subobject(allowed, d, inclusions)) then
        error stop 'relation_algebra: restrict_slot requires the restriction domain to embed in &
@@ -129,6 +130,7 @@ contains
        domains(k) = r % domain(k)
     end do
 
+    ! The tuples whose slot is a member of the allowed set
     call r % tuples(table)
     allocate(restricted_tuples(size(table, 1), size(table, 2)))
     n = 0
@@ -145,15 +147,16 @@ contains
   end function restrict_slot
 
   !===================================================================!
-  ! Projection: pi(R) onto the chosen slots, in the chosen order -
-  ! the order is structural, so [2,1] returns the reversed
+  ! Returns the projection pi(R) onto the chosen slots, in the chosen
+  ! order. The order is structural, so [2,1] returns the reversed
   ! signature. Duplicates created by discarding slots collapse in the
   ! constructor: the image is a set. Rejected inputs:
   !
   !      no slots selected
   !      a slot index outside the signature
-  !      one slot selected twice - repeated-slot projection would be
-  !      a different operation, and is not interpreted implicitly
+  !      one slot selected twice, since a projection with a repeated
+  !      slot would be a different operation, and is not interpreted
+  !      implicitly
   !===================================================================!
 
   type(stored_relation) function project_slots(r, slot_indices, sets) &
@@ -164,9 +167,9 @@ contains
     type(set_map)  , intent(in) :: sets
 
     type(graph), allocatable :: domains(:)
-    integer, allocatable         :: table(:,:), proj(:,:)
-    integer                      :: k, l, j, m
-    character(len=150) :: message
+    integer, allocatable     :: table(:,:), proj(:,:)
+    integer                  :: k, l, j, m
+    character(len=150)       :: message
 
     m = size(slot_indices)
 
@@ -197,6 +200,7 @@ contains
        domains(k) = r % domain(slot_indices(k))
     end do
 
+    ! The selected parts of every tuple, in the selected order
     call r % tuples(table)
     allocate(proj(m, size(table, 2)))
     do j = 1, size(table, 2)
@@ -211,15 +215,21 @@ contains
   end function project_slots
 
   !===================================================================!
-  ! Binary composition, argument order and formula fixed together:
+  ! Returns the binary composition, its argument order and formula
+  ! fixed together:
   !
   !      compose_binary(P_AB, P_BC)  =  P_BC o P_AB
   !          =  { (a, c) : exists b, (a,b) in P_AB and (b,c) in P_BC }
   !
-  ! The middle domains must be the SAME declared domain -
-  ! structural identity, never a size coincidence. The result is
-  ! binary, and is stored in the existing binary representation,
-  ! csr_relation. Rejected inputs:
+  !   P_AB            P_BC              P_BC o P_AB
+  !   (a1, b1)        (b1, c1)          (a1, c1)
+  !   (a2, b1)        (b2, c2)          (a2, c1)
+  !   (a2, b2)                          (a2, c2)
+  !
+  ! The middle domains must be the same declared domain, by structural
+  ! identity and never by a coincidence of size. The result is binary,
+  ! and is stored in the existing binary representation, csr_relation.
+  ! Rejected inputs:
   !
   !      an argument that is not binary
   !      middle domains that are not one domain
@@ -231,10 +241,10 @@ contains
     class(relation), intent(in) :: r_bc
     type(set_map)  , intent(in) :: sets
 
-    type(graph)      :: da, db, db2, dc
+    type(graph)          :: da, db, db2, dc
     integer, allocatable :: tab(:,:), tbc(:,:), pairs(:,:)
     integer              :: i, j, n
-    character(len=150) :: message
+    character(len=150)   :: message
 
     if (r_ab % arity() /= 2 .or. r_bc % arity() /= 2) then
        write(message,'(a,i0,a,i0)') 'relation_algebra: compose_binary requires two binary &
@@ -252,16 +262,21 @@ contains
     call r_ab % tuples(tab)
     call r_bc % tuples(tbc)
 
-    ! The sparse product: group the right factor's tuples by the
-    ! local index of their first slot once, then traverse each left
-    ! tuple's matching fibre - linear in the tuples plus the
-    ! output, not the all-pairs scan. Output order is unchanged:
-    ! left tuples in order, matches in the right factor's tuple
-    ! order.
+    ! The sparse product. The right factor's tuples are grouped once by
+    ! the local index of their first slot, and each left tuple then
+    ! traverses its matching group: linear in the tuples plus the
+    ! output, not the all-pairs scan. The output order is unchanged:
+    ! left tuples in order, matches in the right factor's tuple order.
+    !
+    !   middle index m       the right tuples whose first slot is m
+    !   1                    grouped(ptr(1) : ptr(2) - 1)
+    !   2                    grouped(ptr(2) : ptr(3) - 1)
+    !   ...
+    !   left (a, b)  -->  the group of b's index  -->  (a, c) for each
     sparse_product : block
 
       integer, allocatable :: keys(:), identity(:), ptr(:), grouped(:)
-      integer :: nmid, k, m
+      integer              :: nmid, k, m
 
       nmid = sets % num_members_of(db)
 
@@ -272,6 +287,7 @@ contains
       end do
       call group_by_key(nmid, keys, identity, ptr, grouped)
 
+      ! The number of pairs, then the pairs
       n = 0
       do i = 1, size(tab, 2)
          m = sets % index_in(db, tab(2, i))

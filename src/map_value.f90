@@ -1,24 +1,29 @@
 !=====================================================================!
-! VALUE MAP: graph identity -> value status x field, stored
-! outside the graph. Per graph it records whether a value is
-! attached, whether it is known, and the value itself, a field
-! on the graph's own domain.
+! Module that states the value map: graph identity -> value status x
+! field, stored outside the graph. For each graph it records whether
+! a value is attached, whether it is known, and the value itself, a
+! field on the graph's own domain.
 !
-! Statuses, closed:
+! The statuses, closed:
 !
 !     VALUE_UNATTACHED   no row in the map
 !     VALUE_UNKNOWN      a row with no known value
 !     VALUE_KNOWN        a row storing a known field
 !
-! Readers accept absence: an unattached graph reads as
-! VALUE_UNATTACHED. Reading a value requires KNOWN, because an
-! unknown number must not be read. Attach requires an assigned
-! identity and no row; every other writer requires an existing row,
-! because updating a missing row or attaching twice would each leave
-! the map ambiguous.
+!                  attach_unknown              mark_known
+!   UNATTACHED -----------------> UNKNOWN <-------------> KNOWN
+!        ^                           |       mark_unknown   |
+!        +---------- detach ---------+----------------------+
 !
-! Rows are keyed on type(token) identity tokens copied at attach,
-! never on position, so growing, reordering, or compacting the
+! Readers accept absence: an unattached graph reads as
+! VALUE_UNATTACHED. Reading a value requires KNOWN, because an unknown
+! number must not be read. Attaching requires an assigned identity and
+! no row; every other writer requires an existing row, because
+! updating a missing row or attaching twice would each leave the map
+! ambiguous.
+!
+! Rows are keyed on type(token) identity tokens, copied at attach,
+! never on position, so growing, reordering or compacting the
 ! container cannot redirect an attachment, and the map may outlive
 ! every variable that built it. No argument requires TARGET.
 !
@@ -27,14 +32,15 @@
 
 module map_value
 
-  use util_precision  , only : dp
-  use graph_fractal    , only : graph
-  use map_token_rows   , only : identity_rows
-  use field_stored, only : stored_field
+  use util_precision, only : dp
+  use graph_fractal , only : graph
+  use map_token_rows, only : identity_rows
+  use field_stored  , only : stored_field
 
   implicit none
 
   private
+
   public :: value_map
   public :: VALUE_UNATTACHED, VALUE_UNKNOWN, VALUE_KNOWN
 
@@ -42,11 +48,11 @@ module map_value
   integer, parameter :: VALUE_UNKNOWN    = 1
   integer, parameter :: VALUE_KNOWN      = 2
 
-  !===================================================================!
-  ! The state of one attached value: its status, and the field of
-  ! numbers when the status is KNOWN. The states run parallel to the
-  ! table's keys.
-  !===================================================================!
+  !-------------------------------------------------------------------!
+  ! Type that models the state of one attached value: its status, and
+  ! the field of numbers when the status is KNOWN. The states run
+  ! parallel to the table's keys.
+  !-------------------------------------------------------------------!
 
   type :: value_state
 
@@ -55,6 +61,11 @@ module map_value
 
   end type value_state
 
+  !-------------------------------------------------------------------!
+  ! Type that models the value map: rows keyed on identity, a state per
+  ! row
+  !-------------------------------------------------------------------!
+
   type :: value_map
 
      type(identity_rows)           , private :: rows
@@ -62,10 +73,13 @@ module map_value
 
    contains
 
+     ! Writers
      procedure :: attach_unknown
      procedure :: mark_known
      procedure :: mark_unknown
      procedure :: detach
+
+     ! Readers
      procedure :: attached
      procedure :: status_of
      procedure :: value_of
@@ -75,9 +89,9 @@ module map_value
 contains
 
   !===================================================================!
-  ! Add one row for a graph, status UNKNOWN, no value. Attaching
-  ! twice stops the program, because two rows for one identity
-  ! would make lookups ambiguous.
+  ! Adds one row for a graph, of status UNKNOWN and no value.
+  ! Attaching twice stops the program, because two rows for one
+  ! identity would make lookups ambiguous.
   !===================================================================!
 
   subroutine attach_unknown(this, element)
@@ -86,14 +100,14 @@ contains
     type(graph)     , intent(in)    :: element
 
     type(value_state), allocatable :: extended_states(:)
-    integer :: at
+    integer                        :: at
 
     at = this % rows % append(element % id(), &
          & 'map_value: a value map is keyed on assigned identity', &
          & 'map_value: a value row is attached once')
 
-    ! the payload doubles its capacity: an attachment costs amortised
-    ! constant time
+    ! The states double their capacity, so an attachment costs
+    ! amortised constant time
     if (.not. allocated(this % states)) allocate(this % states(max(at, 8)))
     if (at > size(this % states)) then
        allocate(extended_states(2 * size(this % states)))
@@ -105,19 +119,19 @@ contains
   end subroutine attach_unknown
 
   !===================================================================!
-  ! Store a copy of the given values in a field on the element's
-  ! own domain and set the status to KNOWN. Updating an existing
-  ! KNOWN row is allowed. Stops the program when the element has
-  ! no row, or when values is empty, because KNOWN with no numbers
-  ! could not be read back.
+  ! Stores a copy of the given values in a field on the element's own
+  ! domain and sets the status to KNOWN. Updating an existing KNOWN row
+  ! is allowed. Stops the program when the element has no row, or when
+  ! values is empty, because KNOWN with no numbers could not be read
+  ! back.
   !===================================================================!
 
   subroutine mark_known(this, element, values, num_components)
 
-    class(value_map)  , intent(inout) :: this
-    type(graph)       , intent(in)    :: element
-    real(dp)          , intent(in)    :: values(:)
-    integer , optional, intent(in)    :: num_components
+    class(value_map) , intent(inout) :: this
+    type(graph)      , intent(in)    :: element
+    real(dp)         , intent(in)    :: values(:)
+    integer, optional, intent(in)    :: num_components
 
     integer :: at, width
 
@@ -138,7 +152,7 @@ contains
   end subroutine mark_known
 
   !===================================================================!
-  ! Clear the value and set the status back to UNKNOWN; the row
+  ! Clears the value and sets the status back to UNKNOWN; the row
   ! remains. Stops the program when the element has no row.
   !===================================================================!
 
@@ -148,7 +162,7 @@ contains
     type(graph)     , intent(in)    :: element
 
     type(stored_field) :: empty_field
-    integer :: at
+    integer            :: at
 
     at = this % rows % row(element % id(), 'map_value: an update requires an attached row')
 
@@ -158,9 +172,14 @@ contains
   end subroutine mark_unknown
 
   !===================================================================!
-  ! Remove the element's row; other rows are unaffected, because
-  ! lookup is by token and not by position. Stops the program when
-  ! the element has no row.
+  ! Removes the element's row. The other rows are unaffected, because
+  ! lookup is by token and not by position; the states after it move
+  ! down by one:
+  !
+  !   before    [ s1 ][ s2 ][ s3 ][ s4 ]        detach row 2
+  !   after     [ s1 ][ s3 ][ s4 ][    ]
+  !
+  ! Stops the program when the element has no row.
   !===================================================================!
 
   subroutine detach(this, element)
@@ -182,10 +201,8 @@ contains
   end subroutine detach
 
   !===================================================================!
-  ! Readers. Absence is an accepted input: an undeclared or
-  ! unattached graph reads as not present. Only value_of stops the
-  ! program, when the status is not KNOWN, because an unknown
-  ! number must not be read.
+  ! Returns whether the graph has a row. Absence is an accepted input:
+  ! an undeclared or unattached graph reads as not present.
   !===================================================================!
 
   pure logical function attached(this, element)
@@ -196,6 +213,10 @@ contains
     attached = this % rows % position(element % id()) /= 0
 
   end function attached
+
+  !===================================================================!
+  ! Returns the graph's status, VALUE_UNATTACHED when it has no row
+  !===================================================================!
 
   pure integer function status_of(this, element) result(status)
 
@@ -214,13 +235,19 @@ contains
 
   end function status_of
 
+  !===================================================================!
+  ! Returns the graph's values. The only reader that stops the
+  ! program: when the status is not KNOWN, because an unknown number
+  ! must not be read.
+  !===================================================================!
+
   subroutine value_of(this, element, values)
 
     class(value_map)     , intent(in)  :: this
     type(graph)          , intent(in)  :: element
     real(dp), allocatable, intent(out) :: values(:)
 
-    integer :: at
+    integer            :: at
     character(len=250) :: message
 
     at = this % rows % row(element % id(), 'map_value: value_of requires a stored row for this element, but none exists')

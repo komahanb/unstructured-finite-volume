@@ -1,14 +1,18 @@
 !=====================================================================!
-! This module stores the global verbosity for library diagnostics.
-! One parameter decides how much the mesh loader, the mesh and the
-! assembler print:
+! Module that stores the global verbosity of the library's
+! diagnostics. One parameter decides how much the mesh loader, the
+! mesh and the assembler print:
 !
 !   0 : quiet (default) - errors and warnings only
 !   1 : progress        - "reading / forming / evaluating" milestones
 !   2 : debug           - full per-entity dumps (cells, faces, ...)
 !
-! Set it once at start-up - for example, from the driver or a config
-! file.
+!   quiet       progress                    debug
+!   |-----------|---------------------------|------------------->
+!   errors      + milestones                + every entity
+!
+! Set it once at start-up, for example from the driver or a
+! configuration file.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -18,16 +22,16 @@ module util_verbosity
   implicit none
 
   private
+
   public :: verbosity, set_verbosity
 
-  ! The parameter is read everywhere and written only through
-  ! set_verbosity.
+  ! Read everywhere, written only through set_verbosity
   integer, protected, save :: verbosity = 0
 
 contains
 
   !===================================================================!
-  ! Set the global verbosity level.
+  ! Sets the global verbosity level
   !===================================================================!
 
   impure subroutine set_verbosity(level)

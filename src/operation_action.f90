@@ -1,29 +1,36 @@
 !=====================================================================!
-! The operation prime: the map within a graph, (graph, fields) ->
-! field. Three symbols. name states the operation's name; domain
-! states which member set the result is defined on and how many
-! entries it has; apply computes the result.
+! Module that states the operation prime: the map within a graph,
+! (graph, fields) -> field. Three symbols. name states the operation's
+! name; domain states which member set the result is defined on and
+! how many entries it has; apply computes the result.
+!
+!      graph, fields  --apply-->  field on domain(graph)
 !
 ! apply writes its result into the output argument and never adds to
 ! what was there. The argument is intent(inout) only so a caller
-! already storing a buffer of the right shape can pass it and avoid
-! an allocation; passing a buffer changes the cost of the call, not
-! its result.
+! already storing a buffer of the right shape can pass it and avoid an
+! allocation; passing a buffer changes the cost of the call, not its
+! result.
 !
-! A concrete operation receives the fields it reads at construction
-! - a coefficient, a measure, a geometry field is passed as an
-! argument the compiler checks - so apply retrieves nothing by name.
+! A concrete operation receives the fields it reads at construction (a
+! coefficient, a measure, a geometry field is passed as an argument the
+! compiler checks) so apply retrieves nothing by name.
 !
-! ARGUMENTS. An operation F(x_1, ..., x_m) declares an argument
-! space. The declaration has m slots; the slots supply operation-owned
+! Arguments. An operation F(x_1, ..., x_m) declares an argument space.
+! The declaration has m slots; the slots supply operation-owned
 ! argument identities, not caller-owned names. An argument is an
 ! opaque ordinal in one operation's space; two arguments match only
 ! when they name the same position of the same space, so an argument
 ! of another operation can never denote one of this operation's,
-! whatever its position. Arguments are obtained from the operation
-! that owns them, by argument(k); no caller constructs one.
+! whatever its position. Arguments are obtained from the operation that
+! owns them, by argument(k); no caller constructs one.
 !
-! VARIATIONS. A partial directional derivative
+!      F     space s_F     (s_F, 1)   (s_F, 2)   (s_F, 3)
+!      G     space s_G     (s_G, 1)   (s_G, 2)
+!
+!      (s_F, 1) matches (s_F, 1), and never (s_G, 1)
+!
+! Variations. A partial directional derivative
 !
 !      D_{a_1} ... D_{a_k} F(x) [v_1, ..., v_k]
 !
@@ -33,23 +40,23 @@
 ! directions is not representable.
 !
 ! Every operation reports max_degree, the highest order of exact
-! partial action it computes (0 unless declared), and
-! partial_action, one mixed partial - differentiated once per
-! variation, contracted against that variation's direction, on its
-! own domain. The default stops the program, since an operation with
-! max_degree 0 declares no partials.
+! partial action it computes (0 unless declared), and partial_action,
+! one mixed partial, differentiated once per variation, contracted
+! against that variation's direction, on its own domain. The default
+! stops the program, since an operation with max_degree 0 declares no
+! partials.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 
 module operation_action
 
-  use util_precision  , only : dp
-  use view_directed , only : directed_graph
-  use graph_fractal       , only : graph
-  use field_calculus, only : field, FIELD_NONE
-  use field_stored  , only : stored_field, typed_field_domain
-  use token_identity, only : token, next_token
+  use util_precision       , only : dp
+  use view_directed        , only : directed_graph
+  use graph_fractal        , only : graph
+  use field_calculus       , only : field, FIELD_NONE
+  use field_stored         , only : stored_field, typed_field_domain
+  use token_identity       , only : token, next_token
   use util_derivative_terms, only : derivative_terms
 
   implicit none
@@ -68,23 +75,17 @@ module operation_action
   public :: design_partial, jacobian_of
   public :: dense_of_triples
 
-  !===================================================================!
-  ! One argument of one operation: the operation's argument space
-  ! and a position in it. Both components are private; matches is
-  ! the only comparison, and it is false across spaces.
-  !===================================================================!
-
-  !===================================================================!
-  ! What a bound field must be: one of the value kinds, and the
-  ! component count when the operation fixes it. A count of zero
-  ! leaves the count open for an operation that reads the shape from
-  ! the field.
-  !===================================================================!
+  !-------------------------------------------------------------------!
+  ! Type that models what a bound field must be: one of the value
+  ! kinds, and the component count when the operation fixes it. A count
+  ! of zero leaves the count open for an operation that reads the shape
+  ! from the field.
+  !-------------------------------------------------------------------!
 
   type :: contract
 
      integer, allocatable, private :: value_kinds(:)
-     integer, private :: components = 0
+     integer             , private :: components = 0
 
    contains
 
@@ -97,10 +98,17 @@ module operation_action
      module procedure create_contract_set
   end interface contract
 
+  !-------------------------------------------------------------------!
+  ! Type that models one argument of one operation: the operation's
+  ! argument space and a position in it, and the contract a field bound
+  ! to it must meet. Both identity components are private; matches is
+  ! the only comparison, and it is false across spaces.
+  !-------------------------------------------------------------------!
+
   type :: argument
 
-     type(token), private :: space
-     integer    , private :: ordinal = 0
+     type(token)   , private :: space
+     integer       , private :: ordinal = 0
      type(contract), private :: required
 
    contains
@@ -111,12 +119,13 @@ module operation_action
 
   end type argument
 
-  !===================================================================!
-  ! One differentiation factor: the argument differentiated and the
-  ! direction the derivative is contracted against. The direction is
-  ! stored by value, as a stored field, behind the accessor: a later
-  ! non-owning representation changes no caller.
-  !===================================================================!
+  !-------------------------------------------------------------------!
+  ! Type that models one differentiation factor: the argument
+  ! differentiated and the direction the derivative is contracted
+  ! against. The direction is stored by value, as a stored field,
+  ! behind the accessor: a later non-owning representation changes no
+  ! caller.
+  !-------------------------------------------------------------------!
 
   type :: variation
 
@@ -138,18 +147,21 @@ module operation_action
      module procedure create_variation
   end interface variation
 
-  !===================================================================!
-  ! One argument bound to one field. The binding owns the field and
-  ! checks the argument's contract at construction; an apply reads
-  ! its inputs by argument identity from an array of these. The
-  ! driver binds a rule's argument k to the datum at the k-th vertex
+  !-------------------------------------------------------------------!
+  ! Type that models one argument bound to one field. The binding owns
+  ! the field and checks the argument's contract at construction; an
+  ! apply reads its inputs by argument identity from an array of these.
+  ! The driver binds a rule's argument k to the datum at the k-th vertex
   ! the rule reads; a direct caller binds by position through bind.
-  !===================================================================!
+  !
+  !      F % argument(k) ----binding----> field      checked against the
+  !                                                  argument's contract
+  !-------------------------------------------------------------------!
 
   type :: binding
 
-     type(argument)            , private :: to
-     class(field), allocatable , private :: value
+     type(argument)           , private :: to
+     class(field), allocatable, private :: value
 
    contains
 
@@ -161,37 +173,45 @@ module operation_action
      module procedure create_binding
   end interface binding
 
+  !-------------------------------------------------------------------!
+  ! Type that models an operation: its argument space and contracts,
+  ! its name and highest exact degree, and its version
+  !-------------------------------------------------------------------!
+
   type, abstract :: operation
 
-     type(token), private :: arguments_space
-     integer    , private :: declared_arguments = 0
+     type(token)                , private :: arguments_space
+     integer                    , private :: declared_arguments = 0
      type(contract), allocatable, private :: argument_contracts(:)
 
-     ! the name reported, and the highest order of exact partial
-     ! action, both declared with the arguments; a concretion that
-     ! computes either overrides the accessor
+     ! The name reported, and the highest order of exact partial action,
+     ! both declared with the arguments; a concretion that computes
+     ! either overrides the accessor
      character(len=:), allocatable, private :: label
-     integer, private :: exact_degree = 0
+     integer                      , private :: exact_degree = 0
 
-     ! THE VERSION. A statement that is unchanged between two solves
-     ! has the same version, and a direct solver retains its factors
-     ! while the version it last factorised is unchanged. Zero is no
-     ! version: the default, and always factorised again.
-     integer    , private :: version_number = 0
-     logical    , private :: is_transposed = .false.
+     ! The version. A statement that is unchanged between two solves has
+     ! the same version, and a direct solver retains its factors while
+     ! the version it last factorised is unchanged. Zero is no version:
+     ! the default, and always factorised again.
+     integer, private :: version_number = 0
+     logical, private :: is_transposed = .false.
 
    contains
 
+     ! The three symbols
      procedure :: name   => operation_name
      procedure :: domain => operation_domain
-     procedure(operation_apply_interface) , deferred :: apply
+     procedure(operation_apply_interface), deferred :: apply
 
-     procedure :: max_degree       => operation_max_degree
-     procedure :: defined_at_zero  => operation_defined_at_zero
-     procedure :: partial_action   => operation_partial_action
+     ! The partials
+     procedure :: max_degree        => operation_max_degree
+     procedure :: defined_at_zero   => operation_defined_at_zero
+     procedure :: partial_action    => operation_partial_action
      procedure :: value_by_partial_action
      procedure :: explicit_jacobian => operation_explicit_jacobian
 
+     ! The arguments, the version and the bindings
      procedure :: declare_arguments
      procedure :: share_arguments
      procedure :: versioned
@@ -210,31 +230,34 @@ module operation_action
 
   abstract interface
 
-     !---------------------------------------------------------------!
-     ! The domain of the result: WHICH set, and HOW MANY entries it
-     ! has. The count is returned beside the identity because every
-     ! caller requires exactly those two quantities - to check the
-     ! domain matches, and to size a field.
-     !---------------------------------------------------------------!
-
+     !----------------------------------------------------------------!
+     ! Interface for apply: the result of the operation on a graph,
+     ! its inputs read by argument identity from the bindings, written
+     ! into the output
+     !----------------------------------------------------------------!
 
      subroutine operation_apply_interface(this, input_graph, inputs, output)
        import :: operation, directed_graph, field, binding
-       class(operation), intent(in) :: this
-       class(directed_graph), intent(in) :: input_graph
-       type(binding), intent(in), optional :: inputs(:)
-       class(field), allocatable, intent(inout) :: output
+       class(operation)         , intent(in)           :: this
+       class(directed_graph)    , intent(in)           :: input_graph
+       type(binding)            , intent(in), optional :: inputs(:)
+       class(field), allocatable, intent(inout)        :: output
      end subroutine operation_apply_interface
 
   end interface
 
 contains
 
+  !===================================================================!
+  ! Creates a contract of one value kind, and of a component count
+  ! where given
+  !===================================================================!
+
   pure function create_contract(value_kind, components) result(this)
 
     integer, intent(in)           :: value_kind
     integer, intent(in), optional :: components
-    type(contract) :: this
+    type(contract)                :: this
 
     if (value_kind == FIELD_NONE) then
        error stop 'operation: create_contract received value_kind = FIELD_NONE, which is not a valid value kind'
@@ -245,11 +268,15 @@ contains
 
   end function create_contract
 
+  !===================================================================!
+  ! Creates a contract of any of several value kinds
+  !===================================================================!
+
   pure function create_contract_set(value_kinds, components) result(this)
 
     integer, intent(in)           :: value_kinds(:)
     integer, intent(in), optional :: components
-    type(contract) :: this
+    type(contract)                :: this
 
     if (size(value_kinds) < 1) then
        error stop 'operation: create_contract_set requires at least one value kind, but value_kinds is empty'
@@ -262,6 +289,11 @@ contains
     call fix_components(this, components)
 
   end function create_contract_set
+
+  !===================================================================!
+  ! Fixes the component count of a contract, positive, or leaves it
+  ! open
+  !===================================================================!
 
   pure subroutine fix_components(this, components)
 
@@ -277,6 +309,11 @@ contains
     end if
 
   end subroutine fix_components
+
+  !===================================================================!
+  ! Returns whether a field meets the contract: one of its value kinds,
+  ! and its component count where fixed
+  !===================================================================!
 
   pure logical function contract_accepts(this, value) result(accepted)
 
@@ -296,8 +333,8 @@ contains
   end function contract_accepts
 
   !===================================================================!
-  ! Same space, same position. An undeclared space matches nothing,
-  ! including itself.
+  ! Returns whether two arguments match: same space, same position. An
+  ! undeclared space matches nothing, including itself.
   !===================================================================!
 
   pure logical function argument_matches(this, other) result(same)
@@ -310,6 +347,10 @@ contains
 
   end function argument_matches
 
+  !===================================================================!
+  ! Returns whether the argument names a position of a declared space
+  !===================================================================!
+
   pure logical function argument_is_named(this) result(is_defined)
 
     class(argument), intent(in) :: this
@@ -318,10 +359,15 @@ contains
 
   end function argument_is_named
 
+  !===================================================================!
+  ! Returns the argument's contract; an unnamed argument stops the
+  ! program
+  !===================================================================!
+
   pure function argument_contract(this) result(required)
 
     class(argument), intent(in) :: this
-    type(contract) :: required
+    type(contract)              :: required
 
     if (.not. this % is_named()) then
        error stop 'operation: argument_contract requires a named argument, but this % is_named() is false'
@@ -332,22 +378,22 @@ contains
   end function argument_contract
 
   !===================================================================!
-  ! Declare the argument space: allocate its token once, on the first
-  ! call, and record how many positions are readable. A later call
-  ! changes the count only, so arguments returned earlier still
-  ! belong to the same space. A negative count stops the program.
-  ! The label and the highest exact degree are recorded when given
-  ! and retained otherwise.
+  ! Declares the argument space: allocates its token once, on the first
+  ! call, and records how many positions are readable. A later call
+  ! changes the count only, so arguments returned earlier still belong
+  ! to the same space. A negative count stops the program. The label
+  ! and the highest exact degree are recorded when given and retained
+  ! otherwise.
   !===================================================================!
 
   subroutine declare_arguments(this, n, contracts, label, max_degree)
 
-    class(operation), intent(inout) :: this
-    integer         , intent(in)    :: n
+    class(operation), intent(inout)        :: this
+    integer         , intent(in)           :: n
     type(contract)  , intent(in), optional :: contracts(:)
     character(len=*), intent(in), optional :: label
     integer         , intent(in), optional :: max_degree
-    character(len=250) :: message
+    character(len=250)                     :: message
 
     if (n < 0) then
        write(message,'(a,i0)') 'operation: the argument count must be nonnegative; n = ', n
@@ -375,9 +421,9 @@ contains
   end subroutine declare_arguments
 
   !===================================================================!
-  ! The argument space and the name of another operation taken as this
+  ! Shares the argument space and the name of another operation as this
   ! one's: an operation formed from another and read on its arguments,
-  ! so that a variation of the other's arguments names this one's.
+  ! so that a variation of the other's arguments names this one's
   !===================================================================!
 
   subroutine share_arguments(this, other)
@@ -390,6 +436,10 @@ contains
 
   end subroutine share_arguments
 
+  !===================================================================!
+  ! Returns the number of declared arguments
+  !===================================================================!
+
   pure integer function num_arguments(this)
 
     class(operation), intent(in) :: this
@@ -399,14 +449,14 @@ contains
   end function num_arguments
 
   !===================================================================!
-  ! The contracts in argument order, for an operation that declares
-  ! the argument space of one it composes.
+  ! Returns the contracts in argument order, for an operation that
+  ! declares the argument space of one it composes
   !===================================================================!
 
   pure function contracts(this) result(required)
 
     class(operation), intent(in) :: this
-    type(contract), allocatable :: required(:)
+    type(contract), allocatable  :: required(:)
 
     allocate(required(this % declared_arguments))
     if (allocated(this % argument_contracts)) required = this % argument_contracts
@@ -414,12 +464,12 @@ contains
   end function contracts
 
   !===================================================================!
-  ! The declared label, or 'operation' when none was declared.
+  ! Returns the declared label, or 'operation' when none was declared
   !===================================================================!
 
   pure function operation_name(this) result(name)
 
-    class(operation), intent(in) :: this
+    class(operation), intent(in)  :: this
     character(len=:), allocatable :: name
 
     name = 'operation'
@@ -428,8 +478,8 @@ contains
   end function operation_name
 
   !===================================================================!
-  ! The k-th argument of this operation. An undeclared space or a
-  ! position outside 1..num_arguments() stops the program: there is
+  ! Returns the k-th argument of this operation. An undeclared space or
+  ! a position outside 1..num_arguments() stops the program: there is
   ! no such argument to name.
   !===================================================================!
 
@@ -437,7 +487,7 @@ contains
 
     class(operation), intent(in) :: this
     integer         , intent(in) :: k
-    type(argument) :: a
+    type(argument)               :: a
 
     if (.not. this % arguments_space % declared()) then
        error stop 'operation: argument() was called before declare_arguments(), so no argument space exists'
@@ -446,14 +496,14 @@ contains
        error stop 'operation: argument() was called with k outside 1..declared_arguments'
     end if
 
-    a % space   = this % arguments_space
-    a % ordinal = k
+    a % space    = this % arguments_space
+    a % ordinal  = k
     a % required = this % argument_contracts(k)
 
   end function operation_argument
 
   !===================================================================!
-  ! Whether an argument belongs to this operation's space.
+  ! Returns whether an argument belongs to this operation's space
   !===================================================================!
 
   pure logical function owns(this, a)
@@ -468,7 +518,7 @@ contains
   end function owns
 
   !===================================================================!
-  ! Reject a variation list that names an argument of another
+  ! Rejects a variation list that names an argument of another
   ! operation. Every partial_action calls this first.
   !===================================================================!
 
@@ -488,7 +538,7 @@ contains
   end subroutine require_owned
 
   !===================================================================!
-  ! Reject a variation list that names an argument of another
+  ! Rejects a variation list that names an argument of another
   ! operation, or that is longer than the highest exact degree. A
   ! partial_action computed over derivative terms calls this first.
   !===================================================================!
@@ -506,28 +556,32 @@ contains
   end subroutine require_variations
 
   !===================================================================!
-  ! Argument k read from the bindings as derivative terms over the
-  ! variations: entry j is x_j with direction i set to the i-th
+  ! Returns argument k read from the bindings as derivative terms over
+  ! the variations: entry j is x_j with direction i set to the i-th
   ! variation's j-th entry for every variation naming argument k, and
   ! consumed counts those variations. A direction of another length
-  ! than the argument stops the program. The caller rejects a
-  ! variation naming another argument by comparing consumed with the
-  ! count of variations.
+  ! than the argument stops the program. The caller rejects a variation
+  ! naming another argument by comparing consumed with the count of
+  ! variations.
+  !
+  !      variations      (a_k, v_1)   (a_other, v_2)   (a_k, v_3)
+  !      terms(j)        x_j,  direction 1 = v_1(j),  direction 3 = v_3(j)
+  !      consumed        2
   !===================================================================!
 
   subroutine seeded_argument(this, inputs, variations, k, terms, consumed)
 
-    class(operation), intent(in) :: this
-    type(binding)   , intent(in) :: inputs(:)
-    type(variation) , intent(in) :: variations(:)
-    integer         , intent(in) :: k
+    class(operation)                   , intent(in)  :: this
+    type(binding)                      , intent(in)  :: inputs(:)
+    type(variation)                    , intent(in)  :: variations(:)
+    integer                            , intent(in)  :: k
     type(derivative_terms), allocatable, intent(out) :: terms(:)
-    integer         , intent(out) :: consumed
+    integer                            , intent(out) :: consumed
 
     real(dp), allocatable :: x(:), v(:)
-    type(argument) :: a
-    integer :: i, j
-    character(len=250) :: message
+    type(argument)        :: a
+    integer               :: i, j
+    character(len=250)    :: message
 
     a = this % argument(k)
     call bound_real_vector(inputs, a, x)
@@ -555,19 +609,23 @@ contains
   end subroutine seeded_argument
 
   !===================================================================!
-  ! Variations.
+  ! Creates a variation: an argument and the direction along it
   !===================================================================!
 
   function create_variation(wrt, along) result(this)
 
     type(argument)    , intent(in) :: wrt
     type(stored_field), intent(in) :: along
-    type(variation) :: this
+    type(variation)                :: this
 
     this % wrt   = wrt
     this % along = along
 
   end function create_variation
+
+  !===================================================================!
+  ! Returns whether the variation varies an argument
+  !===================================================================!
 
   pure logical function variation_argument_is(this, a)
 
@@ -578,53 +636,69 @@ contains
 
   end function variation_argument_is
 
+  !===================================================================!
+  ! Returns the argument the variation varies
+  !===================================================================!
+
   pure function variation_argument(this) result(a)
 
     class(variation), intent(in) :: this
-    type(argument) :: a
+    type(argument)               :: a
 
     a = this % wrt
 
   end function variation_argument
 
+  !===================================================================!
+  ! Returns the direction's values
+  !===================================================================!
+
   pure subroutine variation_direction(this, values)
 
-    class(variation), intent(in)          :: this
+    class(variation)     , intent(in)  :: this
     real(dp), allocatable, intent(out) :: values(:)
 
     call this % along % real_vector(values)
 
   end subroutine variation_direction
 
+  !===================================================================!
+  ! Returns the domain the direction is defined on
+  !===================================================================!
+
   function variation_domain(this) result(domain)
 
     class(variation), intent(in) :: this
-    type(graph) :: domain
+    type(graph)                  :: domain
 
     domain = this % along % domain()
 
   end function variation_domain
 
+  !===================================================================!
+  ! Returns the direction as a field
+  !===================================================================!
+
   function variation_field(this) result(along)
 
     class(variation), intent(in) :: this
-    type(stored_field) :: along
+    type(stored_field)           :: along
 
     along = this % along
 
   end function variation_field
 
   !===================================================================!
-  ! The same direction on another argument: how an operation that
-  ! wraps another restates a variation in the wrapped operation's
-  ! argument space before delegating.
+  ! Returns the same direction on another argument: how an operation
+  ! that wraps another restates a variation in the wrapped operation's
+  ! argument space before delegating
   !===================================================================!
 
   function variation_with_argument(this, a) result(moved)
 
     class(variation), intent(in) :: this
     type(argument)  , intent(in) :: a
-    type(variation) :: moved
+    type(variation)              :: moved
 
     moved % wrt   = a
     moved % along = this % along
@@ -632,29 +706,28 @@ contains
   end function variation_with_argument
 
   !===================================================================!
-  ! The highest exact degree declared with the arguments: zero, no
-  ! exact partial action of any order, unless declared.
+  ! Returns the highest exact degree declared with the arguments: zero,
+  ! no exact partial action of any order, unless declared
   !===================================================================!
 
   pure function operation_max_degree(this) result(degree)
 
     class(operation), intent(in) :: this
-    integer :: degree
+    integer                      :: degree
 
     degree = this % exact_degree
 
   end function operation_max_degree
 
   !===================================================================!
-  ! WHETHER THE ZERO STATE LIES IN THE OPERATION'S DOMAIN. A(0) is the
-  ! constant part a linear solver subtracts to read the linear part of
-  ! an affine statement, and a minimizer evaluates it when the
+  ! Returns whether the zero state lies in the operation's domain. A(0)
+  ! is the constant part a linear solver subtracts to read the linear
+  ! part of an affine statement, and a minimizer evaluates it when the
   ! operation is stated. An operation built from sums, products and
-  ! non-negative powers has a value there, and the default declares
-  ! so. An operation that divides by, or takes a negative power, a
-  ! logarithm or a square root of, a quantity read from the state
-  ! overrides this: the zero state is outside its domain and is never
-  ! evaluated.
+  ! non-negative powers has a value there, and the default declares so.
+  ! An operation that divides by, or takes a negative power, a logarithm
+  ! or a square root of, a quantity read from the state overrides this:
+  ! the zero state is outside its domain and is never evaluated.
   !===================================================================!
 
   pure logical function operation_defined_at_zero(this) result(defined)
@@ -667,28 +740,27 @@ contains
   end function operation_defined_at_zero
 
   !===================================================================!
-  ! The default rejects every request, because max_degree is 0. A
-  ! concrete type that declares a positive max_degree overrides both
-  ! bindings; the order requested must not exceed its max_degree.
+  ! Versions the statement, and records whether it is the transpose of
+  ! the one the version names
   !===================================================================!
 
   subroutine versioned(this, version_number, transposed)
 
-    class(operation), intent(inout) :: this
-    integer         , intent(in)    :: version_number
+    class(operation), intent(inout)        :: this
+    integer         , intent(in)           :: version_number
     logical         , intent(in), optional :: transposed
 
-    this % version_number   = version_number
-    this % is_transposed = .false.
+    this % version_number = version_number
+    this % is_transposed  = .false.
     if (present(transposed)) this % is_transposed = transposed
 
   end subroutine versioned
 
   !===================================================================!
-  ! Whether the versioned statement is the transpose of the one the
-  ! version names: read from its pattern where the statement is
+  ! Returns whether the versioned statement is the transpose of the one
+  ! the version names: read from its pattern where the statement is
   ! formed, and stored with the version so that a solver storing the
-  ! factors of the one substitutes them transposed for the other.
+  ! factors of the one substitutes them transposed for the other
   !===================================================================!
 
   pure logical function transpose_version(this)
@@ -699,6 +771,10 @@ contains
 
   end function transpose_version
 
+  !===================================================================!
+  ! Returns the version, zero for none
+  !===================================================================!
+
   pure integer function version(this) result(version_number)
 
     class(operation), intent(in) :: this
@@ -708,13 +784,13 @@ contains
   end function version
 
   !===================================================================!
-  ! THE EXPLICIT TANGENT. A statement that can express its own
-  ! tangent in one argument as triples - row, column, weight -
-  ! reports so here, and a minimizer governing it may then state the
-  ! explicit operator instead of forming the jacobian by matvecs. The
-  ! default jacobian_defined is false; the arrays
-  ! are then not assigned. Nothing here is a matvec: a statement that
-  ! reports its tangent explicitly stores its own structure.
+  ! Returns the explicit tangent. A statement that can express its own
+  ! tangent in one argument as triples (row, column, weight) reports so
+  ! here, and a minimizer governing it may then state the explicit
+  ! operator instead of forming the jacobian by matvecs. The default
+  ! jacobian_defined is false; the arrays are then empty. Nothing here
+  ! is a matvec: a statement that reports its tangent explicitly stores
+  ! its own structure.
   !===================================================================!
 
   subroutine operation_explicit_jacobian(this, input_graph, inputs, which, &
@@ -734,13 +810,20 @@ contains
 
   end subroutine operation_explicit_jacobian
 
+  !===================================================================!
+  ! Applies the partial action. The default rejects every request,
+  ! because max_degree is 0. A concrete type that declares a positive
+  ! max_degree overrides both bindings; the order requested must not
+  ! exceed its max_degree.
+  !===================================================================!
+
   subroutine operation_partial_action(this, input_graph, inputs, &
        & variations, output)
 
-    class(operation), intent(in)             :: this
-    class(directed_graph), intent(in)        :: input_graph
-    type(binding), intent(in)                :: inputs(:)
-    type(variation), intent(in)              :: variations(:)
+    class(operation)         , intent(in)    :: this
+    class(directed_graph)    , intent(in)    :: input_graph
+    type(binding)            , intent(in)    :: inputs(:)
+    type(variation)          , intent(in)    :: variations(:)
     class(field), allocatable, intent(inout) :: output
 
     associate (u1 => this, u2 => input_graph, u3 => inputs, &
@@ -752,17 +835,17 @@ contains
   end subroutine operation_partial_action
 
   !===================================================================!
-  ! The value as the partial action of order zero, for an operation
-  ! computed over derivative terms: apply is this call. Absent inputs
-  ! stop the program.
+  ! Applies the value as the partial action of order zero, for an
+  ! operation computed over derivative terms: apply is this call.
+  ! Absent inputs stop the program.
   !===================================================================!
 
   subroutine value_by_partial_action(this, input_graph, inputs, output)
 
-    class(operation)     , intent(in)        :: this
-    class(directed_graph), intent(in)        :: input_graph
-    type(binding)        , intent(in), optional :: inputs(:)
-    class(field), allocatable, intent(inout) :: output
+    class(operation)         , intent(in)           :: this
+    class(directed_graph)    , intent(in)           :: input_graph
+    type(binding)            , intent(in), optional :: inputs(:)
+    class(field), allocatable, intent(inout)        :: output
 
     type(variation) :: none(0)
 
@@ -774,11 +857,15 @@ contains
 
   end subroutine value_by_partial_action
 
+  !===================================================================!
+  ! Returns the values of an action applied on fields bound by position
+  !===================================================================!
+
   subroutine applied(action, context, inputs, y)
 
-    class(operation)     , intent(in) :: action
-    class(directed_graph), intent(in) :: context
-    type(stored_field)   , intent(in) :: inputs(:)
+    class(operation)     , intent(in)  :: action
+    class(directed_graph), intent(in)  :: context
+    type(stored_field)   , intent(in)  :: inputs(:)
     real(dp), allocatable, intent(out) :: y(:)
 
     class(field), allocatable :: out
@@ -788,21 +875,27 @@ contains
 
   end subroutine applied
 
+  !===================================================================!
+  ! Returns the values of the first or second partial action along one
+  ! or two directions, each on argument which (and which2) of the
+  ! action, on the domain given
+  !===================================================================!
+
   subroutine varied(action, context, inputs, which, domain, v, y, which2, domain2, v2)
 
-    class(operation)     , intent(in) :: action
-    class(directed_graph), intent(in) :: context
-    type(stored_field)   , intent(in) :: inputs(:)
-    integer              , intent(in) :: which
-    type(graph)          , intent(in) :: domain
-    real(dp)             , intent(in) :: v(:)
-    real(dp), allocatable, intent(out) :: y(:)
-    integer    , intent(in), optional :: which2
-    type(graph), intent(in), optional :: domain2
-    real(dp)   , intent(in), optional :: v2(:)
+    class(operation)     , intent(in)           :: action
+    class(directed_graph), intent(in)           :: context
+    type(stored_field)   , intent(in)           :: inputs(:)
+    integer              , intent(in)           :: which
+    type(graph)          , intent(in)           :: domain
+    real(dp)             , intent(in)           :: v(:)
+    real(dp), allocatable, intent(out)          :: y(:)
+    integer              , intent(in), optional :: which2
+    type(graph)          , intent(in), optional :: domain2
+    real(dp)             , intent(in), optional :: v2(:)
 
-    type(stored_field) :: direction, second
-    type(typed_field_domain) :: first_domain, second_domain
+    type(stored_field)        :: direction, second
+    type(typed_field_domain)  :: first_domain, second_domain
     class(field), allocatable :: out
 
     first_domain = typed_field_domain(domain, size(v))
@@ -823,32 +916,45 @@ contains
 
   end subroutine varied
 
+  !===================================================================!
+  ! Returns the partial of the rows in the design, their second
+  ! argument, along the direction of ones
+  !===================================================================!
+
   subroutine design_partial(rows, unknowns, inputs, n, design_domain, d)
 
-    class(operation)     , intent(in) :: rows
-    class(directed_graph), intent(in) :: unknowns
-    type(stored_field)   , intent(in) :: inputs(:)
-    integer              , intent(in) :: n
-    type(graph)          , intent(in) :: design_domain
+    class(operation)     , intent(in)  :: rows
+    class(directed_graph), intent(in)  :: unknowns
+    type(stored_field)   , intent(in)  :: inputs(:)
+    integer              , intent(in)  :: n
+    type(graph)          , intent(in)  :: design_domain
     real(dp), allocatable, intent(out) :: d(:)
 
     call varied(rows, unknowns, inputs, 2, design_domain, spread(1.0_dp, 1, n), d)
 
   end subroutine design_partial
 
+  !===================================================================!
+  ! Returns the dense jacobian of the rows in their first argument:
+  ! from the explicit tangent where the rows state one, otherwise one
+  ! column per unknown, the partial along e_j
+  !
+  !      A(:, j)  =  D_1 rows(x) [e_j]
+  !===================================================================!
+
   subroutine jacobian_of(rows, unknowns, inputs, num_unknowns, state_domain, a)
 
-    class(operation)     , intent(in) :: rows
-    class(directed_graph), intent(in) :: unknowns
-    type(stored_field)   , intent(in) :: inputs(:)
-    integer              , intent(in) :: num_unknowns
-    type(graph)          , intent(in) :: state_domain
+    class(operation)     , intent(in)  :: rows
+    class(directed_graph), intent(in)  :: unknowns
+    type(stored_field)   , intent(in)  :: inputs(:)
+    integer              , intent(in)  :: num_unknowns
+    type(graph)          , intent(in)  :: state_domain
     real(dp), allocatable, intent(out) :: a(:,:)
 
     real(dp), allocatable :: v(:), column(:), w(:)
     integer , allocatable :: r(:), c(:)
-    logical :: jacobian_defined
-    integer :: j
+    logical               :: jacobian_defined
+    integer               :: j
 
     call rows % explicit_jacobian(unknowns, rows % bind(inputs), 1, r, c, w, jacobian_defined)
     if (jacobian_defined) then
@@ -868,14 +974,14 @@ contains
   end subroutine jacobian_of
 
   !===================================================================!
-  ! The dense n by n matrix of (row, column, weight) triples: equal
-  ! pairs sum, in the order given.
+  ! Returns the dense n by n matrix of (row, column, weight) triples:
+  ! equal pairs sum, in the order given
   !===================================================================!
 
   pure subroutine dense_of_triples(n, rows, columns, weights, a)
 
-    integer , intent(in) :: n, rows(:), columns(:)
-    real(dp), intent(in) :: weights(:)
+    integer              , intent(in)  :: n, rows(:), columns(:)
+    real(dp)             , intent(in)  :: weights(:)
     real(dp), allocatable, intent(out) :: a(:,:)
 
     integer :: e
@@ -888,14 +994,14 @@ contains
   end subroutine dense_of_triples
 
   !===================================================================!
-  ! Bindings.
+  ! Creates a binding of an argument to a copy of a field
   !===================================================================!
 
   function create_binding(to, value) result(this)
 
     type(argument), intent(in) :: to
     class(field)  , intent(in) :: value
-    type(binding) :: this
+    type(binding)              :: this
 
     call require_bindable(to, value)
     this % to = to
@@ -904,16 +1010,16 @@ contains
   end function create_binding
 
   !===================================================================!
-  ! The same binding taking ownership of the field rather than
+  ! Creates the same binding taking ownership of the field rather than
   ! copying it; the driver passes each datum it read to the binding
-  ! this way.
+  ! this way
   !===================================================================!
 
   function moved_binding(to, stored) result(this)
 
     type(argument)           , intent(in)    :: to
     class(field), allocatable, intent(inout) :: stored
-    type(binding) :: this
+    type(binding)                            :: this
 
     if (.not. allocated(stored)) then
        error stop 'operation: moved_binding requires an allocated field, but stored is unallocated'
@@ -925,16 +1031,16 @@ contains
   end function moved_binding
 
   !===================================================================!
-  ! An unnamed argument, or a field outside the argument's contract,
-  ! stops the program.
+  ! Requires a bindable pair: an unnamed argument, or a field outside
+  ! the argument's contract, stops the program
   !===================================================================!
 
   subroutine require_bindable(to, value)
 
     type(argument), intent(in) :: to
     class(field)  , intent(in) :: value
-    type(contract) :: required
-    character(len=250) :: message
+    type(contract)             :: required
+    character(len=250)         :: message
 
     if (.not. to % is_named()) then
        error stop 'operation: require_bindable requires a named argument, but to % is_named() is false'
@@ -949,6 +1055,10 @@ contains
 
   end subroutine require_bindable
 
+  !===================================================================!
+  ! Returns whether the binding is of an argument
+  !===================================================================!
+
   pure logical function binding_argument_is(this, a)
 
     class(binding), intent(in) :: this
@@ -959,18 +1069,18 @@ contains
   end function binding_argument_is
 
   !===================================================================!
-  ! Bind fields to this operation's arguments by position: field k
-  ! to argument k. Fewer fields than arguments leave the rest unbound;
-  ! more than declared is an error.
+  ! Binds fields to this operation's arguments by position: field k to
+  ! argument k. Fewer fields than arguments leave the rest unbound; more
+  ! than declared is an error.
   !===================================================================!
 
   function bind_fields(this, fields) result(bound)
 
     class(operation), intent(in) :: this
     class(field)    , intent(in) :: fields(:)
-    type(binding), allocatable :: bound(:)
+    type(binding), allocatable   :: bound(:)
 
-    integer :: k
+    integer            :: k
     character(len=250) :: message
 
     if (size(fields) > this % num_arguments()) then
@@ -987,18 +1097,18 @@ contains
   end function bind_fields
 
   !===================================================================!
-  ! Rebind another operation's bindings to this operation's arguments
+  ! Rebinds another operation's bindings to this operation's arguments
   ! by position, for an operation that passes its inputs to one it
-  ! composes.
+  ! composes
   !===================================================================!
 
   function bind_bindings(this, others) result(bound)
 
     class(operation), intent(in) :: this
     type(binding)   , intent(in) :: others(:)
-    type(binding), allocatable :: bound(:)
+    type(binding), allocatable   :: bound(:)
 
-    integer :: k
+    integer            :: k
     character(len=250) :: message
 
     if (size(others) > this % num_arguments()) then
@@ -1020,8 +1130,8 @@ contains
   end function bind_bindings
 
   !===================================================================!
-  ! The position of an argument's binding, zero when it has none. An
-  ! unnamed argument or a repeated binding stops the program.
+  ! Returns the position of an argument's binding, zero when it has
+  ! none. An unnamed argument or a repeated binding stops the program.
   !===================================================================!
 
   pure integer function binding_position(bound, a) result(found)
@@ -1048,7 +1158,7 @@ contains
   end function binding_position
 
   !===================================================================!
-  ! The one binding of an argument: absent stops the program.
+  ! Returns the one binding of an argument: absent stops the program
   !===================================================================!
 
   integer function bound_index(bound, a) result(found)
@@ -1067,8 +1177,8 @@ contains
   end function bound_index
 
   !===================================================================!
-  ! Whether an argument has a binding: the driver leaves unbound the
-  ! argument of a vertex that no operation has written.
+  ! Returns whether an argument has a binding: the driver leaves
+  ! unbound the argument of a vertex that no operation has written
   !===================================================================!
 
   pure logical function is_bound(bound, a)
@@ -1085,9 +1195,9 @@ contains
   end function is_bound
 
   !===================================================================!
-  ! Whether the bound field of an argument is defined on the domain
-  ! with the stated number of values (entries times components): the
-  ! check read from the binding itself, without a copy of the field.
+  ! Returns whether the bound field of an argument is defined on the
+  ! domain with the stated number of values (entries times components):
+  ! the check read from the binding itself, without a copy of the field
   !===================================================================!
 
   logical function bound_on(bound, a, domain, num_values) result(defined)
@@ -1105,10 +1215,14 @@ contains
 
   end function bound_on
 
+  !===================================================================!
+  ! Returns a copy of the field bound to an argument
+  !===================================================================!
+
   subroutine bound_value(bound, a, value)
 
-    type(binding) , intent(in) :: bound(:)
-    type(argument), intent(in) :: a
+    type(binding)            , intent(in)    :: bound(:)
+    type(argument)           , intent(in)    :: a
     class(field), allocatable, intent(inout) :: value
 
     integer :: found
@@ -1119,10 +1233,14 @@ contains
 
   end subroutine bound_value
 
+  !===================================================================!
+  ! Returns the real values of the field bound to an argument
+  !===================================================================!
+
   subroutine bound_real_vector(bound, a, values)
 
-    type(binding) , intent(in) :: bound(:)
-    type(argument), intent(in) :: a
+    type(binding)        , intent(in)  :: bound(:)
+    type(argument)       , intent(in)  :: a
     real(dp), allocatable, intent(out) :: values(:)
 
     integer :: found
@@ -1132,10 +1250,14 @@ contains
 
   end subroutine bound_real_vector
 
+  !===================================================================!
+  ! Returns the integer values of the field bound to an argument
+  !===================================================================!
+
   subroutine bound_integer_vector(bound, a, values)
 
-    type(binding) , intent(in) :: bound(:)
-    type(argument), intent(in) :: a
+    type(binding)       , intent(in)  :: bound(:)
+    type(argument)      , intent(in)  :: a
     integer, allocatable, intent(out) :: values(:)
 
     integer :: found
@@ -1146,10 +1268,13 @@ contains
   end subroutine bound_integer_vector
 
   !===================================================================!
-  ! The domain of an operation's result, unless the operation
-  ! overrides it: one entry per vertex of the graph it is applied on.
-  ! An operation whose result is defined on its edges, or on a domain
-  ! of its own, overrides this.
+  ! Returns the domain of an operation's result: which set, and how many
+  ! entries it has. The count is returned beside the identity because
+  ! every caller requires exactly those two quantities, to check the
+  ! domain matches and to size a field. Unless the operation overrides
+  ! it, one entry per vertex of the graph it is applied on; an operation
+  ! whose result is defined on its edges, or on a domain of its own,
+  ! overrides this.
   !===================================================================!
 
   subroutine operation_domain(this, input_graph, domain, num_entries)
@@ -1166,8 +1291,8 @@ contains
   end subroutine operation_domain
 
   !===================================================================!
-  ! The one way an operation returns its result: a supplied buffer
-  ! is overwritten, never added to.
+  ! Emits a result: the one way an operation returns it. A supplied
+  ! buffer is overwritten, never added to.
   !===================================================================!
 
   subroutine emit(out, output)
@@ -1181,18 +1306,18 @@ contains
   end subroutine emit
 
   !===================================================================!
-  ! Real values emitted as a stored field named name on the domain,
-  ! with n entries of num_components components each.
+  ! Emits real values as a stored field named name on the domain, with
+  ! n entries of num_components components each
   !===================================================================!
 
   subroutine emit_real(name, domain, n, values, output, num_components)
 
-    character(len=*), intent(in) :: name
-    type(graph)     , intent(in) :: domain
-    integer         , intent(in) :: n
-    real(dp)        , intent(in) :: values(:)
-    class(field), allocatable, intent(inout) :: output
-    integer, intent(in), optional :: num_components
+    character(len=*)         , intent(in)           :: name
+    type(graph)              , intent(in)           :: domain
+    integer                  , intent(in)           :: n
+    real(dp)                 , intent(in)           :: values(:)
+    class(field), allocatable, intent(inout)        :: output
+    integer                  , intent(in), optional :: num_components
 
     type(stored_field) :: out
 

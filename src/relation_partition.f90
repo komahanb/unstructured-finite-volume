@@ -1,5 +1,5 @@
 !=====================================================================!
-! THE PARTITION RELATION
+! Module that states the partition relation.
 !
 ! One object, two opposite verbs. A cut and an assembly are not two
 ! records; they are one relation read in the two directions,
@@ -16,12 +16,11 @@
 !
 ! Nothing else may write it. A partition that invented one relation
 ! and an assembly that invented another would agree only by accident,
-! and would disagree in exactly the place - a partition boundary -
-! where the disagreement is hardest to detect.
+! and would disagree in exactly the place, a partition boundary, where
+! the disagreement is hardest to detect.
 !
-!                        WHAT THE RELATION IS
-!
-! Two of them, one per carrier, and they have the same shape:
+! What the relation is. There are two of them, one per carrier, and
+! they have the same shape:
 !
 !      r_V  <=  V_part x V_whole
 !      r_E  <=  E_part x E_whole
@@ -33,52 +32,48 @@
 !         vglobal = [4 5 7]
 !
 ! so (2, 5) is in r_V: the part calls that member 2, and the graph it
-! was cut from calls it 5. Each is TOTAL on the part side - every
-! member of the part has a name in the whole - and INJECTIVE - two
-! members of one part never share a name. That is what makes the
-! backward read a function on the image, and it is the only reason
+! was cut from calls it 5. Each is total on the part side, every member
+! of the part having a name in the whole, and injective, two members of
+! one part never sharing a name. That is what makes the backward read a
+! function on the image, and it is the only reason
 ! `assemble(partition(G)) = G` can hold at all.
 !
-! A relation stored as one array per carrier, therefore, and read
-! forward or backward on demand. The arrays ARE the tuples; they are
+! A relation is therefore stored as one array per carrier, and read
+! forward or backward on demand. The arrays are the tuples; they are
 ! not a numbering separate from the mathematics.
 !
-!                   WHAT IS STORED BESIDE THE RELATION
-!
-! Ownership is not part of r. It is a FIELD on the part's members,
+! What is stored beside the relation. Ownership is not part of r. It
+! is a field on the part's members,
 !
 !      own : S_part -> K
 !
-! taking values in the set of parts, and it determines what r
-! cannot: when the parts are assembled, which one contributes a
-! member that several of them contain. Exactly one, or a conserved
-! quantity is counted twice. So it is stored here, beside r, because
-! the two are read together on every backward read and separating
-! them would let a caller store one without the other.
+! taking values in the set of parts, and it determines what r cannot:
+! when the parts are assembled, which one contributes a member that
+! several of them contain. Exactly one, or a conserved quantity is
+! counted twice. So it is stored here, beside r, because the two are
+! read together on every backward read and separating them would let a
+! caller store one without the other.
 !
-!                   WHY IT STORES SET IDENTITIES TOO
-!
-! A bare pair of arrays could not record WHICH sets it relates, so a
-! caller that stores two relations could pass the wrong one to the
-! wrong part without any error. That is not hypothetical: it is the
-! defect this design was built after, and it is why the four set
-! identities and their counts are stored beside the arrays, and why
-! `describes(g)` exists - the one predicate that makes a relation
-! checkable against the graph it claims to relate.
+! Why it stores set identities too. A bare pair of arrays could not
+! record which sets it relates, so a caller that stores two relations
+! could pass the wrong one to the wrong part without any error. That is
+! not hypothetical: it is the defect this design was built after, and
+! it is why the four set identities and their counts are stored beside
+! the arrays, and why `describes(g)` exists, the one predicate that
+! makes a relation checkable against the graph it claims to relate.
 !
 !      ONE RELATION PER PART. NEVER ONE RELATION ACROSS TWO PARTS.
 !
-!                       WHAT IT MUST NOT STORE
+! What it must not store: no set_map, no label_map, no inclusion_map,
+! and it has none. A representation specifies how members are numbered
+! here. What a set means is the caller's, stored in the caller's maps,
+! and passed at the semantic boundary, never embedded inside an
+! action.
 !
-! No set_map, no label_map, no inclusion_map, and it has none. A
-! representation specifies HOW members are numbered here. What a set
-! MEANS is the caller's, stored in the caller's maps, and passed at
-! the semantic boundary - never embedded inside an action.
-!
-! WHY partition_relation AND NOT relation. relation_finitary already
+! Why partition_relation and not relation. relation_finitary already
 ! owns `relation` and `stored_relation`, and they are a different
-! object: they have identity - they declare, they sign, they evaluate
-! same_as - and they are built THROUGH a set map that describes their
+! object: they have identity, they declare, they sign, they evaluate
+! same_as, and they are built through a set map that describes their
 ! domains. This one has no identity, is copied freely into an action,
 ! and must be constructible where no map exists yet: inside the cut,
 ! before anything has described the part's carriers. Two public types
@@ -89,56 +84,59 @@
 
 module relation_partition
 
-  use graph_fractal      , only : graph
+  use graph_fractal, only : graph
   use view_directed, only : directed_graph
 
   implicit none
 
   private
+
   public :: partition_relation
 
-  !===================================================================!
-  ! One relation: which sets it relates, how many members on each
-  ! side, and the tuples themselves - one array per carrier.
+  !-------------------------------------------------------------------!
+  ! Type that models one relation: which sets it relates, how many
+  ! members on each side, and the tuples themselves, one array per
+  ! carrier.
   !
-  ! A graph created whole is in the IDENTITY relation to itself:
-  ! one part, every member its own name, everything owned here. That
-  ! is not a special case added on - it is what the identity relation
-  ! IS, and the queries below evaluate it without an allocated array
-  ! anywhere.
-  !===================================================================!
+  ! A graph created whole is in the identity relation to itself: one
+  ! part, every member its own name, everything owned here. That is not
+  ! a special case added on; it is what the identity relation is, and
+  ! the queries below evaluate it without an allocated array anywhere.
+  !-------------------------------------------------------------------!
 
   type :: partition_relation
 
-     ! WHICH sets are related, by identity: the part's two carriers,
-     ! and the two of the whole. Identity, never extension - it records
-     ! which sets it relates, not which members belong to them.
+     ! Which sets are related, by identity: the part's two carriers, and
+     ! the two of the whole. Identity, never extension: it records which
+     ! sets it relates, not which members belong to them.
      type(graph), private :: part_vertices
      type(graph), private :: part_edges
      type(graph), private :: whole_vertices
      type(graph), private :: whole_edges
 
-     ! HOW MANY, on both sides. A count is not a membership predicate.
-     integer, private :: num_part_vertices  = 0
-     integer, private :: num_part_edges  = 0
+     ! How many, on both sides. A count is not a membership predicate.
+     integer, private :: num_part_vertices = 0
+     integer, private :: num_part_edges    = 0
      integer, private :: nwv = 0
      integer, private :: nwe = 0
 
-     ! WHICH part this relation is for, and how many there are.
+     ! Which part this relation is for, and how many there are
      integer, private :: number = 1
-     integer, private :: np = 1
+     integer, private :: np     = 1
      logical, private :: cut    = .false.
 
-     ! The tuples of r_V and r_E, and the ownership field beside them.
+     ! The tuples of r_V and r_E, and the ownership field beside them
      integer, allocatable, private :: vglobal(:), eglobal(:)
      integer, allocatable, private :: vowner(:) , eowner(:)
 
    contains
 
+     ! Provenance
      procedure :: num_parts
      procedure :: has_part_relation
      procedure :: part_id
 
+     ! The forward and backward reads, and ownership
      procedure :: global_vertex_index
      procedure :: global_edge_index
      procedure :: global_index
@@ -147,6 +145,7 @@ module relation_partition
      procedure :: edge_owner_part
      procedure :: owner_part
 
+     ! The checks of both ends, and the far side's counts
      procedure :: describes
      procedure :: describes_whole
      procedure :: num_whole_vertices
@@ -162,9 +161,9 @@ module relation_partition
 contains
 
   !===================================================================!
-  ! The cut relation: a partitioner has determined which part contains
-  ! and which part owns each member, and the relation records both sets
-  ! it relates and both counts.
+  ! Creates the cut relation: a partitioner has determined which part
+  ! contains and which part owns each member, and the relation records
+  ! both sets it relates and both counts
   !===================================================================!
 
   type(partition_relation) function create_relation( &
@@ -173,24 +172,24 @@ contains
        & number, num_parts, vglobal, vowner, eglobal, eowner) result(this)
 
     type(graph), intent(in) :: part_vertices, part_edges
-    integer        , intent(in) :: num_part_vertices, num_part_edges
+    integer    , intent(in) :: num_part_vertices, num_part_edges
     type(graph), intent(in) :: whole_vertices, whole_edges
-    integer        , intent(in) :: num_whole_vertices, num_whole_edges
-    integer        , intent(in) :: number, num_parts
-    integer        , intent(in) :: vglobal(:), vowner(:)
-    integer        , intent(in) :: eglobal(:), eowner(:)
+    integer    , intent(in) :: num_whole_vertices, num_whole_edges
+    integer    , intent(in) :: number, num_parts
+    integer    , intent(in) :: vglobal(:), vowner(:)
+    integer    , intent(in) :: eglobal(:), eowner(:)
 
-    this % part_vertices    = part_vertices
-    this % part_edges    = part_edges
-    this % whole_vertices   = whole_vertices
-    this % whole_edges   = whole_edges
-    this % num_part_vertices  = num_part_vertices
-    this % num_part_edges  = num_part_edges
-    this % nwv = num_whole_vertices
-    this % nwe = num_whole_edges
-    this % number        = number
-    this % np        = num_parts
-    this % cut           = .true.
+    this % part_vertices     = part_vertices
+    this % part_edges        = part_edges
+    this % whole_vertices    = whole_vertices
+    this % whole_edges       = whole_edges
+    this % num_part_vertices = num_part_vertices
+    this % num_part_edges    = num_part_edges
+    this % nwv               = num_whole_vertices
+    this % nwe               = num_whole_edges
+    this % number            = number
+    this % np                = num_parts
+    this % cut               = .true.
 
     allocate(this % vglobal, source=vglobal)
     allocate(this % vowner , source=vowner)
@@ -200,33 +199,34 @@ contains
   end function create_relation
 
   !===================================================================!
-  ! The identity relation: a graph created whole is the whole of itself.
-  ! One part, every member its own name, no halo. No array is
-  ! allocated, because none is needed to represent the identity.
+  ! Creates the identity relation: a graph created whole is the whole
+  ! of itself. One part, every member its own name, no halo. No array
+  ! is allocated, because none is needed to represent the identity.
   !===================================================================!
 
   type(partition_relation) function &
        & create_identity_relation(verts, nverts, edges, nedges) result(this)
 
     type(graph), intent(in) :: verts, edges
-    integer        , intent(in) :: nverts, nedges
+    integer    , intent(in) :: nverts, nedges
 
-    this % part_vertices    = verts
-    this % part_edges    = edges
-    this % whole_vertices   = verts
-    this % whole_edges   = edges
-    this % num_part_vertices  = nverts
-    this % num_part_edges  = nedges
-    this % nwv = nverts
-    this % nwe = nedges
-    this % number        = 1
-    this % np        = 1
-    this % cut           = .false.
+    this % part_vertices     = verts
+    this % part_edges        = edges
+    this % whole_vertices    = verts
+    this % whole_edges       = edges
+    this % num_part_vertices = nverts
+    this % num_part_edges    = nedges
+    this % nwv               = nverts
+    this % nwe               = nedges
+    this % number            = 1
+    this % np                = 1
+    this % cut               = .false.
 
   end function create_identity_relation
 
   !===================================================================!
-  ! Provenance: how many parts, which one this relation is for, and
+  ! Returns the number of parts. This and the two below are the
+  ! provenance: how many parts, which one this relation is for, and
   ! whether there is a part-whole relation here at all.
   !===================================================================!
 
@@ -235,10 +235,18 @@ contains
     num_parts = this % np
   end function num_parts
 
+  !===================================================================!
+  ! Returns whether the relation is a cut, not the identity
+  !===================================================================!
+
   pure logical function has_part_relation(this)
     class(partition_relation), intent(in) :: this
     has_part_relation = this % cut
   end function has_part_relation
+
+  !===================================================================!
+  ! Returns which part this relation is for
+  !===================================================================!
 
   pure integer function part_id(this)
     class(partition_relation), intent(in) :: this
@@ -246,25 +254,37 @@ contains
   end function part_id
 
   !===================================================================!
-  ! THE FORWARD READ: what the whole calls this part's member. The
-  ! identity relation returns the index unchanged, because it is the
-  ! whole.
+  ! Returns what the whole calls this part's vertex: the forward read.
+  ! The identity relation returns the index unchanged, because it is
+  ! the whole.
+  !
+  !   forward     part member 2   -->  whole member vglobal(2) = 5
+  !   backward    whole member 5  -->  part member 2, the k with
+  !                                    vglobal(k) = 5; a member the
+  !                                    part never contained --> 0
   !===================================================================!
 
   pure integer function global_vertex_index(this, index)
     class(partition_relation), intent(in) :: this
-    integer                                  , intent(in) :: index
+    integer                  , intent(in) :: index
     global_vertex_index = outward(this % vglobal, index, this % cut)
   end function global_vertex_index
 
+  !===================================================================!
+  ! Returns what the whole calls this part's edge
+  !===================================================================!
+
   pure integer function global_edge_index(this, index)
     class(partition_relation), intent(in) :: this
-    integer                                  , intent(in) :: index
+    integer                  , intent(in) :: index
     global_edge_index = outward(this % eglobal, index, this % cut)
   end function global_edge_index
 
-  ! The same read with the side chosen by a flag, for a caller that
-  ! handles vertices and edges through one path.
+  !===================================================================!
+  ! Returns the same read with the side chosen by a flag, for a caller
+  ! that handles vertices and edges through one path
+  !===================================================================!
+
   pure integer function global_index(this, index, on_vertices)
     class(partition_relation), intent(in) :: this
     integer                  , intent(in) :: index
@@ -275,6 +295,11 @@ contains
        global_index = this % global_edge_index(index)
     end if
   end function global_index
+
+  !===================================================================!
+  ! Returns the forward read of one array: the tuple's whole-side name,
+  ! or the index itself for the identity relation
+  !===================================================================!
 
   pure integer function outward(global, index, cut)
     integer, allocatable, intent(in) :: global(:)
@@ -288,23 +313,29 @@ contains
   end function outward
 
   !===================================================================!
-  ! THE BACKWARD READ: the index of a whole-graph member inside a
-  ! named part. Zero means the tuple is not in r at all - the result
+  ! Returns the index of a whole-graph vertex inside a named part: the
+  ! backward read. Zero means the tuple is not in r at all, the result
   ! for a member this part never contained.
   !===================================================================!
 
   pure integer function part_vertex_index(this, global_index, part_id)
     class(partition_relation), intent(in) :: this
-    integer                                  , intent(in) :: global_index, part_id
+    integer                  , intent(in) :: global_index, part_id
     part_vertex_index = inward(this % vglobal, global_index, part_id, &
          &                     this % number, this % cut)
   end function part_vertex_index
+
+  !===================================================================!
+  ! Returns the backward read of one array: the position of the whole
+  ! member's name, zero where the part does not contain it or another
+  ! part is requested
+  !===================================================================!
 
   pure integer function inward(global, global_index, requested, own_part, cut)
     integer, allocatable, intent(in) :: global(:)
     integer             , intent(in) :: global_index, requested, own_part
     logical             , intent(in) :: cut
-    integer :: k
+    integer                          :: k
     inward = 0
     if (cut .and. requested /= own_part) return
     if (.not. cut .or. .not. allocated(global)) then
@@ -320,22 +351,30 @@ contains
   end function inward
 
   !===================================================================!
-  ! Ownership: which part contributes a member. This is what stops a
-  ! shared cell being counted twice when the parts are assembled.
-  ! The identity relation owns everything itself.
+  ! Returns which part contributes a vertex. Ownership is what stops a
+  ! shared cell being counted twice when the parts are assembled. The
+  ! identity relation owns everything itself.
   !===================================================================!
 
   pure integer function vertex_owner_part(this, index)
     class(partition_relation), intent(in) :: this
-    integer                                  , intent(in) :: index
+    integer                  , intent(in) :: index
     vertex_owner_part = owner(this % vowner, index, this % cut, this % number)
   end function vertex_owner_part
 
+  !===================================================================!
+  ! Returns which part contributes an edge
+  !===================================================================!
+
   pure integer function edge_owner_part(this, index)
     class(partition_relation), intent(in) :: this
-    integer                                  , intent(in) :: index
+    integer                  , intent(in) :: index
     edge_owner_part = owner(this % eowner, index, this % cut, this % number)
   end function edge_owner_part
+
+  !===================================================================!
+  ! Returns the owner with the side chosen by a flag
+  !===================================================================!
 
   pure integer function owner_part(this, index, on_vertices)
     class(partition_relation), intent(in) :: this
@@ -347,6 +386,11 @@ contains
        owner_part = this % edge_owner_part(index)
     end if
   end function owner_part
+
+  !===================================================================!
+  ! Returns the owner stored for a member, or this part for the
+  ! identity relation and for an index outside the stored owners
+  !===================================================================!
 
   pure integer function owner(owners, index, cut, own_part)
     integer, allocatable, intent(in) :: owners(:)
@@ -362,8 +406,9 @@ contains
   end function owner
 
   !===================================================================!
-  ! The far side of the relation: the count, for a caller that must
-  ! size the destination of an assembly.
+  ! Returns the number of the whole's vertices: the far side of the
+  ! relation, for a caller that must size the destination of an
+  ! assembly
   !===================================================================!
 
   pure integer function num_whole_vertices(this)
@@ -371,33 +416,43 @@ contains
     num_whole_vertices = this % nwv
   end function num_whole_vertices
 
+  !===================================================================!
+  ! Returns the number of the whole's edges
+  !===================================================================!
+
   pure integer function num_whole_edges(this)
     class(partition_relation), intent(in) :: this
     num_whole_edges = this % nwe
   end function num_whole_edges
 
   !===================================================================!
-  ! Each end of a relation is checked before data crosses it: is
-  ! this the part, and is that its whole? Identity first, because two
-  ! graphs of equal
-  ! size are not the same graph; counts second, because a relation
-  ! written over a part of six members cannot address a part of seven.
+  ! Returns whether the relation was written for this part.
   !
-  ! This is what lets the four verbs take r as an ARGUMENT and still
-  ! be safe - the caller may store two relations, and passing the wrong
-  ! one to a part is detected here rather than producing a wrong result
+  ! Each end of a relation is checked before data crosses it: is this
+  ! the part, and is that its whole? Identity first, because two graphs
+  ! of equal size are not the same graph; counts second, because a
+  ! relation written over a part of six members cannot address a part
+  ! of seven.
+  !
+  ! This is what lets the four verbs take r as an argument and still be
+  ! safe: the caller may store two relations, and passing the wrong one
+  ! to a part is detected here rather than producing a wrong result
   ! without an error.
   !===================================================================!
 
   logical function describes(this, g)
 
     class(partition_relation), intent(in) :: this
-    class(directed_graph)                    , intent(in) :: g
+    class(directed_graph)    , intent(in) :: g
 
     describes = describes_carriers(g, this % part_vertices, this % num_part_vertices, &
          & this % part_edges, this % num_part_edges)
 
   end function describes
+
+  !===================================================================!
+  ! Returns whether the relation was written for this whole
+  !===================================================================!
 
   logical function describes_whole(this, g)
 
@@ -408,6 +463,11 @@ contains
          & this % whole_edges, this % nwe)
 
   end function describes_whole
+
+  !===================================================================!
+  ! Returns whether a graph has the given carriers, by identity, and
+  ! the given counts
+  !===================================================================!
 
   logical function describes_carriers(g, vertices, nv, edges, ne)
 

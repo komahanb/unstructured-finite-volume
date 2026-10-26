@@ -1,21 +1,25 @@
 !=====================================================================!
-! THE PRINTED FORMS OF A LAGRANGIAN. The objective and every equation
-! of every term of a continuous residual are the summands of one
-! expression_view, the view of each paired with the component of its
-! multiplier, and that view is written in each of its forms: the
-! tree, the diagram, the brackets, the digraph, and the formula, each
+! Module that writes the printed forms of a Lagrangian. The objective
+! and every equation of every term of a continuous residual are the
+! summands of one expression_view, each paired with the component of
+! its multiplier, and that view is written in each of its forms: the
+! tree, the diagram, the brackets, the digraph and the formula, each
 ! summand on a line of its own,
 !
 !      L = integral over the time factor of (u*u + dt(u)**2)/2.0
 !        + lambda_omega*(dt(dt(u)) - nu*(1.0 - u*u)*dt(u) + u)
 !        + lambda_ic(1)*(u - 2.0)
 !
+!   summand 1              the objective
+!   summand 2 ... n        each equation of each term, in the order of
+!                          the terms, times its multiplier's component
+!
 ! An unknown is written by the name its manifold declares, with the
 ! component's number for an unknown of several components; a design
-! coordinate by its name; a multiplier by its name, with the number
-! of the equation it pairs for a term of several equations. An
-! equation summed without a multiplier is written alone; an
-! inequality as its pairing, the sign of its multiplier not written.
+! coordinate by its name; a multiplier by its name, with the number of
+! the equation it pairs for a term of several equations. An equation
+! summed without a multiplier is written alone, and an inequality as
+! its pairing, the sign of its multiplier not written.
 !
 ! tree(M_h) prints the discrete minimizer M_h paired with a discrete
 ! Lagrangian: the march over the blocks, and the minimizer of a block
@@ -37,26 +41,32 @@ module view_residual
   implicit none
 
   private
+
   public :: formula, tree, diagram, brackets, digraph
 
   interface tree
      module procedure lagrangian_tree, minimizer_tree
   end interface tree
 
-  ! the length of a written name: a manifold's name of 32 characters
+  ! The length of a written name: a manifold's name of 32 characters
   ! and the number of its component
   integer, parameter :: MAX_LABEL = 44
 
 contains
 
+  !===================================================================!
+  ! Returns the formula of a Lagrangian, L = and then one summand a
+  ! line, each after the first preceded by +
+  !===================================================================!
+
   function formula(L) result(text)
 
-    type(continuous_lagrangian), intent(in) :: L
-    character(len=:), allocatable :: text
+    type(continuous_lagrangian), intent(in)  :: L
+    character(len=:)           , allocatable :: text
 
     type(expression_view), allocatable :: s(:)
-    character(len=:), allocatable :: line
-    integer :: k
+    character(len=:)     , allocatable :: line
+    integer                            :: k
 
     s    = summands(L)
     text = 'L = '
@@ -68,10 +78,14 @@ contains
 
   end function formula
 
+  !===================================================================!
+  ! Returns the tree of a Lagrangian's view
+  !===================================================================!
+
   function lagrangian_tree(L) result(text)
 
-    type(continuous_lagrangian), intent(in) :: L
-    character(len=:), allocatable :: text
+    type(continuous_lagrangian), intent(in)  :: L
+    character(len=:)           , allocatable :: text
 
     type(expression_view) :: view
 
@@ -80,19 +94,27 @@ contains
 
   end function lagrangian_tree
 
+  !===================================================================!
+  ! Returns the tree of a discrete minimizer
+  !===================================================================!
+
   function minimizer_tree(M_h) result(text)
 
-    type(discrete_minimizer), intent(in) :: M_h
-    character(len=:), allocatable :: text
+    type(discrete_minimizer), intent(in)  :: M_h
+    character(len=:)        , allocatable :: text
 
     text = M_h % tree()
 
   end function minimizer_tree
 
+  !===================================================================!
+  ! Returns the diagram of a Lagrangian's view
+  !===================================================================!
+
   function diagram(L) result(text)
 
-    type(continuous_lagrangian), intent(in) :: L
-    character(len=:), allocatable :: text
+    type(continuous_lagrangian), intent(in)  :: L
+    character(len=:)           , allocatable :: text
 
     type(expression_view) :: view
 
@@ -101,10 +123,14 @@ contains
 
   end function diagram
 
+  !===================================================================!
+  ! Returns a Lagrangian's view written in brackets
+  !===================================================================!
+
   function brackets(L) result(text)
 
-    type(continuous_lagrangian), intent(in) :: L
-    character(len=:), allocatable :: text
+    type(continuous_lagrangian), intent(in)  :: L
+    character(len=:)           , allocatable :: text
 
     type(expression_view) :: view
 
@@ -113,10 +139,14 @@ contains
 
   end function brackets
 
+  !===================================================================!
+  ! Returns the digraph of a Lagrangian's view
+  !===================================================================!
+
   function digraph(L) result(text)
 
-    type(continuous_lagrangian), intent(in) :: L
-    character(len=:), allocatable :: text
+    type(continuous_lagrangian), intent(in)  :: L
+    character(len=:)           , allocatable :: text
 
     type(expression_view) :: view
 
@@ -125,14 +155,18 @@ contains
 
   end function digraph
 
-  ! the sum of the summands, in their order
+  !===================================================================!
+  ! Returns the view of a Lagrangian: the sum of its summands, in their
+  ! order
+  !===================================================================!
+
   function lagrangian_view(L) result(view)
 
     type(continuous_lagrangian), intent(in) :: L
-    type(expression_view) :: view
+    type(expression_view)                   :: view
 
     type(expression_view), allocatable :: s(:)
-    integer :: k
+    integer                            :: k
 
     s    = summands(L)
     view = s(1)
@@ -143,19 +177,19 @@ contains
   end function lagrangian_view
 
   !===================================================================!
-  ! THE SUMMANDS: the objective, then each equation of each term in
-  ! the order of the terms, times the component of the term's
-  ! multiplier where the term is paired.
+  ! Returns the summands: the objective, then each equation of each
+  ! term in the order of the terms, times the component of the term's
+  ! multiplier where the term is paired
   !===================================================================!
 
   function summands(L) result(s)
 
-    type(continuous_lagrangian), intent(in) :: L
-    type(expression_view), allocatable :: s(:)
+    type(continuous_lagrangian), intent(in)  :: L
+    type(expression_view)      , allocatable :: s(:)
 
     character(len=MAX_LABEL), allocatable :: unknowns(:), designs(:)
-    type(expression_view) :: summand
-    integer :: k, i
+    type(expression_view)                 :: summand
+    integer                               :: k, i
 
     allocate(s(0))
     if (allocated(L % objective)) then
@@ -177,20 +211,24 @@ contains
   end function summands
 
   !===================================================================!
-  ! THE VIEW OF A FIELD: its components, separated by commas; the
-  ! integral over the region added to them; and, for an integral, the
-  ! factor it is taken over, or for a smooth maximum the factor and
-  ! the weight, written before them.
+  ! Returns the view of a field: its components, separated by commas;
+  ! the integral over the region added to them; and, for an integral,
+  ! the factor it is taken over, or for a smooth maximum the factor and
+  ! the weight, written before them:
+  !
+  !   c1, c2, c3  +  integral over the space factor of g
+  !   integral over the time factor of ( ... )
+  !   smooth maximum of weight 100 over the manifold of ( ... )
   !===================================================================!
 
   function field_view(f, unknowns, designs) result(view)
 
     type(continuous_field), intent(in) :: f
     character(len=*)      , intent(in) :: unknowns(:), designs(:)
-    type(expression_view) :: view
+    type(expression_view)              :: view
 
     character(len=32) :: weight
-    integer :: c
+    integer           :: c
 
     view = expression_view(f % component(1), unknowns, designs)
     do c = 2, size(f % component)
@@ -211,10 +249,14 @@ contains
 
   end function field_view
 
-  ! the part of a manifold a field is integrated over
+  !===================================================================!
+  ! Returns the name of the part of a manifold a field is integrated
+  ! over
+  !===================================================================!
+
   function part_name(part) result(name)
 
-    integer, intent(in) :: part
+    integer         , intent(in)  :: part
     character(len=:), allocatable :: name
 
     select case (part)
@@ -229,16 +271,16 @@ contains
   end function part_name
 
   !===================================================================!
-  ! THE NAMES of the unknowns and of the design coordinates of the
-  ! manifold a field is on, read from the first term on that
+  ! Returns the names of the unknowns and of the design coordinates of
+  ! the manifold a field is on, read from the first term on that
   ! manifold. Without such a term no names are returned, and the
   ! leaves are written q<f> and nu.
   !===================================================================!
 
   subroutine names_on(L, on, unknowns, designs)
 
-    type(continuous_lagrangian), intent(in) :: L
-    type(token)              , intent(in) :: on
+    type(continuous_lagrangian)          , intent(in)  :: L
+    type(token)                          , intent(in)  :: on
     character(len=MAX_LABEL), allocatable, intent(out) :: unknowns(:), designs(:)
 
     integer :: k, f
@@ -260,12 +302,15 @@ contains
 
   end subroutine names_on
 
-  ! the name of component k of a field of n components: the name
-  ! alone for one component, name(k) for several
+  !===================================================================!
+  ! Returns the name of component k of a field of n components: the
+  ! name alone for one component, name(k) for several
+  !===================================================================!
+
   function component_name(name, k, n) result(text)
 
-    character(len=*), intent(in) :: name
-    integer         , intent(in) :: k, n
+    character(len=*), intent(in)  :: name
+    integer         , intent(in)  :: k, n
     character(len=:), allocatable :: text
 
     character(len=12) :: buffer

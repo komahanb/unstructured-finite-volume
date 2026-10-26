@@ -1,12 +1,12 @@
 !=====================================================================!
-! The mesh: a stored graph embedded in space.
+! Module that states the mesh: a stored graph embedded in space.
 !
-! LEVEL 1 OF THE STRATIFICATION - measurements are calculus
-! content: values defined on structure, with no objective in them.
-! This is the tower's one use of inheritance: the mesh IS a graph
-! - cells are the vertices, interior faces the edges, boundary
-! faces the edges without heads - so it extends the stored graph
-! rather than containing one.
+! This is level 1 of the stratification: measurements are calculus
+! content, values defined on structure, with no objective in them.
+! This is the tower's one use of inheritance. The mesh is a graph,
+! cells being the vertices, interior faces the edges and boundary
+! faces the edges without heads, so it extends the stored graph rather
+! than containing one.
 !
 !     +-----+-----+
 !     |  1  |  2  |            (1)---(2)
@@ -33,8 +33,8 @@
 ! each one supplies; an operator receives those numbers at
 ! construction and never reads the mesh.
 !
-! THE CHECK AT CONSTRUCTION. Every geometry array must match the
-! structure it measures - one volume per cell, one area per face -
+! The check at construction. Every geometry array must match the
+! structure it measures, one volume per cell and one area per face,
 ! and the constructor stops the program on a mismatch rather than
 ! storing inconsistent data. A mesh that is constructed is a mesh
 ! whose measurements match its structure.
@@ -44,19 +44,22 @@
 
 module view_mesh
 
-  use util_precision  , only : dp
-  use field_stored  , only : stored_field
-  use view_directed_stored        , only : stored_directed_graph
-  use graph_fractal      , only : graph
+  use util_precision      , only : dp
+  use field_stored        , only : stored_field
+  use view_directed_stored, only : stored_directed_graph
+  use graph_fractal       , only : graph
 
   implicit none
 
   private
+
   public :: mesh, require, values_of
 
-  !===================================================================!
-  ! One mesh: the inherited structure, plus seven measurements.
-  !===================================================================!
+  !-------------------------------------------------------------------!
+  ! Type that models one mesh: the inherited structure, plus its
+  ! measurements and, when it was built from elements, the corners of
+  ! its cells
+  !-------------------------------------------------------------------!
 
   type, extends(stored_directed_graph) :: mesh
 
@@ -69,15 +72,15 @@ module view_mesh
      type(stored_field) :: normals
      type(stored_field) :: face_centers_
      type(stored_field) :: weights
-     ! the translation of a face's head cell into the face's frame: a
-     ! face identifying two sides of a periodic box stores the
-     ! period, every other face zero
+     ! The translation of a face's head cell into the face's frame: a
+     ! face identifying two sides of a periodic box stores the period,
+     ! every other face zero
      type(stored_field) :: shifts
 
-     ! the corners of the cells, when the mesh was built from
-     ! elements: three coordinates per corner, each cell's corners
-     ! padded to the widest element, the count per cell, and the
-     ! element type of each cell
+     ! The corners of the cells, when the mesh was built from elements:
+     ! three coordinates per corner, each cell's corners padded to the
+     ! widest element, the count per cell, and the element type of each
+     ! cell
      real(dp), allocatable :: corners(:,:)
      integer , allocatable :: cell_corners(:,:)
      integer , allocatable :: num_cell_corners(:)
@@ -85,6 +88,7 @@ module view_mesh
 
    contains
 
+     ! The measurements
      procedure :: cell_volume
      procedure :: cell_centre
      procedure :: face_area
@@ -93,6 +97,8 @@ module view_mesh
      procedure :: face_centre
      procedure :: face_weights
      procedure :: face_shift
+
+     ! The neighbourhood of cells, and the corners
      procedure :: neighbourhood
      procedure :: has_corners
 
@@ -105,11 +111,11 @@ module view_mesh
 contains
 
   !===================================================================!
-  ! Build a mesh from its structure and its measurements. The
-  ! structure arguments are the stored graph's own; the geometry
-  ! is passed as plain arrays, one entry per cell or per face, vector
-  ! quantities three wide in entry order. The check: every array must
-  ! match the structure, or the constructor stops.
+  ! Creates a mesh from its structure and its measurements. The
+  ! structure arguments are the stored graph's own; the geometry is
+  ! passed as plain arrays, one entry per cell or per face, vector
+  ! quantities d wide in entry order. Every array must match the
+  ! structure, or the constructor stops.
   !===================================================================!
 
   impure type(mesh) function create(nv, tails, heads, volumes, &
@@ -133,9 +139,9 @@ contains
     real(dp)        , intent(in), optional :: shifts(:)
 
     type(graph) :: cells, faces
-    integer :: ne, d
+    integer     :: ne, d
 
-    ! The structure first, through the parent's own constructor.
+    ! The structure first, through the parent's own constructor
     this % stored_directed_graph = stored_directed_graph(nv, tails=tails, heads=heads, &
          & vtags=vtags, etags=etags, number=number)
 
@@ -145,7 +151,8 @@ contains
     if (present(dimension)) d = dimension
     this % dimension = d
 
-    ! The check: measurement sizes must match the structure they measure.
+    ! The check: the measurements' sizes must match the structure they
+    ! measure
     call require(size(volumes)      == nv    , 'one volume per cell')
     call require(size(cell_centres) == d * nv, 'd centre parts per cell')
     call require(size(areas)        == ne    , 'one area per face')
@@ -155,8 +162,8 @@ contains
     call require(size(weights)      == ne    , 'one weight per face')
     if (present(shifts)) call require(size(shifts) == d * ne, 'd shift parts per face')
 
-    ! Geometry is defined on the graph's OWN carriers, so a field's
-    ! domain returns the mesh identity every consumer compares against.
+    ! Geometry is defined on the graph's own carriers, so that a field's
+    ! domain returns the mesh identity every consumer compares against
     cells = this % vertex_set()
     faces = this % edge_set()
 
@@ -185,10 +192,10 @@ contains
   end function create
 
   !===================================================================!
-  ! The check itself: report which condition failed, then stop. A
+  ! The check itself: reports which condition failed, then stops. A
   ! mesh with inconsistent measurements must not exist, and a file of
-  ! incorrect cells must not be written: the writer checks through
-  ! this procedure too.
+  ! incorrect cells must not be written: the writer checks through this
+  ! procedure too.
   !===================================================================!
 
   subroutine require(satisfied, condition_description)
@@ -203,9 +210,11 @@ contains
   end subroutine require
 
   !===================================================================!
-  ! The seven accessors. Each returns a copy of the stored field, so
-  ! a caller may read it, pass its values to an operator, and never
-  ! reference the mesh again.
+  ! Returns the cells' volumes.
+  !
+  ! Each accessor returns a copy of the stored field, so that a caller
+  ! may read it, pass its values to an operator, and never reference
+  ! the mesh again.
   !===================================================================!
 
   type(stored_field) function cell_volume(this)
@@ -216,6 +225,10 @@ contains
 
   end function cell_volume
 
+  !===================================================================!
+  ! Returns the cells' centres
+  !===================================================================!
+
   type(stored_field) function cell_centre(this)
 
     class(mesh), intent(in) :: this
@@ -223,6 +236,10 @@ contains
     cell_centre = this % cell_centres
 
   end function cell_centre
+
+  !===================================================================!
+  ! Returns the faces' areas
+  !===================================================================!
 
   type(stored_field) function face_area(this)
 
@@ -232,6 +249,10 @@ contains
 
   end function face_area
 
+  !===================================================================!
+  ! Returns the faces' deltas
+  !===================================================================!
+
   type(stored_field) function face_delta(this)
 
     class(mesh), intent(in) :: this
@@ -239,6 +260,10 @@ contains
     face_delta = this % deltas
 
   end function face_delta
+
+  !===================================================================!
+  ! Returns the faces' unit normals
+  !===================================================================!
 
   type(stored_field) function face_normal(this)
 
@@ -248,6 +273,10 @@ contains
 
   end function face_normal
 
+  !===================================================================!
+  ! Returns the faces' centres
+  !===================================================================!
+
   type(stored_field) function face_centre(this)
 
     class(mesh), intent(in) :: this
@@ -256,10 +285,20 @@ contains
 
   end function face_centre
 
+  !===================================================================!
+  ! Returns whether the mesh was built from elements and stores the
+  ! corners of its cells
+  !===================================================================!
+
   pure logical function has_corners(this)
     class(mesh), intent(in) :: this
     has_corners = allocated(this % cell_kinds)
   end function has_corners
+
+  !===================================================================!
+  ! Returns the faces' shifts: the period across a periodic face, zero
+  ! elsewhere
+  !===================================================================!
 
   type(stored_field) function face_shift(this)
 
@@ -270,34 +309,40 @@ contains
   end function face_shift
 
   !===================================================================!
-  ! The cells around the seeds, ring by ring, each once, with the
-  ! translation that places each in the first seed's frame: crossing
-  ! a face from its tail to its head adds the face's shift, the other
-  ! way subtracts it. As many rings as given, or until at least the
-  ! count required is reached, or until no new cell is found. A cell
-  ! reached again with another translation stops the program: the
-  ! periodic box has too few cells for the reach.
+  ! Returns the cells around the seeds, ring by ring, each once, with
+  ! the translation that places each in the first seed's frame:
+  ! crossing a face from its tail to its head adds the face's shift,
+  ! the other way subtracts it. As many rings as given, or until at
+  ! least the count required is reached, or until no new cell is
+  ! found. A cell reached again with another translation stops the
+  ! program: the periodic box has too few cells for the reach.
+  !
+  !   a periodic row of four cells, period L, the seed cell 4
+  !
+  !      1     2     3     4  |  1        the face 4 -> 1 shifts by +L,
+  !                     seed     +L       so cell 1 is placed at x + L
   !===================================================================!
 
   subroutine neighbourhood(this, seeds, rings, at_least, members, offsets)
 
-    class(mesh), intent(in) :: this
-    integer    , intent(in) :: seeds(:), rings, at_least
+    class(mesh)          , intent(in)  :: this
+    integer              , intent(in)  :: seeds(:), rings, at_least
     integer , allocatable, intent(out) :: members(:)
     real(dp), allocatable, intent(out) :: offsets(:,:)
 
     real(dp), allocatable :: shift(:), translation(:)
     integer , allocatable :: edges(:)
-    integer :: d, r, k, e, f, other, before, at
-    real(dp) :: sign
-    character(len=250) :: message
+    integer               :: d, r, k, e, f, other, before, at
+    real(dp)              :: sign
+    character(len=250)    :: message
 
     d = this % dimension
     call values_of(this % shifts, shift)
     members = seeds
     allocate(offsets(d, size(seeds)), source=0.0_dp)
-    ! the seeds share one frame: a second seed is the head or the
-    ! tail of a face the first seed is on
+
+    ! The seeds share one frame: a second seed is the head or the tail
+    ! of a face the first seed is on
     do k = 2, size(seeds)
        call this % incident_edges(seeds(1), edges)
        do e = 1, size(edges)
@@ -310,6 +355,8 @@ contains
           end if
        end do
     end do
+
+    ! The rings
     r = 0
     do
        if (rings > 0) then
@@ -352,6 +399,10 @@ contains
 
   end subroutine neighbourhood
 
+  !===================================================================!
+  ! Returns the faces' interpolation weights, the tail cell's share
+  !===================================================================!
+
   type(stored_field) function face_weights(this)
 
     class(mesh), intent(in) :: this
@@ -361,8 +412,9 @@ contains
   end function face_weights
 
   !===================================================================!
-  ! The real values of one measurement as an array, so that a caller
-  ! reads them in one statement: call values_of(m % face_area(), a).
+  ! Returns the real values of one measurement as an array, so that a
+  ! caller reads them in one statement: call values_of(m % face_area(),
+  ! a)
   !===================================================================!
 
   pure subroutine values_of(f, values)

@@ -1,59 +1,93 @@
 !=====================================================================!
-! A minimizer over an ordered dependency schedule.
+! Module that states a minimizer over an ordered dependency schedule.
 !
-! The base minimizer states one residual operator and solves one vector.
-! A temporal solve is a different member of the same family: it owns a
-! directed schedule of local rules, a data branch paired to that schedule,
-! and a traversal that releases data once no later local rule depends on
-! it. The local rule may itself contain a nonlinear minimizer; this type
-! owns the schedule and the inner solver template, not the application
-! object that constructs each local rule.
+! The base minimizer states one residual operator and solves one
+! vector. A temporal solve is a different member of the same family: it
+! owns a directed schedule of local rules, a data branch paired to that
+! schedule, and a traversal that releases data once no later local
+! rule depends on it. The local rule may itself contain a nonlinear
+! minimizer; this type owns the schedule and the inner solver template,
+! not the application object that constructs each local rule.
+!
+! What a solve is depends on what the minimizer was stated with:
+!
+!      stated with       solve is
+!      a driver          the traversal of its schedule, no flat vector
+!      a partition       a block Gauss-Seidel over the members in the
+!                        order stated: each member solved by the inner
+!                        minimizer with the others fixed, pass after
+!                        pass until the residual meets the tolerance
+!      neither           the inner minimizer's solve
+!
+! A partition labels each unknown with its member. With three instants
+! of three unknowns each:
+!
+!      member_of       1 1 1 | 2 2 2 | 3 3 3
+!      member_order    1 2 3
+!
+!      pass 1          solve 1 | seed 2 from 1, solve 2 | seed 3 from 2, solve 3
+!      pass 2, ...     solve 1 | solve 2 | solve 3          until converged
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 
 module operation_temporal_minimization
 
-  use iso_fortran_env       , only : int64
-  use util_precision        , only : dp
-  use graph_fractal         , only : graph
-  use view_directed         , only : directed_graph
-  use operation_action      , only : operation
-  use operation_minimizer, only : minimizer, state, restrict, compact_labels
-  use operation_minimizer, only : solve_result, SOLVE_EVALUATED, SOLVE_STAGNATED, SOLVE_INNER_FAILED
-  use operation_driver      , only : driver, pairing, vertex_rule
+  use iso_fortran_env            , only : int64
+  use util_precision             , only : dp
+  use graph_fractal              , only : graph
+  use view_directed              , only : directed_graph
+  use operation_action           , only : operation
+  use operation_minimizer        , only : minimizer, state, restrict, compact_labels
+  use operation_minimizer        , only : solve_result, SOLVE_EVALUATED, SOLVE_STAGNATED, SOLVE_INNER_FAILED
+  use operation_driver           , only : driver, pairing, vertex_rule
   use operation_residual_operator, only : residual_operator
-  use field_calculus        , only : FIELD_REAL
-  use field_stored          , only : stored_field
-  use util_tally            , only : tally
+  use field_calculus             , only : FIELD_REAL
+  use field_stored               , only : stored_field
+  use util_tally                 , only : tally
 
   implicit none
 
   private
+
   public :: temporal_minimizer
+
+  !-------------------------------------------------------------------!
+  ! Type that models the temporal minimizer: the inner minimizer
+  ! template, the partition of the unknowns into members and the order
+  ! they are solved in, and the schedule when one is stated
+  !-------------------------------------------------------------------!
 
   type, extends(minimizer) :: temporal_minimizer
 
+     ! The minimizer of each member, or of the whole
      class(minimizer), allocatable :: inner
 
+     ! The partition: each unknown's member, the members in the order
+     ! solved, and whether a member is seeded from its predecessor
      integer, allocatable :: member_of(:)
      integer, allocatable :: member_order(:)
-     logical :: seed_from_previous = .false.
-     ! the seed of a member from its predecessor as a linear transfer
-     ! of every tuple, one matrix per member: the Taylor shift of the
-     ! stored jet over the step between them; a plain copy when absent
+     logical              :: seed_from_previous = .false.
+
+     ! The seed of a member from its predecessor as a linear transfer of
+     ! every tuple, one matrix per member: the Taylor shift of the stored
+     ! jet over the step between them; a plain copy when absent
      real(dp), allocatable :: seed_transfer(:,:,:)
 
+     ! The schedule, when stated with a driver
      type(driver), private :: schedule
      logical     , private :: scheduled = .false.
 
    contains
 
-     procedure :: name  => temporal_minimizer_name
-     procedure :: state => temporal_minimizer_state
-     procedure :: restrict => temporal_minimizer_restrict
-     procedure :: bind_account => temporal_minimizer_bind_account
+     ! The minimizer's own procedures
+     procedure :: name            => temporal_minimizer_name
+     procedure :: state           => temporal_minimizer_state
+     procedure :: restrict        => temporal_minimizer_restrict
+     procedure :: bind_account    => temporal_minimizer_bind_account
      procedure :: storage_entries => temporal_minimizer_storage_entries
+
+     ! The schedule, delegated to the driver, and the partition
      procedure :: pair_with
      procedure :: pairing_of
      procedure :: partition
@@ -69,16 +103,23 @@ module operation_temporal_minimization
      procedure :: released_at
      procedure :: expired_at
      procedure :: live_after
+
+     ! The solve: the schedule's traversal, the partition's sweeps, or
+     ! the inner minimizer's
      procedure :: solve
 
   end type temporal_minimizer
 
 contains
 
+  !===================================================================!
+  ! Returns the name of this minimizer
+  !===================================================================!
+
   pure function temporal_minimizer_name(this) result(name)
 
-    class(temporal_minimizer), intent(in) :: this
-    character(len=:), allocatable :: name
+    class(temporal_minimizer), intent(in)  :: this
+    character(len=:)         , allocatable :: name
 
     associate (u1 => this); end associate
 
@@ -87,22 +128,23 @@ contains
   end function temporal_minimizer_name
 
   !===================================================================!
-  ! STATE. A temporal minimizer may be stated with an ordinary operation,
-  ! in which case it delegates to its inner minimizer, or with a driver,
-  ! in which case the driver is the schedule this object solves.
+  ! States the minimizer. A temporal minimizer may be stated with an
+  ! ordinary operation, in which case it delegates to its inner
+  ! minimizer, or with a driver, in which case the driver is the
+  ! schedule this object solves.
   !===================================================================!
 
   subroutine temporal_minimizer_state(this, action, context, unknown_domain, num_unknowns, &
        & num_components, coupling, stored_inputs)
 
     class(temporal_minimizer), intent(inout)        :: this
-    class(operation)          , intent(in)           :: action
-    class(directed_graph)     , intent(in)           :: context
-    type(graph)               , intent(in)           :: unknown_domain
-    integer                   , intent(in)           :: num_unknowns
-    integer                   , intent(in), optional :: num_components
-    class(directed_graph)     , intent(in), optional :: coupling
-    type(stored_field)        , intent(in), optional :: stored_inputs(:)
+    class(operation)         , intent(in)           :: action
+    class(directed_graph)    , intent(in)           :: context
+    type(graph)              , intent(in)           :: unknown_domain
+    integer                  , intent(in)           :: num_unknowns
+    integer                  , intent(in), optional :: num_components
+    class(directed_graph)    , intent(in), optional :: coupling
+    type(stored_field)       , intent(in), optional :: stored_inputs(:)
 
     call this % initialize_residual_history()
     select type (scheduled_action => action)
@@ -124,8 +166,8 @@ contains
        call this % declare_arguments(0)
        if (allocated(this % affine)) deallocate(this % affine)
        allocate(this % affine(0))
-       this % schedule = scheduled_action
-       this % scheduled = .true.
+       this % schedule       = scheduled_action
+       this % scheduled      = .true.
        this % diagonal_valid = .false.
     class default
        this % scheduled = .false.
@@ -135,10 +177,15 @@ contains
 
   end subroutine temporal_minimizer_state
 
+  !===================================================================!
+  ! Pairs the schedule with a data branch, at a completed position
+  ! where the branch stores the data live after that step
+  !===================================================================!
+
   subroutine pair_with(this, connection, position)
 
-    class(temporal_minimizer), intent(inout) :: this
-    type(pairing)             , intent(in)    :: connection
+    class(temporal_minimizer), intent(inout)        :: this
+    type(pairing)            , intent(in)           :: connection
     integer                  , intent(in), optional :: position
 
     call require_schedule(this)
@@ -147,15 +194,27 @@ contains
 
   end subroutine pair_with
 
+  !===================================================================!
+  ! Returns the pairing the schedule is traversed with
+  !===================================================================!
+
   function pairing_of(this) result(connection)
 
     class(temporal_minimizer), intent(in) :: this
-    type(pairing) :: connection
+    type(pairing)                         :: connection
 
     call require_schedule(this)
     connection = this % schedule % pairing_of()
 
   end function pairing_of
+
+  !===================================================================!
+  ! States the partition: each unknown's member, the order the members
+  ! are solved in, whether a member is seeded from its predecessor,
+  ! and the transfer of that seed, one square matrix over the tuple per
+  ! member. Labels that are not positive, an order naming no member,
+  ! or a transfer of another shape stop the program.
+  !===================================================================!
 
   subroutine partition(this, member_of, member_order, seed_from_previous, seed_transfer)
 
@@ -164,7 +223,7 @@ contains
     logical                  , intent(in), optional :: seed_from_previous
     real(dp)                 , intent(in), optional :: seed_transfer(:,:,:)
 
-    integer :: last_member
+    integer            :: last_member
     character(len=250) :: message
 
     if (size(member_of) < 1) then
@@ -186,8 +245,8 @@ contains
        error stop trim(message)
     end if
 
-    this % member_of    = member_of
-    this % member_order = member_order
+    this % member_of          = member_of
+    this % member_order       = member_order
     this % seed_from_previous = .false.
     if (present(seed_from_previous)) this % seed_from_previous = seed_from_previous
     if (allocated(this % seed_transfer)) deallocate(this % seed_transfer)
@@ -209,12 +268,15 @@ contains
   end subroutine partition
 
   !===================================================================!
-  ! The partition of the selected unknowns: their labels relabelled
-  ! compactly in order of first appearance, the member order retaining
-  ! the members the selection meets in their stated order, and the
-  ! seed transfer of each retained member. The inner template is
-  ! restricted by the selection itself. A schedule is over rules, not
-  ! unknowns, and a scheduled minimizer refuses restriction.
+  ! Restricts the minimizer to the selected unknowns: their labels
+  ! relabelled compactly in order of first appearance, the member order
+  ! retaining the members the selection meets in their stated order,
+  ! and the seed transfer of each retained member. The inner template
+  ! is restricted by the selection itself. A schedule is over rules,
+  ! not unknowns, and a scheduled minimizer refuses restriction.
+  !
+  !      member_of        1 1 2 2 3 3       selected 3 4 5 6
+  !      restricted       1 1 2 2           members 2 and 3, now 1 and 2
   !===================================================================!
 
   subroutine temporal_minimizer_restrict(this, selected)
@@ -223,8 +285,8 @@ contains
     integer                  , intent(in)    :: selected(:)
 
     integer, allocatable :: labels(:), members(:), order(:)
-    integer :: k, at, n
-    character(len=250) :: message
+    integer              :: k, at, n
+    character(len=250)   :: message
 
     if (this % scheduled) then
        error stop 'temporal_minimizer: a schedule is over rules, so restrict() does not apply to unknowns'
@@ -259,7 +321,10 @@ contains
 
   end subroutine temporal_minimizer_restrict
 
-  ! the inner template's entries over the same unknowns
+  !===================================================================!
+  ! Returns the inner template's stored entries over the same unknowns
+  !===================================================================!
+
   pure integer(int64) function temporal_minimizer_storage_entries(this, num_unknowns) result(entries)
 
     class(temporal_minimizer), intent(in) :: this
@@ -270,15 +335,23 @@ contains
 
   end function temporal_minimizer_storage_entries
 
+  !===================================================================!
+  ! Returns the order the schedule's rules are visited in
+  !===================================================================!
+
   function visits(this) result(order)
 
     class(temporal_minimizer), intent(in) :: this
-    integer, allocatable :: order(:)
+    integer, allocatable                  :: order(:)
 
     call require_schedule(this)
     order = this % schedule % visits()
 
   end function visits
+
+  !===================================================================!
+  ! Returns the vertex of the next rule to visit, zero once complete
+  !===================================================================!
 
   integer function next_rule(this)
     class(temporal_minimizer), intent(in) :: this
@@ -286,11 +359,19 @@ contains
     next_rule = this % schedule % next_rule()
   end function next_rule
 
+  !===================================================================!
+  ! Returns whether every rule of the schedule has been visited
+  !===================================================================!
+
   logical function complete(this)
     class(temporal_minimizer), intent(in) :: this
     call require_schedule(this)
     complete = this % schedule % complete()
   end function complete
+
+  !===================================================================!
+  ! Returns the number of steps of the schedule completed
+  !===================================================================!
 
   integer function num_completed(this)
     class(temporal_minimizer), intent(in) :: this
@@ -298,9 +379,14 @@ contains
     num_completed = this % schedule % num_completed()
   end function num_completed
 
+  !===================================================================!
+  ! Advances the schedule by one step, its stored rule applied, and
+  ! records the solve evaluated once the schedule is complete
+  !===================================================================!
+
   subroutine advance(this, executed)
-    class(temporal_minimizer), intent(inout) :: this
-    integer, intent(out), optional :: executed
+    class(temporal_minimizer), intent(inout)         :: this
+    integer                  , intent(out), optional :: executed
     call require_schedule(this)
     call this % schedule % advance(this % graph, executed)
     if (this % schedule % complete()) then
@@ -309,10 +395,16 @@ contains
     end if
   end subroutine advance
 
+  !===================================================================!
+  ! Advances the schedule by one step with a rule given for it, not
+  ! stored in the pairing, and records the solve evaluated once the
+  ! schedule is complete
+  !===================================================================!
+
   subroutine advance_with(this, rule, executed)
-    class(temporal_minimizer), intent(inout) :: this
-    class(vertex_rule), intent(inout) :: rule
-    integer, intent(out), optional :: executed
+    class(temporal_minimizer), intent(inout)         :: this
+    class(vertex_rule)       , intent(inout)         :: rule
+    integer                  , intent(out), optional :: executed
     call require_schedule(this)
     call this % schedule % advance_with(this % graph, rule, executed)
     if (this % schedule % complete()) then
@@ -321,67 +413,97 @@ contains
     end if
   end subroutine advance_with
 
+  !===================================================================!
+  ! Stores the rule of a vertex of the schedule
+  !===================================================================!
+
   subroutine set_rule(this, vertex, rule)
     class(temporal_minimizer), intent(inout) :: this
-    integer, intent(in) :: vertex
-    class(operation), intent(in) :: rule
+    integer                  , intent(in)    :: vertex
+    class(operation)         , intent(in)    :: rule
     call require_schedule(this)
     call this % schedule % set_rule(vertex, rule)
   end subroutine set_rule
 
+  !===================================================================!
+  ! Removes the rule of a vertex of the schedule
+  !===================================================================!
+
   subroutine clear_rule(this, vertex)
     class(temporal_minimizer), intent(inout) :: this
-    integer, intent(in) :: vertex
+    integer                  , intent(in)    :: vertex
     call require_schedule(this)
     call this % schedule % clear_rule(vertex)
   end subroutine clear_rule
+
+  !===================================================================!
+  ! Returns the data releasable after one step, cumulatively: every
+  ! datum whose last reader is this step or earlier
+  !===================================================================!
 
   function released_after(this, step) result(vertices)
 
     class(temporal_minimizer), intent(in) :: this
     integer                  , intent(in) :: step
-    integer, allocatable :: vertices(:)
+    integer, allocatable                  :: vertices(:)
 
     call require_schedule(this)
     vertices = this % schedule % released_after(step)
 
   end function released_after
 
+  !===================================================================!
+  ! Returns the data released at exactly one step
+  !===================================================================!
+
   function released_at(this, step) result(vertices)
     class(temporal_minimizer), intent(in) :: this
-    integer, intent(in) :: step
-    integer, allocatable :: vertices(:)
+    integer                  , intent(in) :: step
+    integer, allocatable                  :: vertices(:)
     call require_schedule(this)
     vertices = this % schedule % released_at(step)
   end function released_at
 
+  !===================================================================!
+  ! Returns the data whose lifetime ends at one step: its final reads,
+  ! then the data the step writes that no rule reads
+  !===================================================================!
+
   function expired_at(this, step) result(vertices)
     class(temporal_minimizer), intent(in) :: this
-    integer, intent(in) :: step
-    integer, allocatable :: vertices(:)
+    integer                  , intent(in) :: step
+    integer, allocatable                  :: vertices(:)
     call require_schedule(this)
     vertices = this % schedule % expired_at(step)
   end function expired_at
 
+  !===================================================================!
+  ! Returns the data live after one step: written at that step or
+  ! earlier and read by a later step, a restart state of the traversal
+  !===================================================================!
+
   function live_after(this, step) result(vertices)
     class(temporal_minimizer), intent(in) :: this
-    integer, intent(in) :: step
-    integer, allocatable :: vertices(:)
+    integer                  , intent(in) :: step
+    integer, allocatable                  :: vertices(:)
     call require_schedule(this)
     vertices = this % schedule % live_after(step)
   end function live_after
 
   !===================================================================!
-  ! SOLVE. Where a schedule is stated, solving is the traversal of that
-  ! schedule. Otherwise this object is a shell around its inner minimizer.
+  ! Solves. Where a schedule is stated, solving is the traversal of
+  ! that schedule; where a partition is, the block Gauss-Seidel over
+  ! its members. Otherwise this object is a shell around its inner
+  ! minimizer.
   !===================================================================!
 
   subroutine solve(this, rhs, x, achieved)
 
     class(temporal_minimizer), intent(inout) :: this
-    real(dp)                  , intent(in)    :: rhs(:)
-    real(dp)                  , intent(inout) :: x(:)
-    real(dp)                  , intent(out)   :: achieved
+    real(dp)                 , intent(in)    :: rhs(:)
+    real(dp)                 , intent(inout) :: x(:)
+    real(dp)                 , intent(out)   :: achieved
+
     type(solve_result) :: outcome
     character(len=250) :: message
 
@@ -436,22 +558,33 @@ contains
 
   end subroutine solve
 
+  !===================================================================!
+  ! Solves by the block Gauss-Seidel over the members: in each pass,
+  ! every member in the stated order is solved by a copy of the inner
+  ! minimizer restricted to it, on the residual constrained to it with
+  ! every other unknown fixed, its solution written into x before the
+  ! next member is solved. The passes end when the residual meets the
+  ! tolerance, when a pass leaves it unchanged (stagnated), or when an
+  ! inner solve fails. The residual must be scalar in each unknown and
+  ! its right hand side zero.
+  !===================================================================!
+
   subroutine partitioned_solve(this, rhs, x, achieved)
 
     class(temporal_minimizer), intent(inout) :: this
-    real(dp)                  , intent(in)    :: rhs(:)
-    real(dp)                  , intent(inout) :: x(:)
-    real(dp)                  , intent(out)   :: achieved
+    real(dp)                 , intent(in)    :: rhs(:)
+    real(dp)                 , intent(inout) :: x(:)
+    real(dp)                 , intent(out)   :: achieved
 
-    type(residual_operator) :: sub
+    type(residual_operator)         :: sub
     type(stored_field), allocatable :: inputs(:)
-    class(minimizer), allocatable :: local
-    real(dp), allocatable :: y(:), zeros(:), member_solution(:), previous_residual(:)
-    integer, allocatable :: member(:), previous(:), all_unknowns(:)
-    logical, allocatable :: fixed(:)
-    integer :: pass, mm, m, count
-    type(solve_result) :: outcome
-    character(len=250) :: message
+    class(minimizer)  , allocatable :: local
+    real(dp)          , allocatable :: y(:), zeros(:), member_solution(:), previous_residual(:)
+    integer           , allocatable :: member(:), previous(:), all_unknowns(:)
+    logical           , allocatable :: fixed(:)
+    integer                         :: pass, mm, m, count
+    type(solve_result)              :: outcome
+    character(len=250)              :: message
 
     if (.not. allocated(this % inner)) then
        error stop 'temporal_minimizer: partitioned_solve() requires an inner minimizer, but this % inner is unallocated'
@@ -511,8 +644,8 @@ contains
                      & transposed=residual % transpose_version())
              end if
              call local_stored(this, residual, member, sub, inputs)
-             ! the inner minimizer restricted to the member: each
-             ! solver maps its own metadata and its children's
+             ! The inner minimizer restricted to the member: each solver
+             ! maps its own metadata and its children's
              allocate(local, source=this % inner)
              call local % restrict(member)
              if (allocated(inputs)) then
@@ -552,28 +685,28 @@ contains
   end subroutine partitioned_solve
 
   !===================================================================!
-  ! THE STORED INPUTS RESTRICTED TO A MEMBER. A stored input of a
-  ! residual is a field on the residual's point domain P with one
-  ! value per point; the constrained residual's points are the
-  ! selected points, so the input restricted to the member is the
-  ! field on the constrained residual's P' of the values at those
-  ! points. Invalid input: a stored input that is not a real field on
-  ! P with one value per point.
+  ! Returns the stored inputs restricted to a member. A stored input of
+  ! a residual is a field on the residual's point domain P with one
+  ! value per point; the constrained residual's points are the selected
+  ! points, so the input restricted to the member is the field on the
+  ! constrained residual's P' of the values at those points. Invalid
+  ! input: a stored input that is not a real field on P with one value
+  ! per point.
   !===================================================================!
 
   subroutine local_stored(this, residual, member, sub, inputs)
 
-    class(temporal_minimizer), intent(in)  :: this
-    class(residual_operator) , intent(in)  :: residual
-    integer                  , intent(in)  :: member(:)
-    class(residual_operator) , intent(in)  :: sub
+    class(temporal_minimizer)      , intent(in)  :: this
+    class(residual_operator)       , intent(in)  :: residual
+    integer                        , intent(in)  :: member(:)
+    class(residual_operator)       , intent(in)  :: sub
     type(stored_field), allocatable, intent(out) :: inputs(:)
 
     real(dp), allocatable :: values(:)
     integer , allocatable :: points(:)
-    type(graph) :: whole, selected
-    integer :: i
-    character(len=250) :: message
+    type(graph)           :: whole, selected
+    integer               :: i
+    character(len=250)    :: message
 
     if (.not. allocated(this % stored)) return
 
@@ -607,18 +740,31 @@ contains
 
   end subroutine local_stored
 
+  !===================================================================!
+  ! Seeds a member's unknowns from its predecessor's:
+  !
+  !      given                          the member's seed
+  !      a transfer T                   T times each tuple of the
+  !                                     predecessor, tuple by tuple
+  !      |member| = |previous|          x(previous)
+  !      |member| = k |previous|        x(previous), repeated k times
+  !      |previous| = k |member|        the last |member| of x(previous)
+  !
+  ! Any other pair of sizes stops the program.
+  !===================================================================!
+
   subroutine seed_from_member(x, member, previous, transfer)
 
-    real(dp), intent(inout) :: x(:)
-    integer , intent(in)    :: member(:), previous(:)
+    real(dp), intent(inout)        :: x(:)
+    integer , intent(in)           :: member(:), previous(:)
     real(dp), intent(in), optional :: transfer(:,:)
 
-    integer :: pieces, i, width
+    integer            :: pieces, i, width
     character(len=250) :: message
 
     if (size(previous) < 1) return
 
-    ! every tuple of the member is the transfer of the tuple at the
+    ! Every tuple of the member is the transfer of the tuple at the
     ! same position of its predecessor
     if (present(transfer)) then
        width = size(transfer, 1)
@@ -655,6 +801,11 @@ contains
 
   end subroutine seed_from_member
 
+  !===================================================================!
+  ! Requires a schedule: a call that reads one stops the program on a
+  ! minimizer stated without a driver
+  !===================================================================!
+
   subroutine require_schedule(this)
 
     class(temporal_minimizer), intent(in) :: this
@@ -666,13 +817,13 @@ contains
   end subroutine require_schedule
 
   !===================================================================!
-  ! Bind the account of this minimizer and of its children.
+  ! Binds the account of this minimizer and of its children
   !===================================================================!
 
   subroutine temporal_minimizer_bind_account(this, account)
 
     class(temporal_minimizer), intent(inout) :: this
-    type(tally), pointer, intent(in) :: account
+    type(tally), pointer     , intent(in)    :: account
 
     this % account => account
     if (allocated(this % inner)) call this % inner % bind_account(account)

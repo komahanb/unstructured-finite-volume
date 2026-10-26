@@ -1,5 +1,6 @@
 !=====================================================================!
-! THE IDENTITY-ROW TABLE beneath every token-keyed map.
+! Module that states the identity-row table beneath every token-keyed
+! map.
 !
 ! A map keyed on identity is a set of rows, each a copied identity
 ! token beside a payload the map owns. The token column and its
@@ -15,32 +16,34 @@
 !                    key already present stops the program with the
 !                    map's own message
 !      key           the token stored at a row
-!      removal       one row removed, the rest retaining their order
+!      removal       one row removed, the rest keeping their order
+!
+!   this table               a map's payload, parallel to it
+!   row 1   token  ------>   payload(1)
+!   row 2   token  ------>   payload(2)
+!   ...
 !
 ! A key is a declared token: a row keyed on an undeclared token could
 ! never be found again, so append rejects one. This module owns the
-! token column ALONE. It has no dependency on set representations,
-! labels, inclusions, fields, or graph mathematics: a map indexes its
+! token column alone. It does not depend on set representations,
+! labels, inclusions, fields or graph mathematics: a map indexes its
 ! own payload by the row positions this table returns, and reads that
-! payload itself. So the different laws the maps enforce - one ambient
+! payload itself. So the different laws the maps enforce, one ambient
 ! per part, a status that must be known before it is read, a
-! representation copied whole - stay in the maps, and only the
+! representation copied whole, stay in the maps, and only the
 ! copied-token bookkeeping is shared.
 !
-!             THE LIFETIME LAW
+! The lifetime law. Keys are type(token), copied by value at append.
+! The table references no object it was built from, so a map may
+! outlive every variable that populated it, and append requires no
+! TARGET. Nothing here stores a pointer or a graph.
 !
-! Keys are type(token), copied by value at append. The table references
-! no object it was built from, so a map may outlive every variable
-! that populated it, and append requires no TARGET. Nothing here stores
-! a pointer or a graph.
-!
-!             WHAT IS REJECTED
-!
-! An append of an undeclared key or of a key already present, a row
-! query for a key with no row, and a removal of a position outside the
-! rows, each stop the program. The map passes the message that states
-! its own law (named once, attached once, one ambient), so the
-! rejection is reported in the map's terms and checked here once.
+! What is rejected. An append of an undeclared key or of a key already
+! present, a row query for a key with no row, and a removal of a
+! position outside the rows each stop the program. The map passes the
+! message that states its own law (named once, attached once, one
+! ambient), so the rejection is reported in the map's terms and
+! checked here once.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -53,25 +56,41 @@ module map_token_rows
   implicit none
 
   private
+
   public :: identity_rows
+
+  !-------------------------------------------------------------------!
+  ! Type that models the table: a column of keys and an open-addressing
+  ! table of slots on their serial numbers. For example,
+  !
+  !   keys                  slot      1   2   3   4   5   6   7   8
+  !   row 1   (1, 7)        slot_row  0   2   0   1   0   3   0   0
+  !   row 2   (1, 3)
+  !   row 3   (1, 12)       a slot stores the row of a key, or 0
+  !-------------------------------------------------------------------!
 
   type :: identity_rows
 
-     ! the rows 1..num_stored of a column with spare capacity, so an
-     ! append costs amortised constant time rather than a whole copy
+     ! The rows 1..num_stored of a column with spare capacity, so that
+     ! an append costs amortised constant time rather than a whole copy
      type(token), allocatable, private :: keys(:)
-     integer, private :: num_stored = 0
-     ! the row at each slot of an open-addressing table on the serial
-     ! number, zero for an empty slot; the slot count is a power of two
-     ! of at least twice the rows, so a position costs constant time
+     integer                 , private :: num_stored = 0
+
+     ! The row at each slot of an open-addressing table on the serial
+     ! number, zero for an empty slot. The number of slots is a power of
+     ! two of at least twice the rows, so a position costs constant
+     ! time.
      integer, allocatable, private :: slot_row(:)
 
    contains
 
+     ! Queries
      procedure :: position
      procedure :: row
      procedure :: key
      procedure :: num_rows
+
+     ! Writers
      procedure :: append
      procedure :: remove
 
@@ -80,15 +99,22 @@ module map_token_rows
 contains
 
   !===================================================================!
-  ! The row of a key, or zero. Unallocated storage returns zero, so a
-  ! map need not check for an empty table itself. The slots are read
-  ! linearly from the key's slot until its row or an empty slot.
+  ! Returns the row of a key, or zero. Unallocated storage returns
+  ! zero, so a map need not check for an empty table itself. The slots
+  ! are read in turn from the key's own slot, wrapping at the end,
+  ! until its row or an empty slot:
+  !
+  !   slot_of(key)
+  !      |
+  !      v
+  !   [ r ][ r ][ 0 ]        a row whose key matches: found
+  !                          an empty slot: not present, zero
   !===================================================================!
 
   pure integer function position(this, key) result(at)
 
     class(identity_rows), intent(in) :: this
-    type(token)      , intent(in) :: key
+    type(token)         , intent(in) :: key
 
     integer :: slot
 
@@ -104,19 +130,30 @@ contains
 
   end function position
 
+  !===================================================================!
+  ! Returns the slot a key starts from: the high bits of the product of
+  ! its serial with an odd constant, masked to the power-of-two number
+  ! of slots,
+  !
+  !   serial * 2654435761  -->  shifted right by 16  -->  its low bits,
+  !                                                       num_slots - 1
+  !                                                       as the mask, + 1
+  !===================================================================!
+
   pure integer function slot_of(key, num_slots)
 
     type(token), intent(in) :: key
     integer    , intent(in) :: num_slots
 
-    ! the high bits of the product with an odd constant, masked to the
-    ! power-of-two slot count
     slot_of = int(iand(ishft(int(key % serial_number(), int64) * 2654435761_int64, -16), &
          & int(num_slots - 1, int64))) + 1
 
   end function slot_of
 
-  ! One row placed into the first empty slot from its key's slot.
+  !===================================================================!
+  ! Places one row into the first empty slot from its key's slot
+  !===================================================================!
+
   subroutine place(this, at)
 
     class(identity_rows), intent(inout) :: this
@@ -132,22 +169,29 @@ contains
 
   end subroutine place
 
-  ! Capacity for one more row: the column doubles when full, and the
-  ! slots are rebuilt at twice the rows when they fall below that.
+  !===================================================================!
+  ! Reserves capacity for the required rows: the column doubles when
+  ! full, and the slots are rebuilt at twice the rows, a power of two
+  ! from 16, when they fall below that
+  !===================================================================!
+
   subroutine reserve(this, required)
 
     class(identity_rows), intent(inout) :: this
     integer             , intent(in)    :: required
 
     type(token), allocatable :: larger(:)
-    integer :: num_slots, at
+    integer                  :: num_slots, at
 
+    ! The column
     if (.not. allocated(this % keys)) allocate(this % keys(max(required, 8)))
     if (required > size(this % keys)) then
        allocate(larger(max(required, 2 * size(this % keys))))
        larger(1:this % num_stored) = this % keys(1:this % num_stored)
        call move_alloc(larger, this % keys)
     end if
+
+    ! The slots, rebuilt only when too few
     num_slots = 16
     if (allocated(this % slot_row)) num_slots = size(this % slot_row)
     if (allocated(this % slot_row) .and. 2 * required <= num_slots) return
@@ -163,8 +207,8 @@ contains
   end subroutine reserve
 
   !===================================================================!
-  ! The row of a key. No row stops the program with the caller's
-  ! message, so a map's read is one call.
+  ! Returns the row of a key. No row stops the program with the
+  ! caller's message, so that a map's read is one call.
   !===================================================================!
 
   integer function row(this, key, message) result(at)
@@ -178,6 +222,10 @@ contains
 
   end function row
 
+  !===================================================================!
+  ! Returns the token stored at a row
+  !===================================================================!
+
   pure type(token) function key(this, at)
 
     class(identity_rows), intent(in) :: this
@@ -186,6 +234,10 @@ contains
     key = this % keys(at)
 
   end function key
+
+  !===================================================================!
+  ! Returns the number of rows
+  !===================================================================!
 
   pure integer function num_rows(this)
 
@@ -196,9 +248,9 @@ contains
   end function num_rows
 
   !===================================================================!
-  ! Append one row and return its position. The key is copied by
-  ! value. An undeclared key stops the program with the first
-  ! message, a key already present with the second.
+  ! Appends one row and returns its position. The key is copied by
+  ! value. An undeclared key stops the program with the first message,
+  ! a key already present with the second.
   !===================================================================!
 
   function append(this, key, undeclared, duplicate) result(at)
@@ -206,7 +258,7 @@ contains
     class(identity_rows), intent(inout) :: this
     type(token)         , intent(in)    :: key
     character(len=*)    , intent(in)    :: undeclared, duplicate
-    integer :: at
+    integer                             :: at
 
     if (.not. key % declared())     error stop undeclared
     if (this % position(key) /= 0) error stop duplicate
@@ -220,17 +272,22 @@ contains
   end function append
 
   !===================================================================!
-  ! Remove the row at a position; the rest retain their order, because a
-  ! map's parallel payload is compacted the same way. A position
-  ! outside the rows stops the program.
+  ! Removes the row at a position. The rest keep their order, because
+  ! a map's parallel payload is compacted the same way, and the slots
+  ! are placed again:
+  !
+  !   before    [ k1 ][ k2 ][ k3 ][ k4 ]        remove row 2
+  !   after     [ k1 ][ k3 ][ k4 ]              k3 is row 2, k4 row 3
+  !
+  ! A position outside the rows stops the program.
   !===================================================================!
 
   subroutine remove(this, at)
 
     class(identity_rows), intent(inout) :: this
-    integer          , intent(in)    :: at
+    integer             , intent(in)    :: at
 
-    integer :: slot
+    integer            :: slot
     character(len=100) :: message
 
     if (at < 1 .or. at > this % num_rows()) then

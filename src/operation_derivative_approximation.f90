@@ -1,8 +1,9 @@
 !=====================================================================!
-! THE APPROXIMATION OF THE DERIVATIVES ALONG THE COORDINATES OF A
-! REGION: on a mesh of cells, how the jet an unknown's law reads is
-! formed, and how the law is tested. The methods extend this one type,
-! and the residual reads every method through its three procedures:
+! Module that states the approximation of the derivatives along the
+! coordinates of a region: on a mesh of cells, how the jet an
+! unknown's law reads is formed, and how the law is tested. The
+! methods extend this one type, and the residual reads every method
+! through its three procedures:
 !
 !   derivative_rows   the relations among the components a point
 !                     stores: for each axis and each derivative the
@@ -20,7 +21,14 @@
 ! A method that places the law at the points has no elements: each of
 ! its points is an element of one node, whose basis is the identity
 ! on the stored jet and whose one quadrature point, of weight one, is
-! the node.
+! the node:
+!
+!   projected          node 1                                 node 2
+!                        o------x----------x----------x------o
+!                               quadrature points x of the cell
+!
+!   at the points        o        one node, one quadrature point,
+!                                 of weight one
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -34,24 +42,35 @@ module operation_derivative_approximation
   implicit none
 
   private
+
   public :: derivative_approximation, element_quadrature, tested_at
 
-  !===================================================================!
-  ! THE ELEMENTS OF A MESH on which a law is projected. A cell has
-  ! nodes, points of the mesh, at each of which an unknown stores its
-  ! coefficients: its value and its pure derivatives along each axis
-  ! to the element's order. A cell has quadrature points, each with a
-  ! weight, a position and the jet of every basis function there:
-  ! basis(d, k, i, q, e) is the derivative d of the basis function of
-  ! the coefficient k of node i of cell e, at its quadrature point q.
+  !-------------------------------------------------------------------!
+  ! Type that models the elements of a mesh on which a law is
+  ! projected.
+  !
+  ! A cell has nodes, points of the mesh, at each of which an unknown
+  ! stores its coefficients: its value and its pure derivatives along
+  ! each axis to the element's order. A cell has quadrature points,
+  ! each with a weight, a position and the jet of every basis function
+  ! there: basis(d, k, i, q, e) is the derivative d of the basis
+  ! function of the coefficient k of node i of cell e, at its
+  ! quadrature point q.
+  !
   ! A derivative and a coefficient are indexed alike: zero the value,
   ! (a - 1) * top + o the order o along the axis a, top the highest
   ! order stored (derivatives for the jet, order for the
-  ! coefficients). The jet of an unknown at a quadrature point is the
-  ! sum over the cell's nodes and coefficients of the basis's jet
-  ! times the coefficient.
+  ! coefficients):
   !
-  ! THE TEST FUNCTION of a coefficient is its basis function divided
+  !   index    0       1 ... top       top+1 ... 2 top     ...
+  !            value   axis 1,         axis 2,
+  !                    orders 1..top   orders 1..top
+  !
+  ! The jet of an unknown at a quadrature point is the sum over the
+  ! cell's nodes and coefficients of the basis's jet times the
+  ! coefficient.
+  !
+  ! The test function of a coefficient is its basis function divided
   ! by its moment of the coefficient's order about the node, the
   ! integral of the basis function times (x - x_i)^o / o! along the
   ! coefficient's axis: test(d, k, i, q, e) is the weight times the
@@ -60,7 +79,7 @@ module operation_derivative_approximation
   ! sense: the law's average about the node for the value, its slope
   ! for the slope. Tested with a point mass at the node, the row would
   ! be the law's component at the point, the row of a collocation.
-  !===================================================================!
+  !-------------------------------------------------------------------!
 
   type :: element_quadrature
 
@@ -85,6 +104,10 @@ module operation_derivative_approximation
 
   end type element_quadrature
 
+  !-------------------------------------------------------------------!
+  ! Type that every approximation of the derivatives extends
+  !-------------------------------------------------------------------!
+
   type, abstract :: derivative_approximation
 
      ! the order of accuracy p: a derivative from the rows is O(h^p)
@@ -92,33 +115,40 @@ module operation_derivative_approximation
 
    contains
 
+     ! Deferred procedures
      procedure(derivative_rows_interface), deferred :: derivative_rows
+
+     ! Provided procedures
      procedure :: projects
      procedure :: elements
 
   end type derivative_approximation
 
   abstract interface
-     !================================================================!
-     ! The rows of the derivative of one order along one axis of the
-     ! mesh, at every cell: a stencil with one row per cell over the
-     ! cells it reads and no constant. An axis outside the mesh's
-     ! dimension, or a derivative the method does not form, stops
-     ! the program.
-     !================================================================!
+
+     !----------------------------------------------------------------!
+     ! Interface for the rows of the derivative of one order along one
+     ! axis of the mesh, at every cell: a stencil with one row per cell
+     ! over the cells it reads and no constant. An axis outside the
+     ! mesh's dimension, or a derivative the method does not form,
+     ! stops the program.
+     !----------------------------------------------------------------!
+
      function derivative_rows_interface(this, cells, axis, derivative) result(rows)
        import :: derivative_approximation, mesh, stencil
        class(derivative_approximation), intent(in) :: this
        type(mesh)                     , intent(in) :: cells
        integer                        , intent(in) :: axis, derivative
-       type(stencil) :: rows
+       type(stencil)                               :: rows
      end function derivative_rows_interface
+
   end interface
 
 contains
 
   !===================================================================!
-  ! A method places the law at the points unless it states otherwise.
+  ! Returns whether the method projects the law on the cells. A method
+  ! places the law at the points unless it states otherwise.
   !===================================================================!
 
   pure logical function projects(this)
@@ -128,16 +158,17 @@ contains
   end function projects
 
   !===================================================================!
-  ! The elements of a method that places the law at the points: none.
-  ! A method that projects states its cells, with the coefficients to
-  ! the order given and the basis's jet to the derivatives given.
+  ! Returns the elements of a method that places the law at the
+  ! points: none. A method that projects states its cells, with the
+  ! coefficients to the order given and the basis's jet to the
+  ! derivatives given.
   !===================================================================!
 
   function elements(this, cells, order, derivatives) result(set)
     class(derivative_approximation), intent(in) :: this
     type(mesh)                     , intent(in) :: cells
     integer                        , intent(in) :: order, derivatives
-    type(element_quadrature) :: set
+    type(element_quadrature)                    :: set
     associate (u1 => this, u2 => cells); end associate
     set % dimension   = 1
     set % order       = order
@@ -146,37 +177,59 @@ contains
     allocate(set % test(0:0, 0:0, 0, 0, 0))
   end function elements
 
+  !===================================================================!
+  ! Returns the number of cells, zero when no nodes are stored
+  !===================================================================!
+
   pure integer function element_num_cells(this)
     class(element_quadrature), intent(in) :: this
     element_num_cells = 0
     if (allocated(this % node)) element_num_cells = size(this % node, 2)
   end function element_num_cells
 
+  !===================================================================!
+  ! Returns the number of nodes of a cell
+  !===================================================================!
+
   pure integer function element_num_nodes(this)
     class(element_quadrature), intent(in) :: this
     element_num_nodes = size(this % node, 1)
   end function element_num_nodes
+
+  !===================================================================!
+  ! Returns the number of quadrature points of a cell
+  !===================================================================!
 
   pure integer function element_num_quadrature_points(this)
     class(element_quadrature), intent(in) :: this
     element_num_quadrature_points = size(this % weight, 1)
   end function element_num_quadrature_points
 
-  ! the coefficients a node stores of one unknown: the value and the
-  ! pure derivatives to the order along each axis
+  !===================================================================!
+  ! Returns the coefficients a node stores of one unknown: the value
+  ! and the pure derivatives to the order along each axis
+  !===================================================================!
+
   pure integer function element_num_coefficients(this)
     class(element_quadrature), intent(in) :: this
     element_num_coefficients = 1 + this % dimension * this % order
   end function element_num_coefficients
 
-  ! the derivatives of the basis's jet stored at a quadrature point
+  !===================================================================!
+  ! Returns the number of derivatives of the basis's jet stored at a
+  ! quadrature point
+  !===================================================================!
+
   pure integer function element_num_derivatives(this)
     class(element_quadrature), intent(in) :: this
     element_num_derivatives = 1 + this % dimension * this % derivatives
   end function element_num_derivatives
 
-  ! whether a test function of the derivative index d is other than
-  ! zero at the quadrature point q of the cell e
+  !===================================================================!
+  ! Returns whether a test function of the derivative index d is other
+  ! than zero at the quadrature point q of the cell e
+  !===================================================================!
+
   pure logical function tested_at(el, d, q, e)
     type(element_quadrature), intent(in) :: el
     integer                 , intent(in) :: d, q, e

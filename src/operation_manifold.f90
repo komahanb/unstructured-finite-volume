@@ -1,53 +1,76 @@
 !=====================================================================!
-! THE MANIFOLD, CONTINUOUS AND DISCRETE.
+! Module that states the manifold, continuous and discrete.
 !
 ! A continuous manifold is a product of coordinates with their
-! extents: a time interval, a region of space, either, or neither,
-! in which case the manifold is a point. Its coordinate functions
-! and its unknown functions are fields on it; a part of it - the
-! face at one instant, the time factor, the space factor - is a
-! manifold of its own that records its parent.
+! extents: a time interval, a region of space, either, or neither, in
+! which case the manifold is a point. Its coordinate functions and its
+! unknown functions are fields on it; a part of it (the face at one
+! instant, the time factor, the space factor) is a manifold of its own
+! that records its parent.
+!
+!                    t = T, a face
+!            +---------------------+
+!            |                     |
+!       t    |   [0, T] x Omega    |   the whole
+!            |                     |
+!            +---------------------+
+!                    t = 0, a face
+!                       x
+!
+!      time factor   [0, T]      space factor   Omega
+!      design factor { nu_0 }
 !
 ! Its discrete image is the product of the points chosen along each
-! coordinate: the instants of the interval, the cells of a mesh of
-! the region. Nothing else: the approximation of a derivative is a
-! property of the residual placed on the points, not of the points.
-! The image states which coordinates it has by what it stores - its
-! instants, its cells, the expansion of its design - and repeats no
-! declaration of the manifold it is the image of.
+! coordinate: the instants of the interval, the cells of a mesh of the
+! region. Nothing else: the approximation of a derivative is a property
+! of the residual placed on the points, not of the points. The image
+! states which coordinates it has by what it stores (its instants, its
+! cells, the expansion of its design) and repeats no declaration of the
+! manifold it is the image of.
 !
 !      coordinate index   1 the time, then the space axes in order
 !      point index        instant outer, cell inner
 !      position(p)        the instant and the cell centre
 !      measure(p)         the instant's share of the interval times the cell's volume
 !
-! THE DESIGN. The design coordinate nu is a point of the design
-! space, fixed at a value nu_0; its discrete image is the expansion
-! of an order at that value, which operation_expansion states, so
-! that the discrete manifold is the instants (and cells) times the
-! orders of the expansion.
+!      point p      1   2   3 | 4   5   6 | 7   8   9       three cells
+!      instant k    1         | 2         | 3
+!      cell c       1   2   3 | 1   2   3 | 1   2   3
+!
+! The design. The design coordinate nu is a point of the design space,
+! fixed at a value nu_0; its discrete image is the expansion of an
+! order at that value, which operation_expansion states, so that the
+! discrete manifold is the instants (and cells) times the orders of
+! the expansion.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 
 module operation_manifold
 
-  use util_precision      , only : dp
-  use token_identity      , only : token, next_token
-  use operation_expansion , only : expansion
-  use operation_field     , only : continuous_support, discrete_support, continuous_field
-  use operation_field     , only : unknown_field, coordinate_field, time_map_field
-  use operation_field     , only : WHOLE, TIME_FACE, TIME_FACTOR, SPACE_FACTOR, DESIGN_FACTOR, SPACE_FACE
-  use view_mesh           , only : mesh, values_of
-  use view_mesh_builder   , only : mesh_from_gmsh, mesh_from_points, mesh_of_corners
+  use util_precision     , only : dp
+  use token_identity     , only : token, next_token
+  use operation_expansion, only : expansion
+  use operation_field    , only : continuous_support, discrete_support, continuous_field
+  use operation_field    , only : unknown_field, coordinate_field, time_map_field
+  use operation_field    , only : WHOLE, TIME_FACE, TIME_FACTOR, SPACE_FACTOR, DESIGN_FACTOR, SPACE_FACE
+  use view_mesh          , only : mesh, values_of
+  use view_mesh_builder  , only : mesh_from_gmsh, mesh_from_points, mesh_of_corners
 
   implicit none
 
   private
+
   public :: continuous_manifold, discrete_manifold
   public :: interval, region, points, mesh, corners, parameter
 
+  ! The longest name of an unknown or a design coordinate
   integer, parameter :: MAX_NAME = 32
+
+  !-------------------------------------------------------------------!
+  ! Type that models an interval [a, b] of time or of one space
+  ! coordinate
+  !-------------------------------------------------------------------!
 
   type :: interval
      real(dp) :: a = 0.0_dp, b = 0.0_dp
@@ -57,11 +80,14 @@ module operation_manifold
      module procedure create_interval
   end interface interval
 
-  ! the region of space: as a gmsh geometry file describes it, or
-  ! the interval of one space coordinate
+  !-------------------------------------------------------------------!
+  ! Type that models the region of space: as a gmsh geometry file
+  ! describes it, or the interval of one space coordinate
+  !-------------------------------------------------------------------!
+
   type :: region
      character(len=:), allocatable :: geometry
-     type(interval), allocatable :: extent
+     type(interval)  , allocatable :: extent
   end type region
 
   interface region
@@ -69,11 +95,14 @@ module operation_manifold
      module procedure create_region_of_interval
   end interface region
 
-  ! the points of an interval of time or of a space coordinate: n
-  ! equally spaced, or the list given, ascending from one end of the
-  ! interval to the other
+  !-------------------------------------------------------------------!
+  ! Type that models the points of an interval of time or of a space
+  ! coordinate: n equally spaced, or the list given, ascending from one
+  ! end of the interval to the other
+  !-------------------------------------------------------------------!
+
   type :: points
-     integer :: n = 0
+     integer               :: n = 0
      real(dp), allocatable :: position(:)
   end type points
 
@@ -86,36 +115,48 @@ module operation_manifold
      module procedure mesh_from_file
   end interface mesh
 
-  ! the corners of a mesh as the points of a region, the mesh's cells
+  ! The corners of a mesh as the points of a region, the mesh's cells
   ! the elements of their corners
   interface corners
      module procedure corners_of
   end interface corners
 
-  ! the design: a coordinate fixed at a value, a point of the design
-  ! space; its discrete image is the expansion of an order at that
-  ! value, so that the discrete solution stores its derivatives along
-  ! the design to the order
+  !-------------------------------------------------------------------!
+  ! Type that models the design: a coordinate fixed at a value, a point
+  ! of the design space; its discrete image is the expansion of an
+  ! order at that value, so that the discrete solution stores its
+  ! derivatives along the design to the order
+  !-------------------------------------------------------------------!
+
   type :: parameter
      character(len=MAX_NAME) :: name = ''
-     real(dp) :: value = 0.0_dp
+     real(dp)                :: value = 0.0_dp
   end type parameter
 
   interface parameter
      module procedure create_parameter
   end interface parameter
 
+  !-------------------------------------------------------------------!
+  ! Type that models the continuous manifold: which coordinates it has,
+  ! their extents, and the unknowns declared on it
+  !-------------------------------------------------------------------!
+
   type, extends(continuous_support) :: continuous_manifold
 
-     logical        :: with_time  = .false.
-     logical        :: with_space = .false.
-     logical        :: with_design = .false.
-     type(interval) :: span
-     type(region)   :: geometry
+     ! The coordinates and their extents
+     logical                      :: with_time   = .false.
+     logical                      :: with_space  = .false.
+     logical                      :: with_design = .false.
+     type(interval)               :: span
+     type(region)                 :: geometry
      type(parameter), allocatable :: design_parameter(:)
-     integer        :: num_unknowns = 0
+
+     ! The unknowns, one name per component
+     integer                              :: num_unknowns = 0
      character(len=MAX_NAME), allocatable :: unknown_name(:)
-     ! an unknown of a manifold of space that is a function of no
+
+     ! An unknown of a manifold of space that is a function of no
      ! coordinate of space: of time alone, or of the design alone
      logical, allocatable :: of_time_alone(:)
 
@@ -145,11 +186,17 @@ module operation_manifold
      module procedure create_manifold_of_designs
   end interface continuous_manifold
 
+  !-------------------------------------------------------------------!
+  ! Type that models the discrete manifold: the instants, the cells and
+  ! their centres and volumes, and the expansion of the design the
+  ! support stores
+  !-------------------------------------------------------------------!
+
   type, extends(discrete_support) :: discrete_manifold
 
      real(dp), allocatable :: instant(:)
-     type(mesh) :: cells
-     integer :: dimension = 0
+     type(mesh)            :: cells
+     integer               :: dimension = 0
      real(dp), allocatable :: centre(:)
      real(dp), allocatable :: volume(:)
 
@@ -171,14 +218,13 @@ module operation_manifold
 contains
 
   !===================================================================!
-  ! THE CONSTRUCTORS. An interval with b below a, a count of instants
-  ! below two, stops the program.
+  ! Creates an interval [a, b]; b at or below a stops the program
   !===================================================================!
 
   function create_interval(a, b) result(this)
 
     real(dp), intent(in) :: a, b
-    type(interval) :: this
+    type(interval)       :: this
 
     character(len=250) :: message
 
@@ -192,28 +238,40 @@ contains
 
   end function create_interval
 
+  !===================================================================!
+  ! Creates the region a gmsh geometry file describes
+  !===================================================================!
+
   function create_region(geometry) result(this)
 
     character(len=*), intent(in) :: geometry
-    type(region) :: this
+    type(region)                 :: this
 
     this % geometry = geometry
 
   end function create_region
 
+  !===================================================================!
+  ! Creates the region of one space coordinate, an interval
+  !===================================================================!
+
   function create_region_of_interval(extent) result(this)
 
     type(interval), intent(in) :: extent
-    type(region) :: this
+    type(region)               :: this
 
     this % extent = extent
 
   end function create_region_of_interval
 
+  !===================================================================!
+  ! Creates n equally spaced points; fewer than two stop the program
+  !===================================================================!
+
   function create_points(n) result(this)
 
     integer, intent(in) :: n
-    type(points) :: this
+    type(points)        :: this
 
     character(len=250) :: message
 
@@ -226,12 +284,17 @@ contains
 
   end function create_points
 
+  !===================================================================!
+  ! Creates the points listed; fewer than two, or a list that does not
+  ! ascend, stop the program
+  !===================================================================!
+
   function create_points_at(position) result(this)
 
     real(dp), intent(in) :: position(:)
-    type(points) :: this
+    type(points)         :: this
 
-    integer :: k
+    integer            :: k
     character(len=250) :: message
 
     if (size(position) < 2) then
@@ -245,35 +308,48 @@ contains
           error stop trim(message) // ' does not follow the one before it'
        end if
     end do
-    this % n    = size(position)
+    this % n        = size(position)
     this % position = position
 
   end function create_points_at
 
+  !===================================================================!
+  ! Returns the mesh a gmsh file states
+  !===================================================================!
+
   function mesh_from_file(filename) result(cells)
 
     character(len=*), intent(in) :: filename
-    type(mesh) :: cells
+    type(mesh)                   :: cells
 
     cells = mesh_from_gmsh(filename)
 
   end function mesh_from_file
 
+  !===================================================================!
+  ! Returns the mesh of the corners of a mesh, its cells the elements
+  ! of their corners
+  !===================================================================!
+
   function corners_of(cells) result(points)
 
     type(mesh), intent(in) :: cells
-    type(mesh) :: points
+    type(mesh)             :: points
 
     points = mesh_of_corners(cells)
 
   end function corners_of
 
-  ! a design parameter named as a coordinate is, other than t, x, y, z
+  !===================================================================!
+  ! Creates a design parameter, named as a coordinate is, other than t,
+  ! x, y, z, by one to 32 characters
+  !===================================================================!
+
   function create_parameter(name, value) result(this)
 
     character(len=*), intent(in) :: name
     real(dp)        , intent(in) :: value
-    type(parameter) :: this
+    type(parameter)              :: this
 
     select case (trim(name))
     case ('t', 'x', 'y', 'z')
@@ -288,12 +364,18 @@ contains
 
   end function create_parameter
 
+  !===================================================================!
+  ! Creates a manifold of the coordinates given: a time interval, a
+  ! region of space, a design parameter, any of them, or none for a
+  ! point
+  !===================================================================!
+
   function create_manifold(time, space, design) result(this)
 
     type(interval) , intent(in), optional :: time
     type(region)   , intent(in), optional :: space
     type(parameter), intent(in), optional :: design
-    type(continuous_manifold) :: this
+    type(continuous_manifold)             :: this
 
     this % identity = next_token()
     if (present(time)) then
@@ -312,13 +394,16 @@ contains
 
   end function create_manifold
 
-  ! the same with several design coordinates, each named once
+  !===================================================================!
+  ! Creates the same with several design coordinates, each named once
+  !===================================================================!
+
   function create_manifold_of_designs(time, space, design) result(this)
 
     type(interval) , intent(in), optional :: time
     type(region)   , intent(in), optional :: space
-    type(parameter), intent(in) :: design(:)
-    type(continuous_manifold) :: this
+    type(parameter), intent(in)           :: design(:)
+    type(continuous_manifold)             :: this
 
     integer :: i, j
 
@@ -339,30 +424,54 @@ contains
 
   end function create_manifold_of_designs
 
+  !===================================================================!
+  ! Returns whether the manifold is a point: of neither time nor space
+  !===================================================================!
+
   pure logical function is_point(this)
     class(continuous_manifold), intent(in) :: this
     is_point = .not. (this % with_time .or. this % with_space)
   end function is_point
+
+  !===================================================================!
+  ! Returns whether the manifold is a face at an instant
+  !===================================================================!
 
   pure logical function is_time_face(this)
     class(continuous_manifold), intent(in) :: this
     is_time_face = this % part == TIME_FACE
   end function is_time_face
 
+  !===================================================================!
+  ! Returns whether the manifold is a face of space
+  !===================================================================!
+
   pure logical function is_space_face(this)
     class(continuous_manifold), intent(in) :: this
     is_space_face = this % part == SPACE_FACE
   end function is_space_face
+
+  !===================================================================!
+  ! Returns whether the manifold is the time factor of its parent
+  !===================================================================!
 
   pure logical function is_time_factor(this)
     class(continuous_manifold), intent(in) :: this
     is_time_factor = this % part == TIME_FACTOR
   end function is_time_factor
 
+  !===================================================================!
+  ! Returns whether the manifold is the space factor of its parent
+  !===================================================================!
+
   pure logical function is_space_factor(this)
     class(continuous_manifold), intent(in) :: this
     is_space_factor = this % part == SPACE_FACTOR
   end function is_space_factor
+
+  !===================================================================!
+  ! Returns whether the manifold is the design factor of its parent
+  !===================================================================!
 
   pure logical function is_design_factor(this)
     class(continuous_manifold), intent(in) :: this
@@ -370,9 +479,10 @@ contains
   end function is_design_factor
 
   !===================================================================!
-  ! The coordinates: the time first when present, then the space
-  ! axes. Their number is known once the space is discretized; before
-  ! that a name is enough to number them.
+  ! Returns the number of coordinates: the time first when present,
+  ! then the space axes, one for an interval and three for a region
+  ! read from a file. Their number is known once the space is
+  ! discretized; before that a name is enough to number them.
   !===================================================================!
 
   pure integer function manifold_num_coordinates(this)
@@ -383,29 +493,29 @@ contains
   end function manifold_num_coordinates
 
   !===================================================================!
-  ! An unknown function of the manifold, numbered after those already
-  ! declared, one field per component, a function of the coordinates
-  ! given as its arguments: a function of every coordinate of the
-  ! manifold when none are given, of those alone otherwise, so that
-  ! its derivative along any other coordinate is zero. An argument
+  ! Returns an unknown function of the manifold, numbered after those
+  ! already declared, one field per component, a function of the
+  ! coordinates given as its arguments: a function of every coordinate
+  ! of the manifold when none are given, of those alone otherwise, so
+  ! that its derivative along any other coordinate is zero. An argument
   ! may be a coordinate of the manifold or of its parent, since the
   ! equations on a part are written in the parent's coordinates.
-  ! Invalid input: a name already declared, an argument that is not
-  ! a coordinate function, one of another manifold, or one repeated.
+  ! Invalid input: a name already declared, an argument that is not a
+  ! coordinate function, one of another manifold, or one repeated.
   !===================================================================!
 
   function manifold_unknown(this, name, arguments, components) result(u)
 
-    class(continuous_manifold), intent(inout) :: this
-    character(len=*)          , intent(in)    :: name
+    class(continuous_manifold), intent(inout)        :: this
+    character(len=*)          , intent(in)           :: name
     type(continuous_field)    , intent(in), optional :: arguments(:)
     integer                   , intent(in), optional :: components
-    type(continuous_field) :: u
+    type(continuous_field)                           :: u
 
-    integer :: k, n
-    character(len=MAX_NAME) :: padded
+    integer                       :: k, n
+    character(len=MAX_NAME)       :: padded
     character(len=8), allocatable :: names(:)
-    character(len=250) :: message
+    character(len=250)            :: message
 
     n = 1
     if (present(components)) n = components
@@ -457,16 +567,19 @@ contains
   end function manifold_unknown
 
   !===================================================================!
-  ! The coordinate function named t, x, y or z, or the design
+  ! Returns the coordinate function named t, x, y or z, or the design
   ! coordinate by its name. A name the manifold has no coordinate for
   ! stops the program.
+  !
+  !      name      t     x              y              z
+  !      index     1     with_time + 1  with_time + 2  with_time + 3
   !===================================================================!
 
   function manifold_coordinate(this, name) result(c)
 
     class(continuous_manifold), intent(in) :: this
     character(len=*)          , intent(in) :: name
-    type(continuous_field) :: c
+    type(continuous_field)                 :: c
 
     integer :: axis, at
 
@@ -507,17 +620,17 @@ contains
   end function manifold_coordinate
 
   !===================================================================!
-  ! THE TIME MAP t(tau): the position of the instant whose reference
-  ! position is the coordinate of time tau. The pin of the instants,
-  ! the condition t_map - t on the time factor, fixes every instant
-  ! at its reference position, and its multiplier is minus the
+  ! Returns the time map t(tau): the position of the instant whose
+  ! reference position is the coordinate of time tau. The pin of the
+  ! instants, the condition t_map - t on the time factor, fixes every
+  ! instant at its reference position, and its multiplier is minus the
   ! derivative of the discrete objective in each instant, -dJ_h/dt_k.
   !===================================================================!
 
   function manifold_time_map(this) result(t_map)
 
     class(continuous_manifold), intent(in) :: this
-    type(continuous_field) :: t_map
+    type(continuous_field)                 :: t_map
 
     if (.not. this % with_time) then
        error stop 'operation_manifold: the time map requires a manifold with a time coordinate'
@@ -527,15 +640,18 @@ contains
   end function manifold_time_map
 
   !===================================================================!
-  ! THE PARTS: the face where one coordinate takes a value at an end
-  ! of its interval, a manifold of the other coordinates that records
-  ! its parent, the coordinate and the value; the time factor; the
-  ! space factor. Each is a manifold with unknowns of its own. On a
-  ! region read from a geometry file a face of space is where the
+  ! Returns a face: where one coordinate takes a value at an end of its
+  ! interval, a manifold of the other coordinates that records its
+  ! parent, the coordinate and the value. Each part (a face, the time
+  ! factor, the space factor) is a manifold with unknowns of its own.
+  ! On a region read from a geometry file a face of space is where the
   ! coordinate takes the value, its points those of the discretization
   ! that lie there. Invalid input: a field that is not a coordinate of
   ! this manifold, a design coordinate, or a value at neither end of an
   ! interval.
+  !
+  !      along t, at 0 or T     a manifold of space, at that instant
+  !      along x, at an end     a manifold of time, on that face
   !===================================================================!
 
   function manifold_boundary(this, along, value) result(face)
@@ -543,10 +659,10 @@ contains
     class(continuous_manifold), intent(in) :: this
     type(continuous_field)    , intent(in) :: along
     real(dp)                  , intent(in) :: value
-    type(continuous_manifold) :: face
+    type(continuous_manifold)              :: face
 
-    type(interval) :: span
-    logical :: of_time
+    type(interval)     :: span
+    logical            :: of_time
     character(len=250) :: message
 
     if (along % coordinate < 1 .or. along % design_coordinate .or. .not. along % on % matches(this % identity)) then
@@ -576,15 +692,18 @@ contains
 
   end function manifold_boundary
 
-  ! a part of a manifold: a manifold of its own that records its
-  ! parent and which part of it it is, with the design coordinates of
-  ! the parent and no unknown yet; the part taken states the
+  !===================================================================!
+  ! Returns a part of a manifold: a manifold of its own that records
+  ! its parent and which part of it it is, with the design coordinates
+  ! of the parent and no unknown yet; the part taken states the
   ! coordinates of time and space it retains
+  !===================================================================!
+
   function part_of(this, part) result(sub)
 
     class(continuous_manifold), intent(in) :: this
     integer                   , intent(in) :: part
-    type(continuous_manifold) :: sub
+    type(continuous_manifold)              :: sub
 
     sub % identity    = next_token()
     sub % with_design = this % with_design
@@ -595,10 +714,15 @@ contains
 
   end function part_of
 
+  !===================================================================!
+  ! Returns the time factor: the interval of the parent, a manifold of
+  ! time alone
+  !===================================================================!
+
   function manifold_time(this) result(factor)
 
     class(continuous_manifold), intent(in) :: this
-    type(continuous_manifold) :: factor
+    type(continuous_manifold)              :: factor
 
     if (.not. this % with_time) then
        error stop 'operation_manifold: the time factor requires a manifold with a time coordinate'
@@ -609,10 +733,15 @@ contains
 
   end function manifold_time
 
+  !===================================================================!
+  ! Returns the space factor: the region of the parent, a manifold of
+  ! space alone
+  !===================================================================!
+
   function manifold_space(this) result(factor)
 
     class(continuous_manifold), intent(in) :: this
-    type(continuous_manifold) :: factor
+    type(continuous_manifold)              :: factor
 
     if (.not. this % with_space) then
        error stop 'operation_manifold: the space factor requires a manifold with a region'
@@ -624,18 +753,19 @@ contains
   end function manifold_space
 
   !===================================================================!
-  ! A DIRECTION IN THE DESIGN: a vector over the design coordinates,
-  ! as a field of the manifold, so that the derivative of a discrete
-  ! field along it - the expansion having been stated along it - is
-  ! read as along a coordinate: derivative([w]). A vector of another
-  ! length than the design coordinates, or zero, is invalid input.
+  ! Returns a direction in the design: a vector over the design
+  ! coordinates, as a field of the manifold, so that the derivative of
+  ! a discrete field along it (the expansion having been stated along
+  ! it) is read as along a coordinate: derivative([w]). A vector of
+  ! another length than the design coordinates, or zero, is invalid
+  ! input.
   !===================================================================!
 
   function manifold_direction(this, along) result(w)
 
     class(continuous_manifold), intent(in) :: this
     real(dp)                  , intent(in) :: along(:)
-    type(continuous_field) :: w
+    type(continuous_field)                 :: w
 
     if (.not. this % with_design) then
        error stop 'operation_manifold: a direction in the design requires a manifold with a design coordinate'
@@ -652,16 +782,16 @@ contains
   end function manifold_direction
 
   !===================================================================!
-  ! THE DESIGN FACTOR: the point {nu} of the design space, a manifold
-  ! of the design coordinate alone, on which the condition fixing the
-  ! design is stated and paired with its multiplier, the sensitivity
-  ! of the objective to the design.
+  ! Returns the design factor: the point {nu} of the design space, a
+  ! manifold of the design coordinate alone, on which the condition
+  ! fixing the design is stated and paired with its multiplier, the
+  ! sensitivity of the objective to the design.
   !===================================================================!
 
   function manifold_design(this) result(factor)
 
     class(continuous_manifold), intent(in) :: this
-    type(continuous_manifold) :: factor
+    type(continuous_manifold)              :: factor
 
     if (.not. this % with_design) then
        error stop 'operation_manifold: the design factor requires a manifold with a design coordinate'
@@ -671,19 +801,21 @@ contains
   end function manifold_design
 
   !===================================================================!
-  ! THE DISCRETE IMAGE: the instants of the interval, equally spaced,
-  ! the cells of the mesh, and the expansion of an order along the
-  ! design. A coordinate present without its points, or points given
-  ! for a coordinate absent, stops the program.
+  ! Returns the discrete image: the instants of the interval, equally
+  ! spaced or as listed, the cells of the mesh or of the points of an
+  ! interval of space, and the expansion of an order along the design,
+  ! along each design coordinate in turn when no direction is given.
+  ! A coordinate present without its points, or points given for a
+  ! coordinate absent, stops the program.
   !===================================================================!
 
   function manifold_discretize(this, time, space, design) result(image)
 
-    class(continuous_manifold), intent(in) :: this
-    type(points)   , intent(in), optional :: time
-    class(*)       , intent(in), optional :: space
-    type(expansion), intent(in), optional :: design
-    type(discrete_manifold) :: image
+    class(continuous_manifold), intent(in)           :: this
+    type(points)              , intent(in), optional :: time
+    class(*)                  , intent(in), optional :: space
+    type(expansion)           , intent(in), optional :: design
+    type(discrete_manifold)                          :: image
 
     integer :: k
 
@@ -714,7 +846,7 @@ contains
        end if
     end if
     if (present(time)) image % instant = positions_on(time, this % span)
-    ! an expansion that moves the instants names the derivative of each,
+    ! An expansion that moves the instants names the derivative of each,
     ! the ends of the interval fixed
     if (present(design)) then
        if (allocated(design % instants)) then
@@ -752,15 +884,15 @@ contains
   end function manifold_discretize
 
   !===================================================================!
-  ! The positions of points on an interval: those listed, which run
-  ! from one end to the other, or n equally spaced from end to end.
+  ! Returns the positions of points on an interval: those listed, which
+  ! run from one end to the other, or n equally spaced from end to end
   !===================================================================!
 
   function positions_on(given, span) result(position)
 
     type(points)  , intent(in) :: given
     type(interval), intent(in) :: span
-    real(dp), allocatable :: position(:)
+    real(dp), allocatable      :: position(:)
 
     integer :: k
 
@@ -776,11 +908,19 @@ contains
 
   end function positions_on
 
+  !===================================================================!
+  ! Returns the number of instants, one without a time coordinate
+  !===================================================================!
+
   pure integer function num_instants(this)
     class(discrete_manifold), intent(in) :: this
     num_instants = 1
     if (allocated(this % instant)) num_instants = size(this % instant)
   end function num_instants
+
+  !===================================================================!
+  ! Returns the number of cells, one without a region
+  !===================================================================!
 
   pure integer function num_cells(this)
     class(discrete_manifold), intent(in) :: this
@@ -788,10 +928,19 @@ contains
     if (allocated(this % volume)) num_cells = size(this % volume)
   end function num_cells
 
+  !===================================================================!
+  ! Returns the number of points: the instants times the cells
+  !===================================================================!
+
   pure integer function discrete_num_points(this)
     class(discrete_manifold), intent(in) :: this
     discrete_num_points = this % num_instants() * this % num_cells()
   end function discrete_num_points
+
+  !===================================================================!
+  ! Returns the number of coordinates: the time, when there are
+  ! instants, and the dimension of the mesh
+  !===================================================================!
 
   pure integer function discrete_num_coordinates(this)
     class(discrete_manifold), intent(in) :: this
@@ -799,31 +948,32 @@ contains
   end function discrete_num_coordinates
 
   !===================================================================!
-  ! The discretization of the design factor: the one point of measure
-  ! one, on which a functional of the solution takes its value and
-  ! its derivatives along the design to the order of the expansion.
+  ! Returns the discretization of the design factor: the one point of
+  ! measure one, on which a functional of the solution takes its value
+  ! and its derivatives along the design to the order of the
+  ! expansion.
   !===================================================================!
 
   function discrete_design_factor(this) result(factor)
-    class(discrete_manifold), intent(in) :: this
-    class(discrete_support), allocatable :: factor
-    type(discrete_manifold) :: point
+    class(discrete_manifold), intent(in)  :: this
+    class(discrete_support) , allocatable :: factor
+    type(discrete_manifold)               :: point
     point % identity  = next_token()
     point % expansion = this % expansion
     allocate(factor, source=point)
   end function discrete_design_factor
 
   !===================================================================!
-  ! The measure of a point within the face at an instant: the cell's
-  ! volume for a point at that instant, one without a region, zero
-  ! for a point at another instant.
+  ! Returns the measure of a point within the face at an instant: the
+  ! cell's volume for a point at that instant, one without a region,
+  ! zero for a point at another instant
   !===================================================================!
 
   pure real(dp) function discrete_measure_on_face(this, p, time)
     class(discrete_manifold), intent(in) :: this
     integer                 , intent(in) :: p
     real(dp)                , intent(in) :: time
-    integer :: k, c
+    integer                              :: k, c
     discrete_measure_on_face = 0.0_dp
     if (.not. allocated(this % instant)) return
     k = (p - 1) / this % num_cells() + 1
@@ -833,14 +983,21 @@ contains
     if (allocated(this % volume)) discrete_measure_on_face = this % volume(c)
   end function discrete_measure_on_face
 
-  ! the point of instant k and cell c: instant outer, cell inner
+  !===================================================================!
+  ! Returns the point of instant k and cell c: instant outer, cell
+  ! inner, p = (k - 1) num_cells + c
+  !===================================================================!
+
   pure integer function point_of(this, k, c)
     class(discrete_manifold), intent(in) :: this
     integer                 , intent(in) :: k, c
     point_of = (k - 1) * this % num_cells() + c
   end function point_of
 
-  ! the step ending at instant k; the first instant has none
+  !===================================================================!
+  ! Returns the step ending at instant k; the first instant has none
+  !===================================================================!
+
   pure real(dp) function step(this, k)
     class(discrete_manifold), intent(in) :: this
     integer                 , intent(in) :: k
@@ -848,11 +1005,16 @@ contains
     if (k > 1) step = this % instant(k) - this % instant(k - 1)
   end function step
 
+  !===================================================================!
+  ! Returns the position of a point: its instant, then its cell's
+  ! centre
+  !===================================================================!
+
   pure function discrete_position(this, p) result(x)
 
     class(discrete_manifold), intent(in) :: this
     integer                 , intent(in) :: p
-    real(dp), allocatable :: x(:)
+    real(dp), allocatable                :: x(:)
 
     integer :: k, c, d
 
@@ -868,8 +1030,13 @@ contains
   end function discrete_position
 
   !===================================================================!
-  ! The measure at a point: the trapezoidal share of the interval at
-  ! the instant times the cell's volume; one at a point manifold.
+  ! Returns the measure at a point: the trapezoidal share of the
+  ! interval at the instant times the cell's volume; one at a point
+  ! manifold.
+  !
+  !      instants     t_1         t_2              t_3     ...     t_n
+  !                    |-----------|----------------|-- ... --|-----|
+  !      share        h_2/2    (h_2 + h_3)/2                       h_n/2
   !===================================================================!
 
   pure real(dp) function discrete_measure(this, p)

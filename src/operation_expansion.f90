@@ -1,5 +1,5 @@
 !=====================================================================!
-! THE EXPANSION ALONG THE DESIGN.
+! Module that states the expansion along the design.
 !
 ! A jet is the derivatives of a quantity along a coordinate at one
 ! point, to an order: the coefficients of its Taylor expansion there,
@@ -20,48 +20,52 @@
 !              (the state)     (d/dnu)          (d^2/dnu^2)       (d^3/dnu^3)
 !
 ! Every point stores the jet of the unknowns along time, which the
-! families connect; column 0 is the solution, column 1 its
-! derivative along nu at every instant, column 2 the second
-! derivative, and so on. The derivative of a discrete field along nu
-! is the columns from the next on. The multipliers have the same
-! columns: the equations' at every instant, the reactions', the
-! gauges', and the design condition's, whose column m is minus the
-! (m + 1)-th derivative of the objective.
+! families connect. Column 0 is the solution, column 1 its derivative
+! along nu at every instant, column 2 the second derivative, and so
+! on. The derivative of a discrete field along nu is the columns from
+! the next on. The multipliers have the same columns: the equations'
+! at every instant, the reactions', the gauges', and the design
+! condition's, whose column m is minus the (m + 1)-th derivative of
+! the objective.
 !
-! The columns follow from the equations holding at every nu: with
+! The columns follow from the equations holding at every nu. With
 ! F(u(nu), nu) = 0 and A the jacobian of F in u, A u' + dF/dnu = 0
-! gives column 1 by one linear solve with A, A u'' + (terms in u',
-! u) = 0 gives column 2 by one more solve with the same A, and so
-! on; the jet arithmetic of util_derivative_terms evaluates F on the
-! jets of u and nu and returns the jet of F, whose coefficient at
-! order m is the right side of the m-th solve. Nothing is
-! differentiated by hand and nothing is approximated by differences.
+! gives column 1 by one linear solve with A, A u'' + (terms in u', u)
+! = 0 gives column 2 by one more solve with the same A, and so on. The
+! jet arithmetic of util_derivative_terms evaluates F on the jets of u
+! and nu and returns the jet of F, whose coefficient at order m is the
+! right side of the m-th solve. Nothing is differentiated by hand and
+! nothing is approximated by differences.
 !
-! SEVERAL DESIGN COORDINATES. An expansion is along a seed, a vector
-! over the design coordinates: the derivative of each coordinate
-! along the expansion. The expansion along a coordinate has that
+! Several design coordinates. An expansion is along a seed, a vector
+! over the design coordinates: the derivative of each coordinate along
+! the expansion. The expansion along a coordinate has that
 ! coordinate's unit vector as its seed; the expansion along a
 ! direction, the direction. Stated by its order alone, the discrete
 ! image is the expansion along each coordinate; stated with seeds,
 ! along each seed given.
 !
-! THE INSTANTS ALONG AN EXPANSION. An expansion may move the instants
+! The instants along an expansion. An expansion may move the instants
 ! as well: instants(k, e) is the derivative of instant k along the
 ! expansion e, the first and the last zero, the ends of the interval
-! fixed. J does not depend on the instants, so every derivative of
-! J_h along them is minus that of the error J - J_h. The steps move
-! as the differences of their instants, and every coefficient of a
-! family and every weight of its quadrature is a function of the
-! steps, differentiated exactly by the jet arithmetic.
+! fixed. J does not depend on the instants, so every derivative of J_h
+! along them is minus that of the error J - J_h. The steps move as the
+! differences of their instants, and every coefficient of a family and
+! every weight of its quadrature is a function of the steps,
+! differentiated exactly by the jet arithmetic.
 !
-! THE COLUMNS. With m the order and the expansions numbered from one,
+! The columns. With m the order and the expansions numbered from one,
 !
 !      column 0                 the value, of every expansion
 !      column (e - 1) m + o     the derivative of order o, 1 to m,
 !                               along the expansion e
 !
-! so that every quantity of the discrete solution - an unknown, a
-! multiplier, a functional - is its columns, 1 + m times the
+!   column     0       1 ... m          m+1 ... 2m        ...
+!              value   expansion 1,     expansion 2,
+!                      orders 1..m      orders 1..m
+!
+! so that every quantity of the discrete solution, an unknown, a
+! multiplier or a functional, is its columns, 1 + m times the
 ! expansions in number, and the problem without a design is the one
 ! column zero.
 !
@@ -75,32 +79,37 @@ module operation_expansion
   implicit none
 
   private
+
   public :: expansion
 
-  !===================================================================!
-  ! The expansion of an order at the design values, along its seeds:
-  ! one column of `along` per expansion, the derivative of each design
-  ! coordinate along it; `at` the value of each design coordinate and
-  ! `name` its name; `instants(:, e)`, when allocated, the derivative
-  ! of every instant along the expansion e. A manifold without a design
-  ! has the expansion of order zero with no seed, no value and no name.
-  !===================================================================!
+  !-------------------------------------------------------------------!
+  ! Type that models the expansion of an order at the design values,
+  ! along its seeds: one column of `along` per expansion, the
+  ! derivative of each design coordinate along it; `at` the value of
+  ! each design coordinate and `name` its name; `instants(:, e)`, when
+  ! allocated, the derivative of every instant along the expansion e. A
+  ! manifold without a design has the expansion of order zero with no
+  ! seed, no value and no name.
+  !-------------------------------------------------------------------!
 
   type :: expansion
 
-     integer :: order = 0
-     real(dp), allocatable :: along(:,:)
-     real(dp), allocatable :: at(:)
+     integer                       :: order = 0
+     real(dp), allocatable         :: along(:,:)
+     real(dp), allocatable         :: at(:)
      character(len=32), allocatable :: name(:)
-     real(dp), allocatable :: instants(:,:)
+     real(dp), allocatable         :: instants(:,:)
 
    contains
 
+     ! The design and the expansions
      procedure :: num_designs
      procedure :: num_expansions
      procedure :: seed
      procedure :: instant_seed
      procedure :: values
+
+     ! The columns
      procedure :: num_columns
      procedure :: column
 
@@ -116,16 +125,18 @@ module operation_expansion
 contains
 
   !===================================================================!
-  ! THE CONSTRUCTORS: of an order, along each design coordinate when
-  ! no seed is given, along the seeds given otherwise, one per column,
-  ! each a vector over the design coordinates. Invalid input: a
+  ! Creates the expansion of an order, along each design coordinate.
+  !
+  ! The constructors: of an order, along each design coordinate when
+  ! no seed is given, and along the seeds given otherwise, one per
+  ! column, each a vector over the design coordinates. Invalid input: a
   ! negative order, no seed, or a seed that is the zero vector.
   !===================================================================!
 
   function create_expansion(order) result(this)
 
     integer, intent(in) :: order
-    type(expansion) :: this
+    type(expansion)     :: this
 
     character(len=250) :: message
 
@@ -138,21 +149,30 @@ contains
 
   end function create_expansion
 
+  !===================================================================!
+  ! Creates the expansion of an order along one seed
+  !===================================================================!
+
   function create_expansion_along(order, along) result(this)
 
     integer , intent(in) :: order
     real(dp), intent(in) :: along(:)
-    type(expansion) :: this
+    type(expansion)      :: this
 
     this = create_expansion_along_several(order, reshape(along, [size(along), 1]))
 
   end function create_expansion_along
 
+  !===================================================================!
+  ! Creates the expansion of an order along several seeds, one per
+  ! column of along
+  !===================================================================!
+
   function create_expansion_along_several(order, along) result(this)
 
     integer , intent(in) :: order
     real(dp), intent(in) :: along(:,:)
-    type(expansion) :: this
+    type(expansion)      :: this
 
     integer :: e
 
@@ -169,16 +189,19 @@ contains
 
   end function create_expansion_along_several
 
-  ! along the design coordinates and the instants: along(:, e) the
-  ! derivative of each design coordinate along the expansion e, zero
-  ! where it moves the instants alone, instants(:, e) that of each
-  ! instant. Invalid input: arrays of other numbers of expansions, or
-  ! an expansion that moves nothing.
+  !===================================================================!
+  ! Creates the expansion along the design coordinates and the
+  ! instants: along(:, e) the derivative of each design coordinate
+  ! along the expansion e, zero where it moves the instants alone, and
+  ! instants(:, e) that of each instant. Invalid input: arrays of other
+  ! numbers of expansions, or an expansion that moves nothing.
+  !===================================================================!
+
   function create_expansion_with_instants(order, along, instants) result(this)
 
     integer , intent(in) :: order
     real(dp), intent(in) :: along(:,:), instants(:,:)
-    type(expansion) :: this
+    type(expansion)      :: this
 
     integer :: e
 
@@ -198,8 +221,8 @@ contains
   end function create_expansion_with_instants
 
   !===================================================================!
-  ! The design coordinates the expansion is at, and the expansions:
-  ! none of either without a design.
+  ! Returns the number of design coordinates the expansion is at, none
+  ! without a design
   !===================================================================!
 
   pure integer function num_designs(this)
@@ -208,18 +231,25 @@ contains
     if (allocated(this % at)) num_designs = size(this % at)
   end function num_designs
 
+  !===================================================================!
+  ! Returns the number of expansions, none without a seed
+  !===================================================================!
+
   pure integer function num_expansions(this)
     class(expansion), intent(in) :: this
     num_expansions = 0
     if (allocated(this % along)) num_expansions = size(this % along, 2)
   end function num_expansions
 
-  ! the seed of the e-th expansion: the derivative of every design
-  ! coordinate along it
+  !===================================================================!
+  ! Returns the seed of the e-th expansion: the derivative of every
+  ! design coordinate along it
+  !===================================================================!
+
   pure function seed(this, e) result(along)
     class(expansion), intent(in) :: this
     integer         , intent(in) :: e
-    real(dp), allocatable :: along(:)
+    real(dp), allocatable        :: along(:)
     if (.not. allocated(this % along)) then
        allocate(along(1), source=0.0_dp)
        return
@@ -230,13 +260,16 @@ contains
     along = this % along(:, e)
   end function seed
 
-  ! the derivative of each of the num_instants instants along the e-th
-  ! expansion: zero at every instant where the expansion does not move
-  ! them
+  !===================================================================!
+  ! Returns the derivative of each of the num_instants instants along
+  ! the e-th expansion, zero at every instant where the expansion does
+  ! not move them
+  !===================================================================!
+
   pure function instant_seed(this, e, num_instants) result(along)
     class(expansion), intent(in) :: this
     integer         , intent(in) :: e, num_instants
-    real(dp), allocatable :: along(:)
+    real(dp), allocatable        :: along(:)
     allocate(along(num_instants), source=0.0_dp)
     if (.not. allocated(this % instants)) return
     if (e < 1 .or. e > size(this % instants, 2)) then
@@ -245,11 +278,14 @@ contains
     along = this % instants(:, e)
   end function instant_seed
 
-  ! the design vector: the value of every design coordinate, or the
-  ! one value zero without a design, which no expression reads
+  !===================================================================!
+  ! Returns the design vector: the value of every design coordinate,
+  ! or the one value zero without a design, which no expression reads
+  !===================================================================!
+
   pure function values(this) result(v)
     class(expansion), intent(in) :: this
-    real(dp), allocatable :: v(:)
+    real(dp), allocatable        :: v(:)
     if (.not. allocated(this % at)) then
        allocate(v(1), source=0.0_dp)
        return
@@ -258,15 +294,19 @@ contains
   end function values
 
   !===================================================================!
-  ! THE COLUMNS: their number, and the column of the derivative of
-  ! order o along the expansion e - column zero at order zero, the
-  ! value every expansion begins at.
+  ! Returns the number of columns, 1 + the expansions times the order
   !===================================================================!
 
   pure integer function num_columns(this)
     class(expansion), intent(in) :: this
     num_columns = 1 + this % num_expansions() * this % order
   end function num_columns
+
+  !===================================================================!
+  ! Returns the column of the derivative of order o along the
+  ! expansion e: column zero at order zero, the value every expansion
+  ! begins at
+  !===================================================================!
 
   pure integer function column(this, e, o)
     class(expansion), intent(in) :: this

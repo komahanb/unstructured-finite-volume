@@ -1,19 +1,23 @@
 !=====================================================================!
-! The elimination of unit-diagonal rows before a linear solve: a
-! minimizer like every other, stated on the whole system and solving
-! its Schur complement on the unknowns it retains.
+! Module that states the elimination of unit-diagonal rows before a
+! linear solve: a minimizer like every other, stated on the whole
+! system and solving its Schur complement on the unknowns it retains.
 !
 ! The unknowns split into the retained set K and the eliminated set E,
 ! one flag per unknown. The rows eliminated are the tying rows of a
-! derived component - a time derivative read from its family, a
-! spatial derivative read from its fit - each linear with a unit
-! diagonal once divided by it, reading retained unknowns and
-! eliminated unknowns of rows before it: a derivative of the second
-! degree reads the first's, so the eliminated block is unit triangular
-! in some order,
+! derived component (a time derivative read from its family, a spatial
+! derivative read from its fit), each linear with a unit diagonal once
+! divided by it, reading retained unknowns and eliminated unknowns of
+! rows before it: a derivative of the second degree reads the first's,
+! so the eliminated block is unit triangular in some order,
 !
 !      [ J_KK    J_KE  ] [ x_K ]   [ b_K ]
 !      [ J_EK   I + N  ] [ x_E ] = [ b_E ] ,
+!
+!      x_K = q            retained
+!      x_E = v, a         v = D q reads q alone             J_EK
+!                         a = D v reads v and q             N, J_EK
+!                         ordered v, then a: N strictly lower
 !
 ! N strictly triangular in that order. Then x_E is read by one
 ! substitution, x_E = (I + N)^-1 (b_E - J_EK x_K), and the retained
@@ -24,15 +28,15 @@
 ! M assembled row by row in the order, each row the row of J_EK less
 ! the rows it reads. The complement is a stencil from the jacobian's
 ! own triples and is passed to the inner minimizer, which never sees
-! the eliminated rows: its vectors, its blocks and its Krylov basis
-! are over K alone. The solution is the solution of the whole system,
-! so a Newton iteration over it takes the same steps whether or not
-! the rows are eliminated; only the linear solve changes shape.
+! the eliminated rows: its vectors, its blocks and its Krylov basis are
+! over K alone. The solution is the solution of the whole system, so a
+! Newton iteration over it takes the same steps whether or not the
+! rows are eliminated; only the linear solve changes shape.
 !
 ! The tangent must be explicit: the complement is read from triples,
-! and a matrix-free linearisation has none. An eliminated row without
-! a diagonal, or whose reads of eliminated unknowns close a cycle, is
-! not of the form above, and the solve stops there naming it.
+! and a matrix-free linearisation has none. An eliminated row without a
+! diagonal, or whose reads of eliminated unknowns close a cycle, is not
+! of the form above, and the solve stops there naming it.
 !
 ! Every coefficient of M and of the complement is summed over its
 ! dependency paths before a dependant reads it or the inner minimizer
@@ -40,8 +44,8 @@
 ! uncombined products. The entries stored are bounded by max_entries,
 ! the sum of five accounts declared in elimination_storage; a
 ! construction beyond the limit, or beyond the largest count an index
-! array addresses, is refused before its allocation and reported by
-! the solve result SOLVE_STORAGE_EXCEEDED.
+! array addresses, is refused before its allocation and reported by the
+! solve result SOLVE_STORAGE_EXCEEDED.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -49,92 +53,107 @@
 module operation_elimination
 
   use, intrinsic :: ieee_arithmetic, only : ieee_is_finite
-  use iso_fortran_env       , only : int64
-  use util_precision        , only : dp
-  use graph_fractal         , only : graph
-  use view_directed         , only : directed_graph
-  use view_directed_stored  , only : stored_directed_graph
-  use operation_action      , only : operation
-  use operation_minimizer, only : minimizer, state, restrict, saturated_sum
-  use operation_minimizer, only : solve_result, SOLVE_INNER_FAILED, SOLVE_EXHAUSTED, SOLVE_CONTINUE
-  use operation_minimizer, only : SOLVE_STORAGE_EXCEEDED
-  use util_tally            , only : tally
-  use operation_stencil     , only : stencil
-  use field_stored          , only : stored_field
+  use iso_fortran_env     , only : int64
+  use util_precision      , only : dp
+  use graph_fractal       , only : graph
+  use view_directed       , only : directed_graph
+  use view_directed_stored, only : stored_directed_graph
+  use operation_action    , only : operation
+  use operation_minimizer , only : minimizer, state, restrict, saturated_sum
+  use operation_minimizer , only : solve_result, SOLVE_INNER_FAILED, SOLVE_EXHAUSTED, SOLVE_CONTINUE
+  use operation_minimizer , only : SOLVE_STORAGE_EXCEEDED
+  use util_tally          , only : tally
+  use operation_stencil   , only : stencil
+  use field_stored        , only : stored_field
 
   implicit none
 
   private
+
   public :: elimination, elimination_storage
 
-  ! one entry: a coefficient with its column index
+  ! One entry: a coefficient with its column index
   integer, parameter, public :: entry_bytes = (storage_size(1.0_dp) + storage_size(1)) / 8
 
-  !===================================================================!
-  ! The entries an elimination stores, by account, and the limit their
-  ! sum is admitted under. Every count is a number of entries; bytes
-  ! multiply by entry_bytes. The pattern of the complement stencil and
-  ! the minimizer objects themselves are outside these counts.
-  !===================================================================!
+  !-------------------------------------------------------------------!
+  ! Type that models the entries an elimination stores, by account, and
+  ! the limit their sum is admitted under. Every count is a number of
+  ! entries; bytes multiply by entry_bytes. The pattern of the
+  ! complement stencil and the minimizer objects themselves are outside
+  ! these counts.
+  !
+  !   account        stores                          until
+  !   input          nnz(J) triples, J_KK split out  the complement
+  !   substitution   J_KE, J_EK, N, diagonals, M     the last solve
+  !   temporary      positions, the accumulator,     the statement
+  !                  the column permutations
+  !   schur          nnz(S), the complement          the inner takes it
+  !   factorisation  what the inner declares for K   the inner takes it
+  !-------------------------------------------------------------------!
 
   type :: elimination_storage
 
-     ! nnz(J) triples read from the stencil and the retained block
-     ! J_KK split out, released once the complement is formed
+     ! nnz(J) triples read from the stencil and the retained block J_KK
+     ! split out, released once the complement is formed
      integer(int64) :: input = 0_int64
 
      ! J_KE, J_EK, N, the diagonals and M = (I + N)^-1 J_EK, retained
      ! through the solve
      integer(int64) :: substitution = 0_int64
 
-     ! the position of every unknown, one row accumulator over the
-     ! retained columns and two permutations of the complement's
-     ! entries ordering each row's columns, all released after the
-     ! statement; the index permutations grouping the input triples by
-     ! row are proportional to the input account and are not counted
-     ! again
+     ! The position of every unknown, one row accumulator over the
+     ! retained columns and two permutations of the complement's entries
+     ! ordering each row's columns, all released after the statement;
+     ! the index permutations grouping the input triples by row are
+     ! proportional to the input account and are not counted again
      integer(int64) :: temporary = 0_int64
 
      ! nnz(S), the combined complement the inner minimizer is stated on
      integer(int64) :: schur = 0_int64
 
-     ! the entries the inner minimizer declares for the retained unknowns
+     ! The entries the inner minimizer declares for the retained unknowns
      integer(int64) :: factorisation = 0_int64
 
-     ! the limit on the sum, in entries
+     ! The limit on the sum, in entries
      integer(int64) :: limit = int(huge(1), int64)
 
    contains
 
-     procedure :: total => storage_total
-     procedure :: bytes => storage_bytes
+     procedure :: total    => storage_total
+     procedure :: bytes    => storage_bytes
      procedure :: admitted => storage_admitted
 
   end type elimination_storage
 
+  !-------------------------------------------------------------------!
+  ! Type that models the elimination: the flags, the inner minimizer of
+  ! the complement, the storage accounts, and the partition of the
+  ! stated system into its blocks
+  !-------------------------------------------------------------------!
+
   type, extends(minimizer) :: elimination
 
-     ! one flag per unknown of the stated system: true for a row
+     ! One flag per unknown of the stated system: true for a row
      ! eliminated before the inner solve
      logical, allocatable :: eliminated(:)
 
      class(minimizer), allocatable :: inner
 
-     ! the limit on the entries stored, the sum of the five accounts
+     ! The limit on the entries stored, the sum of the five accounts
      integer :: max_entries = huge(1)
 
-     ! the accounts of the last statement, or at its refusal the
+     ! The accounts of the last statement, or at its refusal the
      ! accounts including the increment refused
      type(elimination_storage) :: storage
 
-     ! whether the last statement was refused within its limit
+     ! Whether the last statement was refused within its limit
      logical, private :: storage_exceeded = .false.
 
-     ! the unknowns of each set, in the order the inner reads them
+     ! The unknowns of each set, in the order the inner reads them
      integer, allocatable, private :: retained_at(:), eliminated_at(:)
 
-     ! the coupling blocks as triples in the numbering of each set:
-     ! J_KE by row in K and column in E, J_EK by row in E and column in K
+     ! The coupling blocks as triples in the numbering of each set: J_KE
+     ! by row in K and column in E, J_EK by row in E and column in K
      integer , allocatable, private :: ke_row(:), ke_column(:), ek_row(:), ek_column(:)
      real(dp), allocatable, private :: ke_weight(:), ek_weight(:)
 
@@ -146,26 +165,30 @@ module operation_elimination
 
    contains
 
-     procedure :: name  => elimination_name
-     procedure :: state => elimination_state
-     procedure :: restrict => elimination_restrict
-     procedure :: bind_account => elimination_bind_account
+     procedure :: name            => elimination_name
+     procedure :: state           => elimination_state
+     procedure :: restrict        => elimination_restrict
+     procedure :: bind_account    => elimination_bind_account
      procedure :: storage_entries => elimination_storage_entries
-     procedure :: solve => elimination_solve
+     procedure :: solve           => elimination_solve
 
   end type elimination
 
-  ! an elimination stated by the minimizer of the rows it retains
+  ! An elimination stated by the minimizer of the rows it retains
   interface elimination
      module procedure elimination_of
   end interface elimination
 
 contains
 
+  !===================================================================!
+  ! Returns the name: the elimination, before its inner minimizer
+  !===================================================================!
+
   pure function elimination_name(this) result(name)
 
-    class(elimination), intent(in) :: this
-    character(len=:), allocatable :: name
+    class(elimination), intent(in)  :: this
+    character(len=:)  , allocatable :: name
 
     if (allocated(this % inner)) then
        name = 'elimination before ' // this % inner % name()
@@ -174,6 +197,11 @@ contains
     end if
 
   end function elimination_name
+
+  !===================================================================!
+  ! Returns the sum of the five accounts, saturated at the largest
+  ! int64
+  !===================================================================!
 
   pure integer(int64) function storage_total(this) result(total)
 
@@ -185,6 +213,10 @@ contains
     total = saturated_sum(total, this % factorisation)
 
   end function storage_total
+
+  !===================================================================!
+  ! Returns the total in bytes, saturated at the largest int64
+  !===================================================================!
 
   pure integer(int64) function storage_bytes(this) result(bytes)
 
@@ -200,8 +232,8 @@ contains
   end function storage_bytes
 
   !===================================================================!
-  ! Whether the accounts are within the limit and within the largest
-  ! count a default-integer index array addresses.
+  ! Returns whether the accounts are within the limit and within the
+  ! largest count a default-integer index array addresses
   !===================================================================!
 
   pure logical function storage_admitted(this) result(admitted)
@@ -213,35 +245,41 @@ contains
   end function storage_admitted
 
   !===================================================================!
-  ! State the whole system, split its triples by set, divide the
-  ! eliminated rows by their diagonals, assemble the complement and
-  ! state the inner minimizer on it. Every allocation proportional to
-  ! a count of coefficients follows a check of the accounts against
-  ! the limit; a refused statement stores no partition.
+  ! States the whole system: splits its triples by set, divides the
+  ! eliminated rows by their diagonals, assembles the complement and
+  ! states the inner minimizer on it. Every allocation proportional to
+  ! a count of coefficients follows a check of the accounts against the
+  ! limit; a refused statement stores no partition.
+  !
+  !      J (triples) --split by K, E--> J_KK, J_KE, J_EK, N, diagonals
+  !                  --order E-->       the substitution order
+  !                  --M row by row-->  M = (I + N)^-1 J_EK
+  !                  --S row by row-->  S = J_KK - J_KE M
+  !                  --inner % state--> the inner over K alone
   !===================================================================!
 
   subroutine elimination_state(this, action, context, unknown_domain, num_unknowns, &
        & num_components, coupling, stored_inputs)
 
-    class(elimination)   , intent(inout) :: this
-    class(operation)     , intent(in)    :: action
-    class(directed_graph), intent(in)    :: context
-    type(graph)          , intent(in)    :: unknown_domain
-    integer              , intent(in)    :: num_unknowns
+    class(elimination)   , intent(inout)        :: this
+    class(operation)     , intent(in)           :: action
+    class(directed_graph), intent(in)           :: context
+    type(graph)          , intent(in)           :: unknown_domain
+    integer              , intent(in)           :: num_unknowns
     integer              , intent(in), optional :: num_components
     class(directed_graph), intent(in), optional :: coupling
     type(stored_field)   , intent(in), optional :: stored_inputs(:)
 
-    integer , allocatable :: rows(:), columns(:), position(:), kk_row(:), kk_column(:)
-    integer , allocatable :: first_ek(:), by_row(:), n_row(:), first_m(:), count_m(:), m_column(:)
-    integer , allocatable :: s_row(:), s_column(:), first_s(:)
-    real(dp), allocatable :: weights(:), kk_weight(:), m_weight(:), s_weight(:)
-    type(stencil) :: complement
+    integer , allocatable       :: rows(:), columns(:), position(:), kk_row(:), kk_column(:)
+    integer , allocatable       :: first_ek(:), by_row(:), n_row(:), first_m(:), count_m(:), m_column(:)
+    integer , allocatable       :: s_row(:), s_column(:), first_s(:)
+    real(dp), allocatable       :: weights(:), kk_weight(:), m_weight(:), s_weight(:)
+    type(stencil)               :: complement
     type(stored_directed_graph) :: retained
-    integer(int64) :: stored_substitution
-    integer :: n, nk, ne, e, r, c, i, nkk, nke, nek, nn, m, total, capacity
-    logical :: within
-    character(len=250) :: message
+    integer(int64)              :: stored_substitution
+    integer                     :: n, nk, ne, e, r, c, i, nkk, nke, nek, nn, m, total, capacity
+    logical                     :: within
+    character(len=250)          :: message
 
     call state(this, action, context, unknown_domain, num_unknowns, &
          & num_components, coupling, stored_inputs)
@@ -292,8 +330,8 @@ contains
        error stop trim(message)
     end if
 
-    ! the input triples, the work-space and the inner's requirement
-    ! are known before any of them is allocated
+    ! The input triples, the work-space and the inner's requirement are
+    ! known before any of them is allocated
     this % storage % input         = int(m, int64)
     this % storage % temporary     = int(n, int64) + int(nk, int64)
     this % storage % factorisation = this % inner % storage_entries(nk)
@@ -304,7 +342,7 @@ contains
        call action % entries(rows, columns, weights)
     end select
 
-    ! the position of every unknown within its set
+    ! The position of every unknown within its set
     allocate(position(n))
     nk = 0
     ne = 0
@@ -320,7 +358,7 @@ contains
     this % retained_at   = pack([(i, i = 1, n)], .not. this % eliminated)
     this % eliminated_at = pack([(i, i = 1, n)],       this % eliminated)
 
-    ! the diagonal of every eliminated row, its own scale
+    ! The diagonal of every eliminated row, its own scale
     allocate(this % diagonal(ne), source=0.0_dp)
     do e = 1, m
        if (rows(e) == columns(e) .and. this % eliminated(rows(e))) then
@@ -335,7 +373,7 @@ contains
        error stop trim(message)
     end if
 
-    ! the triples of every block counted before the blocks are stored
+    ! The triples of every block counted before the blocks are stored
     nkk = 0
     nke = 0
     nek = 0
@@ -408,11 +446,11 @@ contains
     this % n_weight = this % n_weight(by_row)
     call by_rows(ne, this % ek_row, by_row, first_ek)
 
-    ! the substitution order: a row after every eliminated row it reads
+    ! The substitution order: a row after every eliminated row it reads
     call ordered(ne, this % first_n, this % n_column, this % order)
 
-    ! M = (I + N)^-1 J_EK row by row in the substitution order, then
-    ! the complement J_KK - J_KE M row by row over K, each within the
+    ! M = (I + N)^-1 J_EK row by row in the substitution order, then the
+    ! complement J_KK - J_KE M row by row over K, each within the
     ! capacity its account admits; a row beyond it is refused with the
     ! account naming the requirement
     stored_substitution = this % storage % substitution
@@ -432,7 +470,7 @@ contains
        return
     end if
 
-    ! each row's columns ascending, by two permutations of the entries
+    ! Each row's columns ascending, by two permutations of the entries
     this % storage % temporary = this % storage % temporary + 2_int64 * int(total, int64)
     if (.not. admitted(this)) return
     call ordered_columns(nk, first_s, s_row, s_column, s_weight)
@@ -446,27 +484,33 @@ contains
   end subroutine elimination_state
 
   !===================================================================!
-  ! M = (I + N)^-1 J_EK row by row in the substitution order: the row
-  ! of J_EK less the rows of M it reads, equal retained columns summed
-  ! before another row reads this one, so storage counts the nonzero
-  ! coefficients of M and not dependency paths. total is the entries
-  ! stored, or where a row exceeds the capacity the requirement
+  ! Returns M = (I + N)^-1 J_EK row by row in the substitution order:
+  ! the row of J_EK less the rows of M it reads, equal retained columns
+  ! summed before another row reads this one, so storage counts the
+  ! nonzero coefficients of M and not dependency paths. total is the
+  ! entries stored, or where a row exceeds the capacity the requirement
   ! refused, within then false.
+  !
+  ! A row is formed in a sparse accumulator over the retained columns:
+  !
+  !      column_row(c) = e        column c already begun in row e
+  !      active_columns(1:k)      the columns begun, in the order met
+  !      row_weight(c)            the running sum of column c
   !===================================================================!
 
   subroutine substitution_rows(this, nk, first_ek, ek_by_row, capacity, first_m, count_m, m_column, m_weight, &
        & total, within)
 
-    class(elimination), intent(in) :: this
-    integer, intent(in) :: nk, first_ek(:), ek_by_row(:), capacity
+    class(elimination)   , intent(in)  :: this
+    integer              , intent(in)  :: nk, first_ek(:), ek_by_row(:), capacity
     integer , allocatable, intent(out) :: first_m(:), count_m(:), m_column(:)
     real(dp), allocatable, intent(out) :: m_weight(:)
-    integer, intent(out) :: total
-    logical, intent(out) :: within
+    integer              , intent(out) :: total
+    logical              , intent(out) :: within
 
     integer , allocatable :: column_row(:), active_columns(:)
     real(dp), allocatable :: row_weight(:)
-    integer :: ne, i, j, k, e, c, num_active_columns, nonzero
+    integer               :: ne, i, j, k, e, c, num_active_columns, nonzero
 
     ne = size(this % order)
     allocate(first_m(ne), count_m(ne))
@@ -486,7 +530,7 @@ contains
              call accumulated(m_column(k), -this % n_weight(j) * m_weight(k))
           end do
        end do
-       ! the coefficients stored are the nonzero ones: counted exactly
+       ! The coefficients stored are the nonzero ones: counted exactly
        ! where the active columns would exceed the capacity
        nonzero = num_active_columns
        if (total + nonzero > capacity) then
@@ -514,7 +558,7 @@ contains
 
   contains
 
-    ! a coefficient of the row being formed: the first of its column
+    ! A coefficient of the row being formed: the first of its column
     ! begins the sum at zero
     subroutine accumulated(column, weight)
       integer , intent(in) :: column
@@ -531,28 +575,30 @@ contains
   end subroutine substitution_rows
 
   !===================================================================!
-  ! The complement row by row over K: J_KK less J_KE M, every retained
-  ! column summed once per row in the order the triples of that row
-  ! arrive - J_KK's, then each J_KE entry's product with its row of M
-  ! - so no uncombined product is formed. first_s(r) is the first
-  ! entry of row r. total is the entries stored, or where a row
+  ! Returns the complement row by row over K: J_KK less J_KE M, every
+  ! retained column summed once per row in the order the triples of
+  ! that row arrive (J_KK's, then each J_KE entry's product with its
+  ! row of M), so no uncombined product is formed. first_s(r) is the
+  ! first entry of row r. total is the entries stored, or where a row
   ! exceeds the capacity the requirement refused, within then false.
+  !
+  !      S(r, :)  =  J_KK(r, :)  -  sum over e of J_KE(r, e) M(e, :)
   !===================================================================!
 
   subroutine complement_rows(this, nk, kk_row, kk_column, kk_weight, first_m, count_m, m_column, m_weight, &
        & capacity, s_row, s_column, s_weight, first_s, total, within)
 
-    class(elimination), intent(in) :: this
-    integer , intent(in) :: nk, kk_row(:), kk_column(:), first_m(:), count_m(:), m_column(:), capacity
-    real(dp), intent(in) :: kk_weight(:), m_weight(:)
+    class(elimination)   , intent(in)  :: this
+    integer              , intent(in)  :: nk, kk_row(:), kk_column(:), first_m(:), count_m(:), m_column(:), capacity
+    real(dp)             , intent(in)  :: kk_weight(:), m_weight(:)
     integer , allocatable, intent(out) :: s_row(:), s_column(:), first_s(:)
     real(dp), allocatable, intent(out) :: s_weight(:)
-    integer, intent(out) :: total
-    logical, intent(out) :: within
+    integer              , intent(out) :: total
+    logical              , intent(out) :: within
 
     integer , allocatable :: kk_by_row(:), first_kk(:), ke_by_row(:), first_ke(:), column_row(:), active_columns(:)
     real(dp), allocatable :: row_weight(:)
-    integer :: r, j, k, e, c, num_active_columns
+    integer               :: r, j, k, e, c, num_active_columns
 
     call by_rows(nk, kk_row, kk_by_row, first_kk)
     call by_rows(nk, this % ke_row, ke_by_row, first_ke)
@@ -592,8 +638,8 @@ contains
 
   contains
 
-    ! a coefficient of the row being formed: the first of its column
-    ! is the sum's first term
+    ! A coefficient of the row being formed: the first of its column is
+    ! the sum's first term
     subroutine combined(column, weight)
       integer , intent(in) :: column
       real(dp), intent(in) :: weight
@@ -610,19 +656,19 @@ contains
   end subroutine complement_rows
 
   !===================================================================!
-  ! The complement's entries in ascending column order within each
+  ! Orders the complement's entries by ascending column within each
   ! row: grouped by column, then that sequence by row, both groupings
-  ! stable, so the triples are in the order of a combined triple list.
+  ! stable, so the triples are in the order of a combined triple list
   !===================================================================!
 
   subroutine ordered_columns(nk, first_s, s_row, s_column, s_weight)
 
-    integer, intent(in) :: nk, first_s(:)
+    integer              , intent(in)    :: nk, first_s(:)
     integer , allocatable, intent(inout) :: s_row(:), s_column(:)
     real(dp), allocatable, intent(inout) :: s_weight(:)
 
     integer, allocatable :: by_column(:), first_column(:), by_row_column(:), next(:)
-    integer :: total, j, e, r
+    integer              :: total, j, e, r
 
     total = first_s(nk + 1) - 1
     call by_rows(nk, s_column(1:total), by_column, first_column)
@@ -642,8 +688,8 @@ contains
   end subroutine ordered_columns
 
   !===================================================================!
-  ! Whether the accounts are admitted; a refusal releases the partial
-  ! partition and records the outcome the solve will report.
+  ! Returns whether the accounts are admitted; a refusal releases the
+  ! partial partition and records the outcome the solve will report
   !===================================================================!
 
   logical function admitted(this)
@@ -654,6 +700,11 @@ contains
     if (.not. admitted) call refused(this)
 
   end function admitted
+
+  !===================================================================!
+  ! Refuses the statement: the partition released and the storage
+  ! exceeded recorded
+  !===================================================================!
 
   subroutine refused(this)
 
@@ -666,8 +717,9 @@ contains
   end subroutine refused
 
   !===================================================================!
-  ! The largest capacity an account may grow to within the limit: the
-  ! limit less every other account, where the account reads entries.
+  ! Returns the largest capacity an account may grow to within the
+  ! limit: the limit less every other account, where the account reads
+  ! entries
   !===================================================================!
 
   pure integer function admissible(this, account) result(capacity)
@@ -683,19 +735,19 @@ contains
   end function admissible
 
   !===================================================================!
-  ! Capacity for required coefficients, doubling within the admissible
-  ! capacity, never below what is required.
+  ! Reserves capacity for the required coefficients, doubling within
+  ! the admissible capacity, never below what is required
   !===================================================================!
 
   subroutine reserve_coefficients(required, admissible_capacity, used, columns, weights)
 
-    integer, intent(in) :: required, admissible_capacity, used
-    integer, allocatable, intent(inout) :: columns(:)
+    integer              , intent(in)    :: required, admissible_capacity, used
+    integer , allocatable, intent(inout) :: columns(:)
     real(dp), allocatable, intent(inout) :: weights(:)
 
-    integer, allocatable :: larger_columns(:)
+    integer , allocatable :: larger_columns(:)
     real(dp), allocatable :: larger_weights(:)
-    integer :: capacity
+    integer               :: capacity
 
     capacity = size(columns)
     if (required <= capacity) return
@@ -713,10 +765,14 @@ contains
 
   end subroutine reserve_coefficients
 
-  ! the row indices at the capacity of the columns beside them
+  !===================================================================!
+  ! Reserves the row indices at the capacity of the columns beside
+  ! them
+  !===================================================================!
+
   subroutine reserve_rows(capacity, used, rows)
 
-    integer, intent(in) :: capacity, used
+    integer             , intent(in)    :: capacity, used
     integer, allocatable, intent(inout) :: rows(:)
 
     integer, allocatable :: larger(:)
@@ -729,8 +785,9 @@ contains
   end subroutine reserve_rows
 
   !===================================================================!
-  ! The entries the last statement stored, its complement's included:
-  ! an enclosing minimizer reads the accounts of the statement made.
+  ! Returns the entries the last statement stored, its complement's
+  ! included: an enclosing minimizer reads the accounts of the
+  ! statement made
   !===================================================================!
 
   pure integer(int64) function elimination_storage_entries(this, num_unknowns) result(entries)
@@ -744,12 +801,17 @@ contains
   end function elimination_storage_entries
 
   !===================================================================!
-  ! The flags of the selected unknowns, in the selection's order. The
-  ! inner minimizer is over the retained set K of the whole; the
-  ! selection induced on it is the position in K of every retained
-  ! selected unknown, in the selection's order. The partition of the
-  ! whole is invalid on the selection and is released. Invalid input:
-  ! a selection retaining no unknown, or one beyond the stated flags.
+  ! Restricts the elimination: the flags of the selected unknowns, in
+  ! the selection's order. The inner minimizer is over the retained set
+  ! K of the whole; the selection induced on it is the position in K of
+  ! every retained selected unknown, in the selection's order. The
+  ! partition of the whole is invalid on the selection and is released.
+  ! Invalid input: a selection retaining no unknown, or one beyond the
+  ! stated flags.
+  !
+  !      eliminated          F  T  F  F  T  F
+  !      retained_position   1  1  2  3  3  4
+  !      selected 3 5 6  ->  inner restricted to 2 4
   !===================================================================!
 
   subroutine elimination_restrict(this, selected)
@@ -758,8 +820,8 @@ contains
     integer           , intent(in)    :: selected(:)
 
     integer, allocatable :: retained_position(:), retained_of_selection(:)
-    integer :: i, n
-    character(len=250) :: message
+    integer              :: i, n
+    character(len=250)   :: message
 
     call restrict(this, selected)
     call clear_partition(this)
@@ -795,7 +857,7 @@ contains
   end subroutine elimination_restrict
 
   !===================================================================!
-  ! The stored partition released before a statement is read again.
+  ! Releases the stored partition before a statement is read again
   !===================================================================!
 
   subroutine clear_partition(this)
@@ -804,27 +866,27 @@ contains
 
     if (allocated(this % retained_at))   deallocate(this % retained_at)
     if (allocated(this % eliminated_at)) deallocate(this % eliminated_at)
-    if (allocated(this % ke_row))    deallocate(this % ke_row, this % ke_column, this % ke_weight)
-    if (allocated(this % ek_row))    deallocate(this % ek_row, this % ek_column, this % ek_weight)
-    if (allocated(this % first_n))   deallocate(this % first_n)
-    if (allocated(this % n_column))  deallocate(this % n_column, this % n_weight)
-    if (allocated(this % order))     deallocate(this % order)
-    if (allocated(this % diagonal))  deallocate(this % diagonal)
+    if (allocated(this % ke_row))        deallocate(this % ke_row, this % ke_column, this % ke_weight)
+    if (allocated(this % ek_row))        deallocate(this % ek_row, this % ek_column, this % ek_weight)
+    if (allocated(this % first_n))       deallocate(this % first_n)
+    if (allocated(this % n_column))      deallocate(this % n_column, this % n_weight)
+    if (allocated(this % order))         deallocate(this % order)
+    if (allocated(this % diagonal))      deallocate(this % diagonal)
 
   end subroutine clear_partition
 
   !===================================================================!
-  ! The permutation gathering triples by row, and the first triple of
-  ! every row, first(nrows + 1) one past the last.
+  ! Returns the permutation gathering triples by row, and the first
+  ! triple of every row, first(nrows + 1) one past the last
   !===================================================================!
 
   pure subroutine by_rows(nrows, row, by_row, first)
 
-    integer, intent(in) :: nrows, row(:)
+    integer             , intent(in)  :: nrows, row(:)
     integer, allocatable, intent(out) :: by_row(:), first(:)
 
     integer, allocatable :: next(:)
-    integer :: e, i
+    integer              :: e, i
 
     allocate(first(nrows + 1), by_row(size(row)))
     first = 0
@@ -844,24 +906,27 @@ contains
   end subroutine by_rows
 
   !===================================================================!
-  ! An order of the eliminated rows with every row after the rows it
-  ! reads: rows reading none first, each row released once all it
-  ! reads are ordered. A cycle leaves rows unordered, and is refused.
+  ! Returns an order of the eliminated rows with every row after the
+  ! rows it reads: rows reading none first, each row released once all
+  ! it reads are ordered. A cycle leaves rows unordered, and is refused.
+  !
+  !      pending(e)     the rows e reads that are not yet ordered
+  !      order          a queue: each row placed releases its readers
   !===================================================================!
 
   pure subroutine ordered(ne, first_n, n_column, order)
 
-    integer, intent(in) :: ne, first_n(:), n_column(:)
+    integer             , intent(in)  :: ne, first_n(:), n_column(:)
     integer, allocatable, intent(out) :: order(:)
 
     integer, allocatable :: pending(:), readers_first(:), readers(:), reads(:)
-    integer :: e, j, placed, at, c
+    integer              :: e, j, placed, at, c
 
     allocate(order(ne), pending(ne), reads(size(n_column)))
     do e = 1, ne
        pending(e) = first_n(e + 1) - first_n(e)
     end do
-    ! the readers of every eliminated row, by the row read
+    ! The readers of every eliminated row, by the row read
     do e = 1, ne
        reads(first_n(e):first_n(e + 1) - 1) = e
     end do
@@ -894,7 +959,8 @@ contains
   end subroutine ordered
 
   !===================================================================!
-  ! y <- (I + N)^-1 y by substitution in the stored order.
+  ! Substitutes y <- (I + N)^-1 y in the stored order: each row less
+  ! the rows before it it reads, already substituted
   !===================================================================!
 
   pure subroutine substituted(this, y)
@@ -914,9 +980,16 @@ contains
   end subroutine substituted
 
   !===================================================================!
-  ! Solve the complement for the retained unknowns, then read the
-  ! eliminated ones from their rows. The residual reported is that of
-  ! the whole system.
+  ! Solves: the complement for the retained unknowns, then the
+  ! eliminated ones read from their rows. The residual reported is that
+  ! of the whole system.
+  !
+  !      z_E = (I + N)^-1 b_E / d                  the eliminated rows alone
+  !      S x_K = b_K - J_KE z_E                    the inner minimizer
+  !      x_E = (I + N)^-1 (b_E / d - J_EK x_K)     the eliminated rows read
+  !
+  ! then up to three refinements x <- x + A^-1 r while the residual
+  ! falls.
   !===================================================================!
 
   subroutine elimination_solve(this, rhs, x, achieved)
@@ -927,11 +1000,11 @@ contains
     real(dp)          , intent(out)   :: achieved
 
     real(dp), allocatable :: rhs_retained(:), x_retained(:), x_eliminated(:), r(:), correction(:), refined(:)
-    real(dp) :: inner_achieved
-    integer :: e, refinement
-    logical :: failed
-    type(solve_result) :: outcome, own
-    character(len=250) :: message
+    real(dp)              :: inner_achieved
+    integer               :: e, refinement
+    logical               :: failed
+    type(solve_result)    :: outcome, own
+    character(len=250)    :: message
 
     if (size(x) /= size(rhs)) then
        write(message,'(a,i0,a,i0)') 'elimination: the solution must have the same size as rhs; &
@@ -949,15 +1022,15 @@ contains
     achieved = this % norm(r)
     call this % record_residual_norm(achieved)
 
-    ! a statement refused within its storage limit stored no
-    ! partition: the unknowns are unchanged and the refusal reported
+    ! A statement refused within its storage limit stored no partition:
+    ! the unknowns are unchanged and the refusal reported
     if (this % storage_exceeded) then
        call this % record_result(achieved, 0, SOLVE_STORAGE_EXCEEDED)
        return
     end if
 
-    ! a singular or overflowing inner solve yields no step; its report
-    ! is passed on as the residual
+    ! A singular or overflowing inner solve yields no step; its report is
+    ! passed on as the residual
     call by_complement(rhs, x, failed)
     if (failed) then
        call this % record_result(achieved, outcome % iterations, SOLVE_INNER_FAILED)
@@ -966,7 +1039,7 @@ contains
     call this % imbalance(rhs, x, r)
     achieved = this % norm(r)
 
-    ! ITERATIVE REFINEMENT: a residual above the tolerance is corrected
+    ! Iterative refinement: a residual above the tolerance is corrected
     ! by the same factors, x + A^-1 r, while it falls, three times at
     ! most; at 49 points of a beam's span the single pass met 1e-6 to
     ! 2e-8 of the residual it began at
@@ -992,9 +1065,9 @@ contains
   contains
 
     ! y solving the whole system for b by the complement: the eliminated
-    ! rows divided by their diagonals, b_K - J_KE (I + N)^-1 b_E solved
-    ! by the inner minimizer from y_K, and y_E = (I + N)^-1 (b_E - J_EK
-    ! y_K); failed where the inner solve is singular or overflows
+    ! rows divided by their diagonals, b_K - J_KE (I + N)^-1 b_E solved by
+    ! the inner minimizer from y_K, and y_E = (I + N)^-1 (b_E - J_EK y_K);
+    ! failed where the inner solve is singular or overflows
     subroutine by_complement(b, y, failed)
       real(dp), intent(in)    :: b(:)
       real(dp), intent(inout) :: y(:)
@@ -1025,13 +1098,13 @@ contains
   end subroutine elimination_solve
 
   !===================================================================!
-  ! Bind the account of this minimizer and of its children.
+  ! Binds the account of this minimizer and of its children
   !===================================================================!
 
   subroutine elimination_bind_account(this, account)
 
-    class(elimination), intent(inout) :: this
-    type(tally), pointer, intent(in) :: account
+    class(elimination)  , intent(inout) :: this
+    type(tally), pointer, intent(in)    :: account
 
     this % account => account
     if (allocated(this % inner)) call this % inner % bind_account(account)
@@ -1039,14 +1112,14 @@ contains
   end subroutine elimination_bind_account
 
   !===================================================================!
-  ! AN ELIMINATION STATED by the minimizer of its complement; the rows
-  ! it eliminates are those of the system it is paired with
-  ! (operation_minimization).
+  ! Creates an elimination stated by the minimizer of its complement;
+  ! the rows it eliminates are those of the system it is paired with
+  ! (operation_minimization)
   !===================================================================!
 
   function elimination_of(inner) result(this)
     class(minimizer), intent(in) :: inner
-    type(elimination) :: this
+    type(elimination)            :: this
     allocate(this % inner, source=inner)
   end function elimination_of
 

@@ -1,37 +1,45 @@
 !=====================================================================!
-! LEVEL VIEW
-!
-! One view of a graph, in which the two branches are interpreted as
-! one level of a nested hierarchy:
+! Module that states the level view: one view of a graph, in which the
+! two branches are read as one level of a nested hierarchy,
 !
 !     branch(1) = the members of this level, as a sequence
-!     branch(2) = the coupling among them, as a relational pair
+!     branch(2) = the coupling among them, as a relational node
+!
+!                           level g
+!                     +--------+---------+
+!                 branch(1)          branch(2)
+!                     |                  |
+!          m1 -> m2 -> m3 -> NULL     coupling c
+!          members, each a level     +----+--------+
+!          read the same way      carriers     relations
 !
 ! A member is itself a graph read under this same view, so the
-! hierarchy is the branch recursion and no level introduces a new
-! kind of object. The three views divide as follows: this one
-! names the two branches, view_sequence traverses branch(1), and
-! view_relational reads branch(2) as its carriers and its relations.
+! hierarchy is the branch recursion and no level introduces a new kind
+! of object. The three views divide as follows: this one names the two
+! branches, view_sequence traverses branch(1), and view_relational
+! reads branch(2) as its carriers and its relations.
 !
-!                        WHERE A LEVEL ENDS
-!
-! A leaf uses no branch(1): its members are values rather than
-! graphs, and their extent is stored as a counted set representation.
-! That boundary keeps a domain of N freedoms at O(1) semantic
-! objects instead of N.
+! Where a level ends. A leaf uses no branch(1): its members are values
+! rather than graphs, and their extent is stored as a counted set
+! representation. That boundary keeps a domain of N freedoms at O(1)
+! semantic objects instead of N.
 !
 ! A leaf may still have branch(2). A component of an ordinary
 ! differential equation has no coupling and leaves it NULL; the same
 ! component of a field problem stores the spatial coupling there.
 !
-!                       THE ONE CONSISTENCY CHECK
+! The one consistency check. A coupling's carriers are graphs: this
+! level's members first, in the order of the member list, and after
+! them the constraint instances the relations map into. So the member
+! list must be a prefix of the carrier list, compared by identity:
 !
-! A coupling's carriers are graphs: this level's members first, in
-! the order of the member list, and after them the constraint
-! instances the relations map into. So the member list must be a
-! prefix of the carrier list, compared by identity. Equal counts
-! are not that claim, and two levels whose members were built
-! separately are indistinguishable by count. level_consistent is
+!      members     m1 -> m2 -> m3
+!      carriers    m1 -> m2 -> m3 -> k1 -> k2 -> NULL
+!                  \____________/
+!                   same graphs, same order
+!
+! Equal counts are not that claim, and two levels whose members were
+! built separately are indistinguishable by count. level_consistent is
 ! what rejects a coupling that belongs to another level.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
@@ -39,47 +47,47 @@
 
 module view_level
 
-  use graph_fractal , only : graph, branch, BRANCH_NULL, BRANCH_KNOWN, &
+  use graph_fractal       , only : graph, branch, BRANCH_NULL, BRANCH_KNOWN, &
        & known_branch, null_branch
-  use view_sequence , only : sequence_num_elements, sequence_element, &
+  use view_sequence       , only : sequence_num_elements, sequence_element, &
        & sequence_empty, sequence_first, sequence_rest
   use util_counted_storage, only : counted_storage, counted_reference
 
   implicit none
 
   private
+
   public :: level_is_leaf, level_num_members, level_member, level_members
   public :: level_couples, level_coupling, level_consistent
   public :: level_storage
 
-  !===================================================================!
-  ! THE OWNERS OF A HIERARCHY
+  !-------------------------------------------------------------------!
+  ! Type that models one node of a hierarchy, by pointer. Each node is
+  ! allocated separately and referenced by pointer, never stored as an
+  ! element of the array: the array grows by move_alloc and its
+  ! elements move, while separately allocated targets do not.
   !
-  ! Branch references do not own their targets, so every graph a
-  ! hierarchy is built from - the level nodes and the list cells
-  ! alike - has to outlive the branches pointing at it. One cell
-  ! owns them all, and a level is addressed by its index in it.
+  !      nodes(:)   [ p1 | p2 | p3 | ... | p_filled | . . . ]   doubles
+  !                   |    |    |                                when full
+  !                   v    v    v
+  !                  g1   g2   g3      growth moves the pointers,
+  !                                    never the graphs they reference
   !
-  ! Each node is allocated separately and referenced by pointer, never as
-  ! an element of the array: the array grows by move_alloc and its
-  ! elements move, while separately allocated targets do not. That is
-  ! the same arrangement relational_binding uses, and for the same
-  ! measured reason.
-  !
-  ! A storage value is a counted reference to the cell
-  ! (util_counted_storage). Assignment binds one more owner of the
-  ! same nodes; the last owner's finalization deallocates them. A
-  ! cell with more than one owner is immutable: extension is refused,
-  ! so every owner reads the hierarchy it was bound to. A copy made
-  ! without defined assignment (allocate with source=, a structure
-  ! constructor, polymorphic assignment) is not an owner: the first
-  ! of the two to be finalized releases the binding and the other is
-  ! refused at its next access, never read from released storage.
-  !===================================================================!
+  ! That is the same arrangement relational_binding uses, and for the
+  ! same measured reason.
+  !-------------------------------------------------------------------!
 
   type :: node_pointer
      type(graph), pointer :: node => null()
   end type node_pointer
+
+  !-------------------------------------------------------------------!
+  ! Type that models the cell that owns a hierarchy. Branch references
+  ! do not own their targets, so every graph a hierarchy is built from,
+  ! the level nodes and the list cells alike, has to outlive the
+  ! branches pointing at it. One cell owns them all, and a level is
+  ! addressed by its index in it.
+  !-------------------------------------------------------------------!
 
   type, extends(counted_storage) :: level_nodes
 
@@ -92,16 +100,32 @@ module view_level
 
   end type level_nodes
 
+  !-------------------------------------------------------------------!
+  ! Type that models the storage of a hierarchy: a counted reference
+  ! to the cell (util_counted_storage). Assignment binds one more owner
+  ! of the same nodes; the last owner's finalization deallocates them.
+  ! A cell with more than one owner is immutable: extension is refused,
+  ! so every owner reads the hierarchy it was bound to.
+  !
+  ! A copy made without defined assignment (allocate with source=, a
+  ! structure constructor, polymorphic assignment) is not an owner: the
+  ! first of the two to be finalized releases the binding and the other
+  ! is refused at its next access, never read from released storage.
+  !-------------------------------------------------------------------!
+
   type :: level_storage
 
      type(counted_reference), private :: reference
 
    contains
 
+     ! The nodes and their owners
      procedure :: allocate_node
      procedure :: node
      procedure :: num_nodes
      procedure :: num_owners
+
+     ! The lists, levels and couplings built from them
      procedure :: member_list
      procedure :: assemble
      procedure :: couple
@@ -114,8 +138,9 @@ module view_level
 contains
 
   !===================================================================!
-  ! A level is a leaf when it uses no branch(1). Its members are
-  ! then values stored in a map rather than graphs in a list.
+  ! Returns whether a level is a leaf: whether it uses no branch(1).
+  ! Its members are then values stored in a map rather than graphs in
+  ! a list.
   !===================================================================!
 
   logical function level_is_leaf(g) result(leaf)
@@ -127,10 +152,10 @@ contains
   end function level_is_leaf
 
   !===================================================================!
-  ! How many members this level contains. A leaf contains none. A branch(1)
-  ! that reaches UNKNOWN stops the program inside view_sequence,
-  ! because the count is not determined and reporting zero would be
-  ! indistinguishable from a leaf.
+  ! Returns how many members this level contains. A leaf contains none.
+  ! A branch(1) that reaches UNKNOWN stops the program inside
+  ! view_sequence, because the count is not determined and reporting
+  ! zero would be indistinguishable from a leaf.
   !===================================================================!
 
   integer function level_num_members(g) result(n)
@@ -147,9 +172,9 @@ contains
   end function level_num_members
 
   !===================================================================!
-  ! Member k of this level, in the order of the member list. A leaf
-  ! stops the program: it has no members to index. An index outside
-  ! the list is rejected by view_sequence.
+  ! Returns member k of this level, in the order of the member list. A
+  ! leaf stops the program: it has no members to index. An index
+  ! outside the list is rejected by view_sequence.
   !===================================================================!
 
   function level_member(g, k) result(member)
@@ -171,9 +196,9 @@ contains
   end function level_member
 
   !===================================================================!
-  ! The members as a sequence, for a traversal that reaches them once
-  ! through sequence_first and sequence_rest. A leaf's sequence is
-  ! empty.
+  ! Returns the members as a sequence, for a traversal that reaches
+  ! them once through sequence_first and sequence_rest. A leaf's
+  ! sequence is empty.
   !===================================================================!
 
   function level_members(g) result(members)
@@ -186,9 +211,9 @@ contains
   end function level_members
 
   !===================================================================!
-  ! Whether a coupling is present. A level whose members do not read
-  ! one another leaves branch(2) NULL, which is a different statement
-  ! from a coupling that has not yet been built.
+  ! Returns whether a coupling is present. A level whose members do
+  ! not read one another leaves branch(2) NULL, which is a different
+  ! statement from a coupling that has not yet been built.
   !===================================================================!
 
   logical function level_couples(g) result(couples)
@@ -200,8 +225,8 @@ contains
   end function level_couples
 
   !===================================================================!
-  ! The coupling of this level. Reading one that is absent stops
-  ! the program, because a caller that gathers along edges cannot
+  ! Returns the coupling of this level. Reading one that is absent
+  ! stops the program, because a caller that gathers along edges cannot
   ! proceed on a disassociated reference.
   !===================================================================!
 
@@ -219,10 +244,10 @@ contains
   end function level_coupling
 
   !===================================================================!
-  ! Whether a sequence begins with another, by identity: an empty
-  ! prefix is a prefix of anything; a nonempty prefix needs a first
-  ! element that is the same graph and a rest that is again a prefix.
-  ! A carrier list that ends first is a disagreement, not an
+  ! Returns whether a sequence begins with another, by identity. An
+  ! empty prefix is a prefix of anything; a nonempty prefix needs a
+  ! first element that is the same graph and a rest that is again a
+  ! prefix. A carrier list that ends first is a disagreement, not an
   ! error.
   !===================================================================!
 
@@ -251,9 +276,9 @@ contains
   end function begins_with
 
   !===================================================================!
-  ! Whether the coupling's carriers begin with this level's members,
-  ! compared by identity. A level with no coupling is consistent,
-  ! there being nothing to disagree with.
+  ! Returns whether the coupling's carriers begin with this level's
+  ! members, compared by identity. A level with no coupling is
+  ! consistent, there being nothing to disagree with.
   !===================================================================!
 
   logical function level_consistent(g) result(agrees)
@@ -271,17 +296,16 @@ contains
   end function level_consistent
 
   !===================================================================!
-  ! The cell this storage is bound to. A storage that was bound and
-  ! whose binding is no longer live stops the program: its nodes were
-  ! deallocated by the last owner, or this value is a bitwise copy
-  ! whose twin released the binding. A storage never bound has no
-  ! cell.
+  ! Returns the cell this storage is bound to. A storage that was bound
+  ! and whose binding is no longer live stops the program: its nodes
+  ! were deallocated by the last owner, or this value is a bitwise copy
+  ! whose twin released the binding. A storage never bound has no cell.
   !===================================================================!
 
   function cell(this) result(nodes)
 
     class(level_storage), intent(in) :: this
-    type(level_nodes), pointer :: nodes
+    type(level_nodes)   , pointer    :: nodes
 
     class(counted_storage), pointer :: storage
 
@@ -299,21 +323,22 @@ contains
   end function cell
 
   !===================================================================!
-  ! A new graph, allocated separately, identity assigned, owned by
-  ! this storage. Every other procedure here refers to the graph by
-  ! the index returned. The first node binds this storage to a cell
-  ! of its own. A hierarchy with more than one owner is immutable:
-  ! extending it stops the program.
+  ! Creates a new graph, allocated separately, its identity assigned,
+  ! owned by this storage, and returns its index. Every other procedure
+  ! here refers to the graph by that index. The first node binds this
+  ! storage to a cell of its own, eight nodes wide, doubled whenever it
+  ! fills. A hierarchy with more than one owner is immutable: extending
+  ! it stops the program.
   !===================================================================!
 
   integer function allocate_node(this) result(at)
 
     class(level_storage), intent(inout) :: this
 
-    type(level_nodes) :: template
-    type(level_nodes), pointer :: nodes
+    type(level_nodes)               :: template
+    type(level_nodes) , pointer     :: nodes
     type(node_pointer), allocatable :: expanded_nodes(:)
-    character(len=100) :: message
+    character(len=100)              :: message
 
     if (this % reference % num_owners() > 1) then
        write(message,'(a,i0)') 'view_level: allocate_node requires a hierarchy with a sole owner; &
@@ -340,19 +365,20 @@ contains
   end function allocate_node
 
   !===================================================================!
-  ! The graph an index names. An index outside 1 .. num_nodes stops
-  ! the program: a branch built on a disassociated reference would
-  ! break the kernel's iff between status and association.
+  ! Returns the graph an index names. An index outside 1 .. num_nodes
+  ! stops the program: a branch built on a disassociated reference
+  ! would break the kernel's equivalence between status and
+  ! association.
   !===================================================================!
 
   function node(this, at) result(g)
 
     class(level_storage), intent(in) :: this
     integer             , intent(in) :: at
-    type(graph), pointer :: g
+    type(graph)         , pointer    :: g
 
     type(level_nodes), pointer :: nodes
-    character(len=100) :: message
+    character(len=100)         :: message
 
     nodes => this % cell()
     if (.not. associated(nodes)) then
@@ -372,7 +398,11 @@ contains
 
   end function node
 
-  ! Zero for a storage without a hierarchy.
+  !===================================================================!
+  ! Returns the number of nodes; zero for a storage without a
+  ! hierarchy
+  !===================================================================!
+
   integer function num_nodes(this)
 
     class(level_storage), intent(in) :: this
@@ -385,8 +415,11 @@ contains
 
   end function num_nodes
 
-  ! The number of storage values bound to this hierarchy; zero for a
-  ! storage without one.
+  !===================================================================!
+  ! Returns the number of storage values bound to this hierarchy; zero
+  ! for a storage without one
+  !===================================================================!
+
   pure integer function num_owners(this)
 
     class(level_storage), intent(in) :: this
@@ -396,12 +429,20 @@ contains
   end function num_owners
 
   !===================================================================!
-  ! A list over the given members: no members is the empty list,
-  ! otherwise a cell storing the first member followed by the list
-  ! over the rest. The rest is built before the cell that points at
-  ! it, so every target of a KNOWN branch exists when it is named.
-  ! The result is the index of the head cell, or zero for the empty list,
-  ! which is what a leaf's branch(1) is built from.
+  ! Creates a list over the given members and returns the index of its
+  ! head cell. No members is the empty list, index zero, which is what
+  ! a leaf's branch(1) is built from. Otherwise a cell stores the first
+  ! member in branch(1) and the list over the rest in branch(2):
+  !
+  !      head
+  !      [cell] -branch(2)-> [cell] -branch(2)-> [cell] -branch(2)-> NULL
+  !        |                   |                   |
+  !     branch(1)           branch(1)           branch(1)
+  !        v                   v                   v
+  !       m1                  m2                  m3
+  !
+  ! The rest is built before the cell that points at it, so every
+  ! target of a KNOWN branch exists when it is named.
   !===================================================================!
 
   recursive integer function member_list(this, members) result(head)
@@ -410,7 +451,7 @@ contains
     integer             , intent(in)    :: members(:)
 
     type(graph), pointer :: g
-    integer :: tail
+    integer              :: tail
 
     if (size(members) == 0) then
        head = 0
@@ -427,8 +468,8 @@ contains
   end function member_list
 
   !===================================================================!
-  ! The branch that references the node at an index: NULL for index
-  ! zero, KNOWN -> node otherwise.
+  ! Returns the branch that references the node at an index: NULL for
+  ! index zero, KNOWN -> node otherwise
   !===================================================================!
 
   function branch_to(this, at) result(b)
@@ -449,12 +490,12 @@ contains
   end function branch_to
 
   !===================================================================!
-  ! One level: its members as a list in branch(1), its coupling in
-  ! branch(2). A coupling index of zero leaves branch(2) NULL, which
-  ! is the level whose members do not read one another. A coupling
-  ! whose carriers do not begin with this level's members, by
-  ! identity, stops the program - the two are indistinguishable by
-  ! count.
+  ! Creates one level, its members as a list in branch(1) and its
+  ! coupling in branch(2), and returns its index. A coupling index of
+  ! zero leaves branch(2) NULL, which is the level whose members do
+  ! not read one another. A coupling whose carriers do not begin with
+  ! this level's members, by identity, stops the program: the two are
+  ! indistinguishable by count.
   !===================================================================!
 
   integer function assemble(this, members, coupling) result(at)
@@ -464,7 +505,7 @@ contains
     integer             , intent(in)    :: coupling
 
     type(graph), pointer :: g
-    integer :: head
+    integer              :: head
 
     head = this % member_list(members)
     at   = this % allocate_node()
@@ -481,13 +522,18 @@ contains
   end function assemble
 
   !===================================================================!
-  ! A relational node: its carriers as a list in branch(1), its
-  ! relations as a list in branch(2). Both branches are lists,
-  ! which is what separates this node from a level, whose branch(2)
-  ! stores one coupling graph and whose carriers are checked against
-  ! its members. Nothing is checked here: the agreement between a
-  ! coupling and its level is checked by that level, and the agreement
-  ! between the coupling and its relations is checked by relational_valid.
+  ! Creates a relational node, its carriers as a list in branch(1) and
+  ! its relations as a list in branch(2), and returns its index.
+  !
+  !      level      branch(1) = member list    branch(2) = one coupling
+  !      coupling   branch(1) = carrier list   branch(2) = relation list
+  !
+  ! Both branches are lists, which is what separates this node from a
+  ! level, whose branch(2) stores one coupling graph and whose carriers
+  ! are checked against its members. Nothing is checked here: the
+  ! agreement between a coupling and its level is checked by that
+  ! level, and the agreement between the coupling and its relations is
+  ! checked by relational_valid.
   !===================================================================!
 
   integer function couple(this, carriers, relations) result(at)
@@ -496,7 +542,7 @@ contains
     integer             , intent(in)    :: carriers(:), relations(:)
 
     type(graph), pointer :: g
-    integer :: carrier_head, relation_head
+    integer              :: carrier_head, relation_head
 
     carrier_head  = this % member_list(carriers)
     relation_head = this % member_list(relations)
@@ -509,7 +555,7 @@ contains
   end function couple
 
   !===================================================================!
-  ! Release every node of a cell, when its last owner is finalized.
+  ! Releases every node of a cell, when its last owner is finalized
   !===================================================================!
 
   subroutine release_nodes(this)

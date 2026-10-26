@@ -1,6 +1,6 @@
 !=====================================================================!
-! THE VALUE CHANGE: a reversible_change that updates a value_map
-! through the change controller.
+! Module that states the value change: a reversible_change that
+! updates a value_map through the change controller,
 !
 !      apply    save the row's prior state, then store the new
 !               values (attaching first when no row exists)
@@ -10,12 +10,21 @@
 !               is removed, an UNKNOWN row is set back to UNKNOWN,
 !               a KNOWN row receives its old values
 !
-! The change owns the rollback record; the map owns identity,
-! status, and storage; the protocol owns the lifecycle. The change
-! modifies values and never structure.
+!   bind --> apply --> check --> commit
+!                        |
+!                        +-----> revert
 !
-! Bound state is copied at bind - the element with its identity,
-! the new values in full - so mutating the caller's array after
+!   the row before apply         after revert
+!   none                         none
+!   UNKNOWN                      UNKNOWN
+!   KNOWN, its old values        KNOWN, its old values
+!
+! The change owns the rollback record; the map owns identity, status
+! and storage; the protocol owns the lifecycle. The change modifies
+! values and never structure.
+!
+! The bound state is copied at bind, the element with its identity
+! and the new values in full, so changing the caller's array after
 ! binding changes nothing. Only the map is referenced by pointer,
 ! because the map is the object being changed.
 !
@@ -24,22 +33,23 @@
 
 module map_value_change
 
-  use util_precision  , only : dp
-  use graph_fractal        , only : graph
-  use map_value      , only : value_map, &
+  use util_precision     , only : dp
+  use graph_fractal      , only : graph
+  use map_value          , only : value_map, &
        & VALUE_UNATTACHED, VALUE_UNKNOWN, VALUE_KNOWN
   use map_change_protocol, only : reversible_change, change_record
 
   implicit none
 
   private
+
   public :: value_change
 
-  !===================================================================!
-  ! One bound update: the map (by pointer), the graph (copied with
-  ! its identity), the new values (copied at bind), and the saved
-  ! prior state that revert restores.
-  !===================================================================!
+  !-------------------------------------------------------------------!
+  ! Type that models one bound update: the map (by pointer), the graph
+  ! (copied with its identity), the new values (copied at bind), and
+  ! the saved prior state that revert restores
+  !-------------------------------------------------------------------!
 
   type, extends(reversible_change) :: value_change
 
@@ -49,11 +59,12 @@ module map_value_change
 
      logical :: check_passes = .true.
 
-     integer :: old_status = VALUE_UNATTACHED
+     integer               :: old_status = VALUE_UNATTACHED
      real(dp), allocatable :: old_values(:)
 
    contains
 
+     ! The lifecycle
      procedure :: bind
      procedure :: apply
      procedure :: check
@@ -65,19 +76,18 @@ module map_value_change
 contains
 
   !===================================================================!
-  ! Bind one update: point at the map, copy the element and the
-  ! new values, take the check result (true unless the caller
-  ! passes otherwise), and clear any saved state from an earlier
-  ! use.
+  ! Binds one update: points at the map, copies the element and the
+  ! new values, takes the check result (true unless the caller passes
+  ! otherwise), and clears any saved state from an earlier use
   !===================================================================!
 
   subroutine bind(this, values, element, new_values, check_passes)
 
-    class(value_change)     , intent(inout) :: this
-    type(value_map) , target, intent(inout) :: values
-    type(graph)             , intent(in)    :: element
-    real(dp)                , intent(in)    :: new_values(:)
-    logical, optional       , intent(in)    :: check_passes
+    class(value_change)    , intent(inout) :: this
+    type(value_map), target, intent(inout) :: values
+    type(graph)            , intent(in)    :: element
+    real(dp)               , intent(in)    :: new_values(:)
+    logical, optional      , intent(in)    :: check_passes
 
     this % values     => values
     this % element    = element
@@ -92,10 +102,10 @@ contains
   end subroutine bind
 
   !===================================================================!
-  ! Apply: record the row's prior status and values, then store
-  ! the new values, attaching first when no row exists. Stops the
-  ! program when no map is bound, because there is nothing to
-  ! change. Identity and value checks remain the map's.
+  ! Applies the update: records the row's prior status and values,
+  ! then stores the new values, attaching first when no row exists.
+  ! Stops the program when no map is bound, because there is nothing to
+  ! change. The checks of identity and values remain the map's.
   !===================================================================!
 
   subroutine apply(this, result)
@@ -108,6 +118,7 @@ contains
             &not associated - call bind first'
     end if
 
+    ! The prior state
     this % old_status = this % values % status_of(this % element)
 
     if (allocated(this % old_values)) deallocate(this % old_values)
@@ -115,6 +126,7 @@ contains
        call this % values % value_of(this % element, this % old_values)
     end if
 
+    ! The new values
     if (this % old_status == VALUE_UNATTACHED) then
        call this % values % attach_unknown(this % element)
     end if
@@ -128,7 +140,7 @@ contains
   end subroutine apply
 
   !===================================================================!
-  ! Check: report the caller-provided check result.
+  ! Reports the caller-provided check result
   !===================================================================!
 
   subroutine check(this, result)
@@ -141,8 +153,8 @@ contains
   end subroutine check
 
   !===================================================================!
-  ! Commit: the map already stores the update, so only the record is
-  ! marked.
+  ! Commits the update. The map already stores it, so only the record
+  ! is marked.
   !===================================================================!
 
   subroutine commit(this, result)
@@ -158,9 +170,10 @@ contains
   end subroutine commit
 
   !===================================================================!
-  ! Revert: restore the row exactly as apply recorded it. A row that
-  ! did not exist is removed; a previously UNKNOWN row is set back
-  ! to UNKNOWN; a previously KNOWN row receives its old values.
+  ! Reverts the update: restores the row exactly as apply recorded it.
+  ! A row that did not exist is removed; a previously UNKNOWN row is
+  ! set back to UNKNOWN; a previously KNOWN row receives its old
+  ! values.
   !===================================================================!
 
   subroutine revert(this, result)

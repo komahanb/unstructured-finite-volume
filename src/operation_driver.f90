@@ -1,78 +1,74 @@
 !=====================================================================!
-! DRIVING A RULE OVER A DIGRAPH.
+! Module that states the driving of a rule over a digraph.
 !
 ! A marcher traverses instants; a sweep traverses nodes; a smoother
-! traverses colours; an adjoint traverses the same vertices in
-! reverse. All four are ONE operation: visit the vertices of a
-! digraph in an order its arcs admit, and apply a rule at each.
-! Nothing in that operation is temporal. This module states it once.
+! traverses colours; an adjoint traverses the same vertices in reverse.
+! All four are one operation: visit the vertices of a digraph in an
+! order its arcs admit, and apply a rule at each. Nothing in that
+! operation is temporal. This module states it once.
 !
-!             THE TAXONOMY
+! The taxonomy:
 !
-!   VERTEX          What the rule is applied at. What a vertex
-!                   denotes - an instant, a cell, a block - is
-!                   decided by the caller and never by this module.
+!   vertex          What the rule is applied at. What a vertex denotes,
+!                   an instant, a cell, a block, is decided by the
+!                   caller and never by this module.
 !
-!   ARC             An ordered pair of vertices. The arc j -> k states
-!                   that the rule at k READS the value at j.
+!   arc             An ordered pair of vertices. The arc j -> k states
+!                   that the rule at k reads the value at j.
 !
-!   SLOT            Which argument of k's rule the arc fills. Two
-!                   arcs into the same vertex fill different slots:
-!                   that is what distinguishes q_(n-1) from q_(n-2).
+!   slot            Which argument of k's rule the arc fills. Two arcs
+!                   into the same vertex fill different slots: that is
+!                   what distinguishes q_(n-1) from q_(n-2).
 !
-!   LABELLING       The map ell : A -> S storing the slot of every
-!                   arc. Stored WITH the arcs, never beside them, so
+!   labelling       The map ell : A -> S storing the slot of every arc.
+!                   Stored with the arcs, never beside them, so
 !                   restricting or transposing the digraph transports
 !                   the slots with the arcs and cannot separate them.
 !
-!   ORIENTATION     forward or reverse. A traversal in the forward
-!                   orientation reaches a vertex only after every
-!                   vertex it reads; reverse is the same order read
-!                   backwards, which is the order an adjoint requires.
+!   orientation     forward or reverse. A traversal in the forward
+!                   orientation reaches a vertex only after every vertex
+!                   it reads; reverse is the same order read backwards,
+!                   which is the order an adjoint requires.
 !
-!   RULE            The operation stored at a vertex. Its arguments
-!                   are the slots the labelling names.
+!   rule            The operation stored at a vertex. Its arguments are
+!                   the slots the labelling names.
 !
-!   DRIVER          The operation that applies the rule at every
-!                   vertex in an admissible order. It is itself an
-!                   operation, so a driver over a digraph of drivers
-!                   is a driver, and nesting requires no new type.
+!   driver          The operation that applies the rule at every vertex
+!                   in an admissible order. It is itself an operation,
+!                   so a driver over a digraph of drivers is a driver,
+!                   and nesting requires no new type.
 !
-!             THE TWO BRANCHES, AND WHAT THE DRIVER PAIRS
+! The two branches, and what the driver pairs. A computation has two
+! graphs over one skeleton, and they are the fractal graph's two
+! branches: G = (B1, B2), symmetric in structure and independent in
+! meaning.
 !
-! A computation has two graphs over one skeleton, and they are the
-! fractal graph's two branches: G = (B1, B2), symmetric in structure
-! and independent in meaning.
-!
-!      B2   the OPERATION graph        what is computed
+!      B2   the operation graph        what is computed
 !
 !             (r1) ---> (r2) ---> (r3) ---> (r4)
 !               .        .         .         .
-!               .        .         .         .        <- the PAIRING
+!               .        .         .         .        <- the pairing
 !               v        v         v         v           one datum
 !             [ d1 ]   [ d2 ]    [ d3 ]    [ d4 ]        per rule
 !
-!      B1   the DATA graph             what is computed ON
+!      B1   the data graph             what is computed on
 !
 ! The arcs are stored in B2: they state which rule reads which. The
-! values are stored in B1: one datum per vertex. The PAIRING is the
+! values are stored in B1: one datum per vertex. The pairing is the
 ! bijection between them, and the driver is the object that stores it.
 !
-! Neither branch is derivable from the other. B2 without B1 is a
-! plan with nothing to compute on; B1 without B2 is an array with
-! no operation over it. Stored apart and linked, each may be
-! restricted, transposed or refined without altering the other -
-! which is what lets one skeleton store a model and its correction,
-! a stencil and its coefficients, a structure and what is learned on
-! it.
+! Neither branch is derivable from the other. B2 without B1 is a plan
+! with nothing to compute on; B1 without B2 is an array with no
+! operation over it. Stored apart and linked, each may be restricted,
+! transposed or refined without altering the other, which is what lets
+! one skeleton store a model and its correction, a stencil and its
+! coefficients, a structure and what is learned on it.
 !
-!             WHY THE LINKAGE REDUCES MEMORY
-!
-! A datum must be stored from the step its rule writes it until the
-! last rule that reads it has been applied - no longer. The driver
-! stores both facts: the visiting order, and every arc that reads a
-! vertex. So it can report, for each datum, the step after which
-! nothing reads it again.
+! Why the linkage reduces memory. A datum must be stored from the step
+! its rule writes it until the last rule that reads it has been
+! applied, no longer. The driver stores both facts: the visiting
+! order, and every arc that reads a vertex. So it can report, for each
+! datum, the step after which nothing reads it again.
 !
 !             visiting order   1     2     3     4
 !             d1 written       #-----+-----x
@@ -81,10 +77,11 @@
 !             d2 written             #-----+-----x
 !             d3 written                   #-----x
 !
-! Incremental execution releases paired data after their final readers.
-! A caller with additional storage reads the same lifetime through
-! `released_at`, the single-step interval, or `released_after`, the
-! cumulative set. The caller applies those releases to its own storage.
+! Incremental execution releases paired data after their final
+! readers. A caller with additional storage reads the same lifetime
+! through released_at, the single-step interval, or released_after,
+! the cumulative set. The caller applies those releases to its own
+! storage.
 !
 ! A lifetime is exact only for the consumers represented by its arcs.
 ! Transposing a dependency graph states reverse execution order; it
@@ -94,16 +91,14 @@
 ! Vertices without a rule remain valid declared positions, but do not
 ! establish that a numerical reverse computation has taken place.
 !
-!             WHAT ASSEMBLES, WHAT DRIVES
+! What assembles, what drives. Building the two branches is one task
+! and evaluating them is another, and they belong to different layers:
 !
-! Building the two branches is one task and evaluating them is
-! another, and they belong to different layers:
-!
-!      an ASSEMBLER   states the vertices, the arcs and their slots,
+!      an assembler   states the vertices, the arcs and their slots,
 !                     which rule is stored where, and which datum. It
 !                     depends on the physics, the scheme and the mesh.
 !
-!      the DRIVER     receives that and evaluates it. It stores the
+!      the driver     receives that and evaluates it. It stores the
 !                     order, the connection and the lifetimes, and
 !                     nothing about what any of it denotes.
 !
@@ -113,49 +108,43 @@
 !      call schedule % pair_with(link)
 !      call schedule % evaluate(on)
 !
-! The separation is deliberate. An assembler may be rewritten - a
-! different scheme, a different mesh, a coarser chain - without the
+! The separation is deliberate. An assembler may be rewritten (a
+! different scheme, a different mesh, a coarser chain) without the
 ! driver changing, and the driver may be extended to evaluate two
 ! vertices at once without any assembler changing.
 !
-!             WHERE PARALLELISM IS DEFINED, AND ONLY THERE
+! Where parallelism is defined, and only there. Two vertices with no
+! arc between them may be driven at once. Only the driver can detect
+! that, because only here are the order, the rules and the data all
+! stored in one object. Every hardware decision (which device a rule
+! runs on, where a datum resides, when it moves) is a decision about
+! evaluate and about nothing above or below it.
 !
-! Two vertices with no arc between them may be driven at once. Only
-! the driver can detect that, because only here are the order, the
-! rules and the data all stored in one object. Every hardware
-! decision - which device a rule runs on, where a datum resides, when
-! it moves - is a decision about `evaluate` and about nothing above
-! or below it.
+! The digraph is the only order. The order comes from visiting_order,
+! which is the digraph's own topological order in the given
+! orientation. Incremental execution records its position in that
+! order, never arithmetic on vertex identities. A digraph with a cycle
+! has no such order and is rejected, because a rule that reads its own
+! result is not a rule this driver can drive.
 !
-!             THE DIGRAPH IS THE ONLY ORDER
-!
-! The order comes from `visiting_order`, which is the digraph's own
-! topological order in the given orientation. Incremental execution
-! records its position in that order, never arithmetic on vertex
-! identities. A digraph with a cycle has no such order and
-! is rejected, because a rule that reads its own result is not a rule
-! this driver can drive.
-!
-!             WHAT IS NOT HERE
-!
-! The MEASURE along the coordinate the vertices discretise - the step
-! between two instants, the volume of a cell - belongs to a grid, and
-! a grid is an operation of its own. The driver reads a measure when
-! a rule requires one and never computes it. That separation is why
-! this module has no notion of time.
+! What is not here. The measure along the coordinate the vertices
+! discretise (the step between two instants, the volume of a cell)
+! belongs to a grid, and a grid is an operation of its own. The driver
+! reads a measure when a rule requires one and never computes it. That
+! separation is why this module has no notion of time.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 
 module operation_driver
 
-  use util_precision       , only : dp
-  use operation_action     , only : operation, binding, moved_binding
-  use view_directed        , only : directed_graph, forward, reverse
-  use view_directed_stored , only : stored_directed_graph
-  use view_read_write      , only : bipartite_digraph, FIRST_PART, SECOND_PART
-  use field_calculus       , only : field
-  use field_stored         , only : stored_field
+  use util_precision      , only : dp
+  use operation_action    , only : operation, binding, moved_binding
+  use view_directed       , only : directed_graph, forward, reverse
+  use view_directed_stored, only : stored_directed_graph
+  use view_read_write     , only : bipartite_digraph, FIRST_PART, SECOND_PART
+  use field_calculus      , only : field
+  use field_stored        , only : stored_field
 
   implicit none
 
@@ -167,15 +156,15 @@ module operation_driver
   public :: rule_graph, data_graph
   public :: driven_by, paired
 
-  !===================================================================!
-  ! A RULE APPLIED AT A VERTEX IT IS TOLD. A rule driven by advance_with
-  ! is not stored in the pairing: before it is applied the driver
-  ! states the vertex it computes and the vertices its arguments read,
-  ! in argument order (the k-th argument is the datum at reads(k)),
-  ! and declares one argument per read when the rule declares another
-  ! count. The rule reads its place from these two components and
-  ! states nothing about the schedule itself.
-  !===================================================================!
+  !-------------------------------------------------------------------!
+  ! Type that models a rule applied at a vertex it is told. A rule
+  ! driven by advance_with is not stored in the pairing: before it is
+  ! applied the driver states the vertex it computes and the vertices
+  ! its arguments read, in argument order (the k-th argument is the
+  ! datum at reads(k)), and declares one argument per read when the
+  ! rule declares another count. The rule reads its place from these
+  ! two components and states nothing about the schedule itself.
+  !-------------------------------------------------------------------!
 
   type, abstract, extends(operation) :: vertex_rule
 
@@ -184,13 +173,13 @@ module operation_driver
 
   end type vertex_rule
 
-  !===================================================================!
-  ! ONE VERTEX OF B2. The rule computed there. A vertex whose rule is
-  ! not allocated computes nothing, which is how a source vertex - one
-  ! that is read but never written - is stated.
+  !-------------------------------------------------------------------!
+  ! Type that models one vertex of B2: the rule computed there. A
+  ! vertex whose rule is not allocated computes nothing, which is how a
+  ! source vertex, one that is read but never written, is stated.
   !
   !        (r) ---> ...        the rule, and the arcs it is read by
-  !===================================================================!
+  !-------------------------------------------------------------------!
 
   type :: rule_vertex
 
@@ -202,13 +191,14 @@ module operation_driver
 
   end type rule_vertex
 
-  !===================================================================!
-  ! ONE VERTEX OF B1. The datum stored there, and nothing about how it
-  ! was computed. A datum not yet written is unallocated, and that is
-  ! the only way to query whether a step has run.
+  !-------------------------------------------------------------------!
+  ! Type that models one vertex of B1: the datum stored there, and
+  ! nothing about how it was computed. A datum not yet written is
+  ! unallocated, and that is the only way to query whether a step has
+  ! run.
   !
   !        [ d ]               the value, and nothing else
-  !===================================================================!
+  !-------------------------------------------------------------------!
 
   type :: data_vertex
 
@@ -220,11 +210,11 @@ module operation_driver
 
   end type data_vertex
 
-  !===================================================================!
-  ! B2 WHOLE. The rules over every vertex, as one value. Connecting
-  ! it to a data graph returns a pairing; which side is called is
-  ! immaterial, because the branches are symmetric.
-  !===================================================================!
+  !-------------------------------------------------------------------!
+  ! Type that models B2 whole: the rules over every vertex, as one
+  ! value. Connecting it to a data graph returns a pairing; which side
+  ! is called is immaterial, because the branches are symmetric.
+  !-------------------------------------------------------------------!
 
   type :: rule_graph
 
@@ -236,9 +226,10 @@ module operation_driver
 
   end type rule_graph
 
-  !===================================================================!
-  ! B1 WHOLE. The data over every vertex, as one value.
-  !===================================================================!
+  !-------------------------------------------------------------------!
+  ! Type that models B1 whole: the data over every vertex, as one
+  ! value
+  !-------------------------------------------------------------------!
 
   type :: data_graph
 
@@ -250,25 +241,25 @@ module operation_driver
 
   end type data_graph
 
-  !===================================================================!
-  ! THE PAIRING. The bijection between B2's vertices and B1's, stored
-  ! as one value so neither branch can be indexed without the other
-  ! being referenced. Both branches store the same count of vertices
-  ! by construction: that IS the bijection, and a constructor that is
-  ! passed unequal counts stops the program.
+  !-------------------------------------------------------------------!
+  ! Type that models the pairing: the bijection between B2's vertices
+  ! and B1's, stored as one value so neither branch can be indexed
+  ! without the other being referenced. Both branches store the same
+  ! count of vertices by construction: that is the bijection, and a
+  ! constructor that is passed unequal counts stops the program.
   !
   !        B2   (r1)   (r2)   (r3)
   !               |      |      |          the linkage is the
   !               v      v      v          identity on positions
   !        B1   [ d1 ] [ d2 ] [ d3 ]
-  !===================================================================!
+  !-------------------------------------------------------------------!
 
   type :: pairing
 
      private
 
      type(rule_vertex), allocatable :: computed_by(:)
-     type(data_vertex)     , allocatable :: stored_at(:)
+     type(data_vertex), allocatable :: stored_at(:)
 
    contains
 
@@ -277,9 +268,9 @@ module operation_driver
      procedure :: set_rule                ! replace one rule without copying the pairing
      procedure :: clear_rule              ! remove one rule, preserving incidence
      procedure :: datum_at                ! the value stored at a vertex
-     procedure :: assign                   ! write a value at a vertex
+     procedure :: assign                  ! write a value at a vertex
      procedure :: release                 ! deallocate the value at a vertex
-     procedure :: stored_data                ! the data branch, to retain
+     procedure :: stored_data             ! the data branch, to retain
      procedure, private :: require_vertex
 
   end type pairing
@@ -288,18 +279,19 @@ module operation_driver
      module procedure paired
   end interface pairing
 
-  !===================================================================!
-  ! THE DRIVER. A rule, a digraph to drive it over, and the
-  ! orientation to visit in. Evaluation visits every vertex in an
-  ! admissible order; advance visits one position in that same order.
-  !===================================================================!
+  !-------------------------------------------------------------------!
+  ! Type that models the driver: a rule, a digraph to drive it over,
+  ! and the orientation to visit in. Evaluation visits every vertex in
+  ! an admissible order; advance visits one position in that same
+  ! order.
+  !-------------------------------------------------------------------!
 
   type, extends(operation) :: driver
 
      private
 
-     ! the two parts and the arcs crossing them: which datum every
-     ! rule reads, and which it writes
+     ! The two parts and the arcs crossing them: which datum every rule
+     ! reads, and which it writes
      type(bipartite_digraph)       :: over
      class(operation), allocatable :: rule
      integer                       :: orientation = forward
@@ -313,7 +305,7 @@ module operation_driver
      ! data without readers are outputs and remain available.
      integer, allocatable :: visiting(:), last_reader(:), written_at(:)
      integer, allocatable :: first_release(:), release_data(:)
-     integer :: completed_steps = 0
+     integer              :: completed_steps = 0
 
    contains
 
@@ -348,17 +340,17 @@ module operation_driver
 contains
 
   !===================================================================!
-  ! A RULE DRIVEN OVER A DIGRAPH, in an orientation. The result
+  ! Creates a rule driven over a digraph, in an orientation. The result
   ! is an operation, so it composes with any other.
   !===================================================================!
 
   function driven_by(rule, over, orientation) result(this)
 
-    class(operation)       , intent(in) :: rule
-    type(bipartite_digraph), intent(in) :: over
-    integer               , intent(in), optional :: orientation
-    type(driver) :: this
-    character(len=250) :: message
+    class(operation)       , intent(in)           :: rule
+    type(bipartite_digraph), intent(in)           :: over
+    integer                , intent(in), optional :: orientation
+    type(driver)                                  :: this
+    character(len=250)                            :: message
 
     this % over = over
     allocate(this % rule, source=rule)
@@ -375,8 +367,12 @@ contains
 
   end function driven_by
 
+  !===================================================================!
+  ! Returns the name: the rule's, driven over a digraph
+  !===================================================================!
+
   pure function driver_name(this) result(name)
-    class(driver), intent(in) :: this
+    class(driver)   , intent(in)  :: this
     character(len=:), allocatable :: name
     if (allocated(this % rule)) then
        name = this % rule % name() // ' driven over a digraph'
@@ -386,25 +382,34 @@ contains
   end function driver_name
 
   !===================================================================!
-  ! THE ORDER THE RULES ARE VISITED IN: the topological order of the
-  ! projection onto the first part. The arcs between the parts state
-  ! which rule reads what another wrote; the projection turns that
-  ! into an order over the rules alone, and no routine here states
+  ! Returns the order the rules are visited in: the topological order
+  ! of the projection onto the first part. The arcs between the parts
+  ! state which rule reads what another wrote; the projection turns
+  ! that into an order over the rules alone, and no routine here states
   ! the order explicitly.
   !===================================================================!
 
   function visits(this) result(order)
     class(driver), intent(in) :: this
-    integer, allocatable :: order(:)
+    integer, allocatable      :: order(:)
     order = [integer ::]
     if (allocated(this % visiting)) order = this % visiting
   end function visits
 
+  !===================================================================!
+  ! Forms the schedule once: the visiting order, the step each datum is
+  ! written at and last read at, and the data released at each step,
+  ! grouped by step,
+  !
+  !      release_data(first_release(k) : first_release(k + 1) - 1)
+  !                                   the data whose last reader is step k
+  !===================================================================!
+
   subroutine scheduled(this)
     class(driver), intent(inout) :: this
-    type(stored_directed_graph) :: among_rules
-    integer, allocatable :: readers(:), next(:), step_of_rule(:)
-    integer :: k, d, i, n
+    type(stored_directed_graph)  :: among_rules
+    integer, allocatable         :: readers(:), next(:), step_of_rule(:)
+    integer                      :: k, d, i, n
 
     among_rules = this % over % projection(FIRST_PART)
     this % visiting = among_rules % loop(this % orientation)
@@ -421,7 +426,7 @@ contains
        do i = 1, size(readers)
           this % last_reader(d) = max(this % last_reader(d), step_of_rule(readers(i)))
        end do
-       ! the step writing the datum: zero for a source nothing writes
+       ! The step writing the datum: zero for a source nothing writes
        call this % neighbourhood(SECOND_PART, d, .true., readers)
        do i = 1, size(readers)
           this % written_at(d) = max(this % written_at(d), step_of_rule(readers(i)))
@@ -443,16 +448,20 @@ contains
     end do
   end subroutine scheduled
 
+  !===================================================================!
+  ! Returns the rule the driver stores
+  !===================================================================!
+
   function driven_rule(this) result(rule)
-    class(driver), intent(in) :: this
+    class(driver)   , intent(in)  :: this
     class(operation), allocatable :: rule
     allocate(rule, source=this % rule)
   end function driven_rule
 
   !===================================================================!
-  ! WHETHER A VERTEX STORES ANYTHING. A rule that is not allocated
-  ! computes nothing; a datum that is not allocated has not been
-  ! written. Both are valid states and neither is an error.
+  ! Returns whether a vertex stores a rule. A rule that is not
+  ! allocated computes nothing; a datum that is not allocated has not
+  ! been written. Both are valid states and neither is an error.
   !===================================================================!
 
   pure logical function computes(this)
@@ -460,19 +469,23 @@ contains
     computes = allocated(this % rule)
   end function computes
 
+  !===================================================================!
+  ! Returns whether a vertex stores a datum
+  !===================================================================!
+
   pure logical function written(this)
     class(data_vertex), intent(in) :: this
     written = allocated(this % datum)
   end function written
 
   !===================================================================!
-  ! PAIR THE TWO BRANCHES. A rule for every vertex of the first part
+  ! Pairs the two branches: a rule for every vertex of the first part
   ! and a datum for every vertex of the second. The counts need not
-  ! agree: which datum a rule reads and which it writes is specified
-  ! by the bipartite digraph, and given that specification the two
-  ! parts may differ in size. An operation may write two data, a datum
-  ! may be read by three operations, and a datum nothing writes is a
-  ! source of the digraph.
+  ! agree: which datum a rule reads and which it writes is specified by
+  ! the bipartite digraph, and given that specification the two parts
+  ! may differ in size. An operation may write two data, a datum may be
+  ! read by three operations, and a datum nothing writes is a source of
+  ! the digraph.
   !
   ! The branches are symmetric, so either may be called, and there is
   ! nothing else either could be paired with:
@@ -486,27 +499,39 @@ contains
   function paired(computed_by, stored_at) result(this)
 
     type(rule_vertex), intent(in) :: computed_by(:)
-    type(data_vertex)     , intent(in) :: stored_at(:)
-    type(pairing) :: this
+    type(data_vertex), intent(in) :: stored_at(:)
+    type(pairing)                 :: this
 
     this % computed_by = computed_by
-    this % stored_at     = stored_at
+    this % stored_at   = stored_at
 
   end function paired
 
+  !===================================================================!
+  ! Returns the pairing of the rules with the data
+  !===================================================================!
+
   function rules_pair(this, values) result(link)
     class(rule_graph), intent(in) :: this
-    type(data_graph)      , intent(in) :: values
-    type(pairing) :: link
+    type(data_graph) , intent(in) :: values
+    type(pairing)                 :: link
     link = paired(this % at, values % at)
   end function rules_pair
 
+  !===================================================================!
+  ! Returns the pairing of the data with the rules, the same
+  !===================================================================!
+
   function data_pair(this, operations) result(link)
-    class(data_graph)     , intent(in) :: this
+    class(data_graph), intent(in) :: this
     type(rule_graph) , intent(in) :: operations
-    type(pairing) :: link
+    type(pairing)                 :: link
     link = paired(operations % at, this % at)
   end function data_pair
+
+  !===================================================================!
+  ! Returns how many vertices of a part the pairing stores
+  !===================================================================!
 
   pure integer function paired_order(this, part)
     class(pairing), intent(in) :: this
@@ -520,8 +545,9 @@ contains
   end function paired_order
 
   !===================================================================!
-  ! THE RULE AT A VERTEX and THE VALUE AT A VERTEX. Two reads of
-  ! one position, which is what the pairing is for.
+  ! Returns the rule at a vertex, unallocated where none is stored. The
+  ! rule at a vertex and the value at a vertex are two reads of one
+  ! position, which is what the pairing is for.
   !===================================================================!
 
   subroutine rule_at(this, vertex, rule)
@@ -533,29 +559,45 @@ contains
          & allocate(rule, source=this % computed_by(vertex) % rule)
   end subroutine rule_at
 
+  !===================================================================!
+  ! Replaces the rule at a vertex, without copying the pairing
+  !===================================================================!
+
   subroutine set_rule(this, vertex, rule)
-    class(pairing), intent(inout) :: this
-    integer, intent(in) :: vertex
-    class(operation), intent(in) :: rule
+    class(pairing)  , intent(inout) :: this
+    integer         , intent(in)    :: vertex
+    class(operation), intent(in)    :: rule
     call this % clear_rule(vertex)
     allocate(this % computed_by(vertex) % rule, source=rule)
   end subroutine set_rule
 
+  !===================================================================!
+  ! Removes the rule at a vertex, preserving the incidence
+  !===================================================================!
+
   subroutine clear_rule(this, vertex)
     class(pairing), intent(inout) :: this
-    integer, intent(in) :: vertex
+    integer       , intent(in)    :: vertex
     call this % require_vertex(FIRST_PART, vertex)
     if (allocated(this % computed_by(vertex) % rule)) deallocate(this % computed_by(vertex) % rule)
   end subroutine clear_rule
 
+  !===================================================================!
+  ! Returns the value at a vertex, unallocated where none is written
+  !===================================================================!
+
   subroutine datum_at(this, vertex, datum)
-    class(pairing)            , intent(in)  :: this
-    integer                   , intent(in)  :: vertex
-    class(field), allocatable , intent(out) :: datum
+    class(pairing)           , intent(in)  :: this
+    integer                  , intent(in)  :: vertex
+    class(field), allocatable, intent(out) :: datum
     call this % require_vertex(SECOND_PART, vertex)
     if (this % stored_at(vertex) % written()) &
          & allocate(datum, source=this % stored_at(vertex) % datum)
   end subroutine datum_at
+
+  !===================================================================!
+  ! Writes a value at a vertex, replacing what was there
+  !===================================================================!
 
   subroutine assign(this, vertex, datum)
     class(pairing), intent(inout) :: this
@@ -567,7 +609,7 @@ contains
   end subroutine assign
 
   !===================================================================!
-  ! DEALLOCATE THE VALUE AT A VERTEX. The driver reports when this is
+  ! Deallocates the value at a vertex. The driver reports when this is
   ! permitted; this routine does not check, because a caller may
   ! deallocate a datum it will not read for reasons the digraph does
   ! not record.
@@ -581,21 +623,25 @@ contains
   end subroutine release
 
   !===================================================================!
-  ! THE DATA BRANCH AS ONE VALUE, for a caller that requires the
-  ! values after the rules have been applied. The pairing retains its
-  ! own copy; this is the final data branch, returned whole.
+  ! Returns the data branch as one value, for a caller that requires
+  ! the values after the rules have been applied. The pairing retains
+  ! its own copy; this is the final data branch, returned whole.
   !===================================================================!
 
   function stored_data(this) result(values)
     class(pairing), intent(in) :: this
-    type(data_graph) :: values
+    type(data_graph)           :: values
     if (allocated(this % stored_at)) values % at = this % stored_at
   end function stored_data
+
+  !===================================================================!
+  ! Requires a vertex the pairing stores in a part
+  !===================================================================!
 
   subroutine require_vertex(this, part, vertex)
     class(pairing), intent(in) :: this
     integer       , intent(in) :: part, vertex
-    character(len=250) :: message
+    character(len=250)         :: message
     if (vertex < 1 .or. vertex > this % paired_order(part)) then
        write(message,'(a,i0,a,i0)') 'operation_driver: vertex must be one the pairing stores; &
             &vertex = ', vertex, ', paired_order(part) = ', this % paired_order(part)
@@ -604,20 +650,20 @@ contains
   end subroutine require_vertex
 
   !===================================================================!
-  ! GIVE A DRIVER ITS CONNECTED BRANCHES. Until connected, a driver
+  ! Gives a driver its connected branches. Until connected, a driver
   ! stores one rule for every vertex alike; connected, each vertex
-  ! stores its own rule and its own datum. The position is the count
-  ! of completed steps the data branch corresponds to: zero, the
-  ! default, for data nothing has computed; a completed position when
-  ! the branch stores the data live after that step, so the traversal
-  ! resumes there. Invalid input: a position outside 0..the order.
+  ! stores its own rule and its own datum. The position is the count of
+  ! completed steps the data branch corresponds to: zero, the default,
+  ! for data nothing has computed; a completed position when the branch
+  ! stores the data live after that step, so the traversal resumes
+  ! there. Invalid input: a position outside 0..the order.
   !===================================================================!
 
   subroutine pair_with(this, connection, position)
-    class(driver), intent(inout) :: this
-    type(pairing), intent(in)    :: connection
+    class(driver), intent(inout)        :: this
+    type(pairing), intent(in)           :: connection
     integer      , intent(in), optional :: position
-    character(len=250) :: message
+    character(len=250)                  :: message
     if (connection % paired_order(FIRST_PART) /= this % over % order_of_part(FIRST_PART) .or. &
         & connection % paired_order(SECOND_PART) /= this % over % order_of_part(SECOND_PART)) then
        write(message,'(a,i0,a,i0,a,i0,a,i0)') 'operation_driver: the pairing must label one &
@@ -639,10 +685,14 @@ contains
     end if
   end subroutine pair_with
 
+  !===================================================================!
+  ! Replaces the rule at a vertex of the paired driver
+  !===================================================================!
+
   subroutine driver_set_rule(this, vertex, rule)
-    class(driver), intent(inout) :: this
-    integer, intent(in) :: vertex
-    class(operation), intent(in) :: rule
+    class(driver)   , intent(inout) :: this
+    integer         , intent(in)    :: vertex
+    class(operation), intent(in)    :: rule
     if (.not. allocated(this % stored_pairing)) then
        error stop 'operation_driver: driver_set_rule was called before this driver was paired &
             &with its data'
@@ -650,9 +700,13 @@ contains
     call this % stored_pairing % set_rule(vertex, rule)
   end subroutine driver_set_rule
 
+  !===================================================================!
+  ! Removes the rule at a vertex of the paired driver
+  !===================================================================!
+
   subroutine driver_clear_rule(this, vertex)
     class(driver), intent(inout) :: this
-    integer, intent(in) :: vertex
+    integer      , intent(in)    :: vertex
     if (.not. allocated(this % stored_pairing)) then
        error stop 'operation_driver: driver_clear_rule was called before this driver was paired &
             &with its data'
@@ -660,9 +714,13 @@ contains
     call this % stored_pairing % clear_rule(vertex)
   end subroutine driver_clear_rule
 
+  !===================================================================!
+  ! Returns the pairing the driver stores
+  !===================================================================!
+
   function pairing_of(this) result(stored)
     class(driver), intent(in) :: this
-    type(pairing) :: stored
+    type(pairing)             :: stored
     if (.not. allocated(this % stored_pairing)) then
        error stop 'operation_driver: pairing_of was called before this driver was paired with &
             &its data'
@@ -671,16 +729,21 @@ contains
   end function pairing_of
 
   !===================================================================!
-  ! THE NEIGHBOURHOOD READ IN THIS DRIVER'S ORIENTATION. In the forward
-  ! orientation a rule reads what entered it and writes what leaves;
-  ! in the reverse the two exchange, because reversing an orientation
-  ! exchanges previous with next. One traversal, read either way.
+  ! Returns the neighbourhood read in this driver's orientation. In the
+  ! forward orientation a rule reads what entered it and writes what
+  ! leaves; in the reverse the two exchange, because reversing an
+  ! orientation exchanges previous with next. One traversal, read
+  ! either way:
+  !
+  !      orientation    entering         leaving
+  !      forward        in-neighbours    out-neighbours
+  !      reverse        out-neighbours   in-neighbours
   !===================================================================!
 
   subroutine neighbourhood(this, part, vertex, entering, vertices)
-    class(driver), intent(in)  :: this
-    integer      , intent(in)  :: part, vertex
-    logical      , intent(in)  :: entering   ! the in-neighbourhood, when forward
+    class(driver)       , intent(in)  :: this
+    integer             , intent(in)  :: part, vertex
+    logical             , intent(in)  :: entering   ! the in-neighbourhood, when forward
     integer, allocatable, intent(out) :: vertices(:)
     if ((this % orientation == forward) .eqv. entering) then
        call this % over % in_neighbourhood(part, vertex, vertices)
@@ -690,10 +753,11 @@ contains
   end subroutine neighbourhood
 
   !===================================================================!
-  ! EVALUATE. Visit the vertices in an admissible order; at each, read
-  ! the data its in-neighbours store, apply the rule stored there,
-  ! and place the result. A datum whose last reader has been visited
-  ! is reported as releasable by released_after, and is then released.
+  ! Evaluates: visits the vertices in an admissible order; at each,
+  ! reads the data its in-neighbours store, applies the rule stored
+  ! there, and places the result. A datum whose last reader has been
+  ! visited is reported as releasable by released_after, and is then
+  ! released.
   !
   !      for each v in visiting order
   !          inputs  <- datum at in_neighbour(v, s), for each slot s
@@ -701,12 +765,12 @@ contains
   !          place value at v
   !          release every vertex in released_after(this step)
   !
-  ! THE ONE PLACE PARALLELISM BELONGS. Two vertices with no arc
-  ! between them may be driven at once, and only this routine can
-  ! detect that, because only here are the order, the rules and the
-  ! data all available. Every hardware decision - where a datum is
-  ! stored, which device a rule runs on - is a decision about this
-  ! loop and about nothing above or below it.
+  ! The one place parallelism belongs. Two vertices with no arc between
+  ! them may be driven at once, and only this routine can detect that,
+  ! because only here are the order, the rules and the data all
+  ! available. Every hardware decision (where a datum is stored, which
+  ! device a rule runs on) is a decision about this loop and about
+  ! nothing above or below it.
   !===================================================================!
 
   subroutine evaluate(this, input_graph)
@@ -726,6 +790,10 @@ contains
 
   end subroutine evaluate
 
+  !===================================================================!
+  ! Returns the next vertex in the stored order, zero once complete
+  !===================================================================!
+
   pure integer function next_rule(this) result(vertex)
     class(driver), intent(in) :: this
     vertex = 0
@@ -733,28 +801,40 @@ contains
     if (this % completed_steps < size(this % visiting)) vertex = this % visiting(this % completed_steps + 1)
   end function next_rule
 
+  !===================================================================!
+  ! Returns whether the stored order is exhausted
+  !===================================================================!
+
   pure logical function complete(this)
     class(driver), intent(in) :: this
     complete = .true.
     if (allocated(this % visiting)) complete = this % completed_steps >= size(this % visiting)
   end function complete
 
+  !===================================================================!
+  ! Returns the number of completed positions in the stored order
+  !===================================================================!
+
   pure integer function num_completed(this)
     class(driver), intent(in) :: this
     num_completed = this % completed_steps
   end function num_completed
 
-  ! One completed position includes its rule, writes and final reads.
-  ! An absent rule still occupies its declared position in the dependency
-  ! graph. After completion, advance is a no-op and returns vertex zero.
+  !===================================================================!
+  ! Advances one position. One completed position includes its rule,
+  ! writes and final reads. An absent rule still occupies its declared
+  ! position in the dependency graph. After completion, advance is a
+  ! no-op and returns vertex zero.
+  !===================================================================!
+
   subroutine advance(this, input_graph, executed)
 
-    class(driver), intent(inout) :: this
-    class(directed_graph), intent(in) :: input_graph
-    integer, intent(out), optional :: executed
+    class(driver)        , intent(inout)         :: this
+    class(directed_graph), intent(in)            :: input_graph
+    integer              , intent(out), optional :: executed
 
     class(operation), allocatable :: rule
-    integer :: k, v
+    integer                       :: k, v
 
     if (.not. allocated(this % stored_pairing)) then
        error stop 'operation_driver: advance was called before this driver was paired with its data'
@@ -766,10 +846,10 @@ contains
     v = this % visiting(k)
     call this % stored_pairing % rule_at(v, rule)
 
-    ! A VERTEX STORING NO RULE STILL OCCUPIES A STEP. It computes
-    ! nothing, but the arcs entering it are reads like any other,
-    ! so a datum's last reader may be located there and the
-    ! lifetimes must be resolved at this step as well.
+    ! A vertex storing no rule still occupies a step. It computes
+    ! nothing, but the arcs entering it are reads like any other, so a
+    ! datum's last reader may be located there and the lifetimes must
+    ! be resolved at this step as well.
     if (allocated(rule)) call applied_at(this, input_graph, v, rule)
     call completed(this, k)
     if (present(executed)) executed = v
@@ -777,9 +857,9 @@ contains
   end subroutine advance
 
   !===================================================================!
-  ! ONE SCHEDULED VERTEX EVALUATED BY A RULE GIVEN FOR IT. The rule is
-  ! applied at the next vertex of the stored order without being
-  ! stored in the pairing: it is told its vertex and the vertices its
+  ! Advances one scheduled vertex by a rule given for it. The rule is
+  ! applied at the next vertex of the stored order without being stored
+  ! in the pairing: it is told its vertex and the vertices its
   ! arguments read, and the step's writes and final reads are those of
   ! advance. A rule whose transient references into a caller's storage
   ! must not outlive the step is driven this way.
@@ -787,10 +867,10 @@ contains
 
   subroutine advance_with(this, input_graph, rule, executed)
 
-    class(driver)        , intent(inout) :: this
-    class(directed_graph), intent(in)    :: input_graph
-    class(vertex_rule)   , intent(inout) :: rule
-    integer, intent(out), optional :: executed
+    class(driver)        , intent(inout)         :: this
+    class(directed_graph), intent(in)            :: input_graph
+    class(vertex_rule)   , intent(inout)         :: rule
+    integer              , intent(out), optional :: executed
 
     integer :: k, v
 
@@ -813,8 +893,14 @@ contains
   end subroutine advance_with
 
   !===================================================================!
-  ! THE STEP KERNEL: the rule applied at vertex v to the data its
-  ! in-neighbours store, its result placed at the data it writes.
+  ! Applies the step kernel: the rule at vertex v to the data its
+  ! in-neighbours store, its result placed at the data it writes
+  !
+  !      [ d_a ]  [ d_b ]           the data it reads, argument k the
+  !          \      /               datum at its k-th read
+  !           ( r_v )
+  !          /      \               the data it writes, each the result
+  !      [ d_c ]  [ d_e ]
   !===================================================================!
 
   subroutine applied_at(this, input_graph, v, rule)
@@ -824,19 +910,19 @@ contains
     integer              , intent(in)    :: v
     class(operation)     , intent(in)    :: rule
 
-    class(field)    , allocatable :: value, stored
-    type(binding)   , allocatable :: inputs(:)
-    integer, allocatable :: reads(:), writes(:)
-    integer :: i, num_inputs
-    character(len=250) :: message
+    class(field) , allocatable :: value, stored
+    type(binding), allocatable :: inputs(:)
+    integer      , allocatable :: reads(:), writes(:)
+    integer                    :: i, num_inputs
+    character(len=250)         :: message
 
-    ! what the rule reads
+    ! What the rule reads
     call this % neighbourhood(FIRST_PART, v, .true., reads)
-    ! THE RULE'S ARGUMENT k IS THE DATUM AT THE k-TH VERTEX IT
-    ! READS. The binding passes that identity into the rule, so
-    ! a rule may receive a datum of its own type rather than
-    ! a bare vector of values. A vertex nothing has written yet
-    ! leaves its argument unbound.
+    ! The rule's argument k is the datum at the k-th vertex it reads.
+    ! The binding passes that identity into the rule, so a rule may
+    ! receive a datum of its own type rather than a bare vector of
+    ! values. A vertex nothing has written yet leaves its argument
+    ! unbound.
     if (size(reads) > rule % num_arguments()) then
        write(message,'(a,i0,a,i0)') 'operation_driver: a rule must declare an argument for &
             &every vertex it reads; size(reads) = ', size(reads), ', rule % num_arguments() = ', &
@@ -858,7 +944,7 @@ contains
        call rule % apply(input_graph, output=value)
     end if
 
-    ! what the rule writes: the data on the other side of it
+    ! What the rule writes: the data on the other side of it
     if (allocated(value)) then
        call this % neighbourhood(FIRST_PART, v, .false., writes)
        do i = 1, size(writes)
@@ -869,8 +955,8 @@ contains
   end subroutine applied_at
 
   !===================================================================!
-  ! Step k completed: the data nothing reads again are released and
-  ! the position advances.
+  ! Completes step k: the data nothing reads again are released and
+  ! the position advances
   !===================================================================!
 
   subroutine completed(this, k)
@@ -888,17 +974,18 @@ contains
   end subroutine completed
 
   !===================================================================!
-  ! THE STEP A DATUM IS LAST READ AT. Zero records that no rule reads
-  ! it. Such data remain available as outputs after evaluation.
+  ! Returns the step a datum is last read at. Zero records that no rule
+  ! reads it. Such data remain available as outputs after evaluation.
   !
-  !      order    1     2     3     4
-  !      from v         .-----+-----'      last_reader_of(v) = 3
+  !      order        1     2     3     4
+  !      datum v      #-----+-----x            written at 1, read at 2 and 3
+  !                                            last_reader_of(v) = 3
   !===================================================================!
 
   integer function last_reader_of(this, datum)
     class(driver), intent(in) :: this
     integer      , intent(in) :: datum
-    character(len=250) :: message
+    character(len=250)        :: message
     if (datum < 1 .or. datum > this % over % order_of_part(SECOND_PART)) then
        write(message,'(a,i0,a,i0)') 'operation_driver: datum must belong to the data part; &
             &datum = ', datum, ', order_of_part(SECOND_PART) = ', &
@@ -909,9 +996,9 @@ contains
   end function last_reader_of
 
   !===================================================================!
-  ! THE DATA LIVE AFTER ONE STEP: written at that step or earlier
-  ! and read by a later step. With the rules' immutable inputs these
-  ! are what a traversal resumed at the step reads, so a caller
+  ! Returns the data live after one step: written at that step or
+  ! earlier and read by a later step. With the rules' immutable inputs
+  ! these are what a traversal resumed at the step reads, so a caller
   ! storing them stores a restart state of the traversal. A source
   ! nothing writes is written at step zero. Ordered by datum number.
   !===================================================================!
@@ -919,9 +1006,9 @@ contains
   function live_after(this, step) result(vertices)
     class(driver), intent(in) :: this
     integer      , intent(in) :: step
-    integer, allocatable :: vertices(:)
-    integer :: d
-    character(len=250) :: message
+    integer, allocatable      :: vertices(:)
+    integer                   :: d
+    character(len=250)        :: message
     vertices = [integer ::]
     if (.not. allocated(this % last_reader)) return
     if (step < 0 .or. step > size(this % visiting)) then
@@ -934,9 +1021,10 @@ contains
   end function live_after
 
   !===================================================================!
-  ! THE DATA RELEASABLE AFTER ONE STEP: every vertex already visited
-  ! whose last reader is this step or earlier. A caller that releases
-  ! these at each step stores only the live set, never the trajectory.
+  ! Returns the data releasable after one step: every vertex already
+  ! visited whose last reader is this step or earlier. A caller that
+  ! releases these at each step stores only the live set, never the
+  ! trajectory.
   !
   ! This public query is cumulative and ordered by datum number.
   ! Evaluation uses the stored per-step intervals instead, so each
@@ -946,18 +1034,23 @@ contains
   function released_after(this, step) result(vertices)
     class(driver), intent(in) :: this
     integer      , intent(in) :: step
-    integer, allocatable :: vertices(:)
-    integer :: d
+    integer, allocatable      :: vertices(:)
+    integer                   :: d
     vertices = [integer ::]
     if (.not. allocated(this % last_reader)) return
     vertices = pack([(d, d = 1, size(this % last_reader))], &
          & this % last_reader > 0 .and. this % last_reader <= step)
   end function released_after
 
+  !===================================================================!
+  ! Returns the data whose last reader is exactly one step: that step's
+  ! interval of the stored releases
+  !===================================================================!
+
   function released_at(this, step) result(vertices)
     class(driver), intent(in) :: this
-    integer, intent(in) :: step
-    integer, allocatable :: vertices(:)
+    integer      , intent(in) :: step
+    integer, allocatable      :: vertices(:)
     vertices = [integer ::]
     if (.not. allocated(this % first_release)) return
     if (step < 1 .or. step >= size(this % first_release)) return
@@ -965,19 +1058,19 @@ contains
   end function released_at
 
   !===================================================================!
-  ! THE DATA WHOSE LIFETIME ENDS AT ONE STEP: its final reads, then
-  ! the data the step's vertex writes that no rule reads. An output
-  ! without a reader is complete once its own step has consumed it,
-  ! and a caller retaining outputs decides for itself whether to keep
-  ! it; the schedule states only that nothing later reads it.
+  ! Returns the data whose lifetime ends at one step: its final reads,
+  ! then the data the step's vertex writes that no rule reads. An
+  ! output without a reader is complete once its own step has consumed
+  ! it, and a caller retaining outputs decides for itself whether to
+  ! keep it; the schedule states only that nothing later reads it.
   !===================================================================!
 
   function expired_at(this, step) result(vertices)
     class(driver), intent(in) :: this
-    integer, intent(in) :: step
-    integer, allocatable :: vertices(:)
-    integer, allocatable :: writes(:)
-    integer :: i
+    integer      , intent(in) :: step
+    integer, allocatable      :: vertices(:)
+    integer, allocatable      :: writes(:)
+    integer                   :: i
     vertices = this % released_at(step)
     if (.not. allocated(this % visiting)) return
     if (step < 1 .or. step > size(this % visiting)) return
@@ -988,17 +1081,18 @@ contains
   end function expired_at
 
   !===================================================================!
-  ! THE OPERATION INTERFACE IS NOT THE TRAVERSAL. A driver reads its
-  ! inputs from the data it is paired with, not from bindings, so
-  ! apply stops the program: the rules are driven by evaluate.
+  ! Refuses the operation interface: it is not the traversal. A driver
+  ! reads its inputs from the data it is paired with, not from
+  ! bindings, so apply stops the program: the rules are driven by
+  ! evaluate.
   !===================================================================!
 
   subroutine driver_apply(this, input_graph, inputs, output)
 
-    class(driver)            , intent(in)    :: this
-    class(directed_graph)    , intent(in)    :: input_graph
+    class(driver)            , intent(in)           :: this
+    class(directed_graph)    , intent(in)           :: input_graph
     type(binding)            , intent(in), optional :: inputs(:)
-    class(field), allocatable, intent(inout) :: output
+    class(field), allocatable, intent(inout)        :: output
 
     associate (u1 => this, u2 => input_graph, u3 => present(inputs)); end associate
     if (allocated(output)) deallocate(output)

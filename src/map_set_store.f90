@@ -1,19 +1,26 @@
 !=====================================================================!
-! SET STORE
+! Module that keeps, in one owner, the data attached to set
+! identities: a set's members, its name and the set it is declared
+! inside.
 !
-! One owner for the data attached to set identities: extension, name
-! and declared inclusion. The store IS the set map, extended by a
-! label map and an inclusion map. Callers that only read or declare
-! sets need not pass three side tables through every signature.
+!                            set_store
+!   +----------------------------------------------------------+
+!   |  set_map (extended)    label_map       inclusion_map     |
+!   |  set -> its members    set -> name     part -> ambient   |
+!   +----------------------------------------------------------+
+!      bind, extent, ...     name            include_in
+!                            labelled        subobject_of
+!                            label_of
 !
-! The store does not merge labels, extents and inclusions into one
-! attribute system. It keeps the three maps distinct and gives each a
-! narrow procedure. What is removed is the public interface to three
-! maps, not the meaning.
+! The store is the set map, extended by a label map and an inclusion
+! map, so that a caller that reads or declares sets need not pass
+! three side tables through every signature. The three maps stay
+! distinct, each behind its own narrow procedures; only their three
+! public interfaces become one.
 !
-! Lifetime law: every stored key is a copied token owned by the map
-! below. No graph pointer is stored here, and no TARGET argument is
-! required to recognize a set later.
+! Every stored key is a copied token, owned by the map that stores
+! it. No graph pointer is stored, and no TARGET argument is needed to
+! recognize a set later.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
@@ -29,13 +36,15 @@ module map_set_store
   implicit none
 
   private
+
   public :: set_store
 
-  !===================================================================!
-  ! A set map, with a label map and an inclusion map beside it. Every
-  ! extent query and bind is the set map's own; the store adds the
-  ! name, the declared inclusion and the subobject order.
-  !===================================================================!
+  !-------------------------------------------------------------------!
+  ! Type that models a set map with a label map and an inclusion map
+  ! beside it. Every query and binding of members is the set map's
+  ! own; the store adds the name, the declared inclusion and the
+  ! subobject order.
+  !-------------------------------------------------------------------!
 
   type, extends(set_map) :: set_store
 
@@ -44,18 +53,26 @@ module map_set_store
 
    contains
 
+     ! Declaring
      procedure :: name
      procedure :: include_in
      procedure :: declare_subobject
 
+     ! Names
      procedure :: labelled
      procedure :: label_of
 
+     ! The subobject order
      procedure :: subobject_of
 
   end type set_store
 
 contains
+
+  !===================================================================!
+  ! Names a set. A set is named once; the label map rejects a second
+  ! name.
+  !===================================================================!
 
   subroutine name(this, element, label)
 
@@ -67,6 +84,11 @@ contains
 
   end subroutine name
 
+  !===================================================================!
+  ! Declares part inside ambient, part c--> ambient. A set is declared
+  ! into one ambient only; the inclusion map rejects a second.
+  !===================================================================!
+
   subroutine include_in(this, part, ambient)
 
     class(set_store), intent(inout) :: this
@@ -76,6 +98,17 @@ contains
     call this % inclusions % include_in(part, ambient)
 
   end subroutine include_in
+
+  !===================================================================!
+  ! Declares a new set of listed members, names it and places it
+  ! inside ambient:
+  !
+  !   members = a new set
+  !      |
+  !      |  bind         its listed members      set map
+  !      |  name         its label               label map
+  !      v  include_in   the ambient             inclusion map
+  !===================================================================!
 
   subroutine declare_subobject(this, members, listed_members, label, ambient)
 
@@ -92,6 +125,10 @@ contains
 
   end subroutine declare_subobject
 
+  !===================================================================!
+  ! Returns whether a name was bound to the set
+  !===================================================================!
+
   logical function labelled(this, element)
 
     class(set_store), intent(in) :: this
@@ -101,15 +138,27 @@ contains
 
   end function labelled
 
+  !===================================================================!
+  ! Returns the set's name, or '' when none was bound
+  !===================================================================!
+
   function label_of(this, element) result(label)
 
-    class(set_store), intent(in) :: this
-    type(graph)     , intent(in) :: element
+    class(set_store), intent(in)  :: this
+    type(graph)     , intent(in)  :: element
     character(len=:), allocatable :: label
 
     label = this % labels % label_of(element)
 
   end function label_of
+
+  !===================================================================!
+  ! Returns whether part lies inside ancestor in the declared
+  ! subobject order: part itself, or reached from it by following
+  ! declared inclusions,
+  !
+  !   part c--> A c--> B c--> ... c--> ancestor
+  !===================================================================!
 
   logical function subobject_of(this, part, ancestor)
 

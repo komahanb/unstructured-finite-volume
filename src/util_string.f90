@@ -1,43 +1,44 @@
 !=====================================================================!
-! This module contains a derived type 'string' and its implemented
-! procedures.
+! Module that contains the derived type string and its procedures:
+! tokenizing, printing, and reading the text as an integer or a real.
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 
 module util_string
 
-  use util_precision  , only : dp
+  use util_precision, only : dp
 
   implicit none
-  
+
   private
+
   public :: string
 
   !-------------------------------------------------------------------!
-  ! A derived type for a string.
+  ! Type that models a string: its characters and their count
   !-------------------------------------------------------------------!
-  
+
   type :: string
 
-     character(:), allocatable :: str ! The character array.
-     type(integer) :: count ! The length.
+     character(:), allocatable :: str   ! the characters
+     type(integer)             :: count ! their number
 
    contains
 
-     ! Overridden procedures.
+     ! Provided procedures
      procedure :: print
      procedure :: tokenize
      procedure :: as_integer
      procedure :: as_real
 
-     ! The destructor.
+     ! The destructor
      final :: destroy
 
   end type string
 
   !-------------------------------------------------------------------!
-  ! The constructor interface for a string.
+  ! The constructor interface for a string
   !-------------------------------------------------------------------!
 
   interface string
@@ -45,39 +46,48 @@ module util_string
   end interface string
 
 contains
-  
+
   !===================================================================!
-  ! Tokenize the string object and return an array of tokens.
+  ! Splits the string at a delimiter and returns the number of tokens
+  ! and, when requested, the tokens:
+  !
+  !   'a,bb,c'          delimiter ','
+  !    | || |
+  !    a bb c           3 tokens; tidx(:, k) = [first, last] of token k
+  !
+  ! An empty delimiter, or one the string does not contain, gives no
+  ! tokens. The text after the last delimiter is a token once at least
+  ! one delimiter has been found.
   !===================================================================!
-  
+
   pure subroutine tokenize(this, delimiter, num_tokens, tokens)
 
-    ! Arguments.
-    class(string)    , intent(in)  :: this
-    character(len=*) , intent(in)  :: delimiter
-    integer          , intent(out) :: num_tokens    
-    type(string)     , intent(out), allocatable, optional :: tokens(:)
-    
-    ! Locals.
-    integer , allocatable :: tidx(:,:)
-    integer :: sidx, eidx   
-    integer :: token_idx, token_ctr
-    integer :: i
+    ! Arguments
+    class(string)   , intent(in)  :: this
+    character(len=*), intent(in)  :: delimiter
+    integer         , intent(out) :: num_tokens
+    type(string)    , intent(out), allocatable, optional :: tokens(:)
+
+    ! Locals
+    integer, allocatable :: tidx(:,:)
+    integer              :: sidx, eidx
+    integer              :: token_idx, token_ctr
+    integer              :: i
 
     num_tokens = 0
-    if (len(delimiter) .eq. 0) return ! The delimiter does not match.
-    if (index(this % str, delimiter) .eq. 0) return ! The delimiter does not match.
+    if (len(delimiter) .eq. 0) return ! no delimiter to match
+    if (index(this % str, delimiter) .eq. 0) return ! the delimiter does not occur
 
-    ! The table stores the lower and upper index of each token.
+    ! The table stores the first and the last index of each token
     allocate(tidx(2, this % count))
-    
-    ! Initialize the indices and the token counter.
+
+    ! The indices and the token counter
     sidx      = 1
     eidx      = len(this % str)
-    token_ctr = 0 
+    token_ctr = 0
     parse: do while (len(this % str(sidx:eidx)) .ge. 0)
 
-       ! Find the next index of the delimiter.
+       ! The next occurrence of the delimiter
        token_idx = index(this % str(sidx:eidx), delimiter)
 
        if (token_idx .ne. 0) then
@@ -85,17 +95,17 @@ contains
           token_ctr = token_ctr + 1
           tidx(:,token_ctr) = [sidx, token_idx - 1 + sidx]
 
-          ! A match was found; record it and advance the start index.
+          ! A match was found; it is recorded and the start advanced
           sidx = sidx + token_idx
 
        else
 
-          ! Check whether this is the last substring.
+          ! The last substring
           if (token_ctr .ge. 1) then
 
-             ! The trailing substring is itself a token.
+             ! The trailing substring is itself a token
              token_ctr = token_ctr + 1
-                       
+
              token_idx = 1
 
              tidx(:,token_ctr) = [sidx, eidx]
@@ -108,7 +118,7 @@ contains
 
     end do parse
 
-    ! Set the return arguments.
+    ! The return arguments
     num_tokens = token_ctr
     if (present(tokens)) then
        if (allocated(tokens)) deallocate(tokens)
@@ -117,28 +127,27 @@ contains
           tokens(i) = string(this % str(tidx(1,i):tidx(2,i)))
        end do
     end if
-    
+
   end subroutine tokenize
 
   !===================================================================!
-  ! Construct a string object from the supplied literal, find its
-  ! length, and initialize its hashcode as zero.
+  ! Creates a string from a literal and records its length
   !===================================================================!
 
   pure elemental type(string) function create(str) result (this)
 
     type(character(*)), intent(in) :: str
-    
-    allocate(this % str, source=str) ! Source copies the value; mold does not.
-    
-    this % count = len(str)    
+
+    allocate(this % str, source=str) ! source copies the value; mold would not
+
+    this % count = len(str)
 
   end function create
-  
+
   !===================================================================!
-  ! The destructor for a string object.
+  ! Destroys a string, releasing its characters
   !===================================================================!
-  
+
   pure subroutine destroy(this)
 
     type(string), intent(inout) :: this
@@ -148,38 +157,39 @@ contains
   end subroutine destroy
 
   !===================================================================!
-  ! Print the string representation of the object.
+  ! Prints the string, by the given format or as "string : <text>";
+  ! a string with no characters prints as NULL
   !===================================================================!
-  
+
   impure elemental subroutine print(this, fmt)
-    
-    class(string)   , intent(in) :: this
+
+    class(string)   , intent(in)           :: this
     character(len=*), intent(in), optional :: fmt
 
     if (present(fmt)) then
-       
+
        if (allocated(this % str)) then
           write(*,fmt) this % str
        else
           print *, "string : ", "NULL"
        end if
-       
+
        return
-       
+
     end if
-    
+
     if (allocated(this % str)) then
        print *, "string : ", this % str
     else
        print *, "string : ", "NULL"
     end if
-    
+
   end subroutine print
 
-  !===================================================================!  
-  ! Return the integer evaluation of the string.
   !===================================================================!
-  
+  ! Returns the integer the string reads as
+  !===================================================================!
+
   pure elemental type(integer)  function as_integer(this)
 
     class(string), intent(in) :: this
@@ -188,16 +198,16 @@ contains
 
   end function as_integer
 
-  !===================================================================!  
-  ! Return the real number parsed from the string.
   !===================================================================!
-  
+  ! Returns the real number the string reads as
+  !===================================================================!
+
   pure elemental type(real(dp)) function as_real(this)
 
     class(string), intent(in) :: this
 
     read (this % str,*) as_real
-    
+
   end function as_real
-  
+
 end module util_string

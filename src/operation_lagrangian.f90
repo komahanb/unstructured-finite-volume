@@ -1,57 +1,74 @@
 !=====================================================================!
-! THE CONTINUOUS AND THE DISCRETE RESIDUAL. A continuous residual is a
-! condition, a chain of conditions, a Lagrangian: equations on a
-! manifold, each condition paired with its multiplier. Its
-! discretization on the points of a discrete manifold - the families
-! of a chain along time, the derivative approximations along space -
-! is the discrete residual: the rows of each block of the chain
-! (operation_residual_operator) and the sources of every order of the
-! expansion and of the adjoint, the data of its minimization - a
+! Module that states the continuous and the discrete residual.
+!
+! Continuous. A continuous residual is a condition, a chain of
+! conditions, a Lagrangian: equations on a manifold, each condition
+! paired with its multiplier.
+!
+! Discrete. Its discretization on the points of a discrete manifold
+! (the families of a chain along time, the derivative approximations
+! along space) is the discrete residual: the rows of each block of the
+! chain (operation_residual_operator) and the sources of every order
+! of the expansion and of the adjoint, the data of its minimization, a
 ! minimand (operation_minimization), whose march of the blocks and
 ! whose minimizers of each block's rows solve them.
+!
+!      continuous_lagrangian    L = J + lambda_r . r + lambda . g
+!                |
+!                |  discretize(points, time = a chain of families,
+!                |             space = a derivative approximation)
+!                v
+!      discrete_lagrangian      L_h, a minimand
+!                |
+!                |  minimize: the forward sweep over the blocks, then
+!                |            the reverse sweep where the equations
+!                |            are paired
+!                v
+!      discrete_field           the state and its jet, and the
+!                               multipliers under their names
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 
 module operation_lagrangian
 
-  use util_precision   , only : dp
-  use operation_action , only : operation, contract, variation
-  use operation_action  , only : binding, bound_real_vector, bound_on
-  use view_directed     , only : directed_graph
-  use graph_fractal     , only : graph
-  use view_directed_stored, only : stored_directed_graph
-  use field_calculus    , only : field, FIELD_REAL
-  use field_stored      , only : stored_field, typed_field_domain
-  use operation_stencil  , only : stencil, combine_triples
-  use operation_expression , only : expression, euler_lagrange, multiplier, constant, jet_form, represented_component
-  use operation_expression , only : flux_form, coefficient_form, total_derivative, on_domain, paired
-  use operation_expression , only : operator(+), operator(-), operator(*), unknown, partial_derivative
-  use operation_expression , only : expression_vertex, VERTEX_LEAF, ARGUMENT_STATE, FIRST_COORDINATE
-  use operation_domain     , only : continuous_domain, discrete_domain
-  use util_derivative_terms, only : max_subset_width, derivative_terms, mixed_partial, coefficient, symmetric_terms
-  use util_derivative_terms, only : value
-  use util_derivative_terms, only : operator(*)
-  use token_identity       , only : token
-  use operation_field      , only : continuous_field, discrete_field, WHOLE, TIME_FACE, TIME_FACTOR, SPACE_FACTOR
-  use view_expression      , only : expression_view
-  use operation_manifold   , only : continuous_manifold, discrete_manifold
-  use operation_expansion  , only : expansion
-  use operation_family     , only : family, chain, enrichment
-  use operation_weight     , only : scheme_weight
-  use operation_coupling   , only : weights_of, weights_terms
-  use view_directed_connectivity, only : connectivity_graph
-  use operation_scheme_stencil  , only : derived_constraints
+  use util_precision                    , only : dp
+  use operation_action                  , only : operation, contract, variation
+  use operation_action                  , only : binding, bound_real_vector, bound_on
+  use view_directed                     , only : directed_graph
+  use graph_fractal                     , only : graph
+  use view_directed_stored              , only : stored_directed_graph
+  use field_calculus                    , only : field, FIELD_REAL
+  use field_stored                      , only : stored_field, typed_field_domain
+  use operation_stencil                 , only : stencil, combine_triples
+  use operation_expression              , only : expression, euler_lagrange, multiplier, constant, jet_form, represented_component
+  use operation_expression              , only : flux_form, coefficient_form, total_derivative, on_domain, paired
+  use operation_expression              , only : operator(+), operator(-), operator(*), unknown, partial_derivative
+  use operation_expression              , only : expression_vertex, VERTEX_LEAF, ARGUMENT_STATE, FIRST_COORDINATE
+  use operation_domain                  , only : continuous_domain, discrete_domain
+  use util_derivative_terms             , only : max_subset_width, derivative_terms, mixed_partial, coefficient, symmetric_terms
+  use util_derivative_terms             , only : value
+  use util_derivative_terms             , only : operator(*)
+  use token_identity                    , only : token
+  use operation_field                   , only : continuous_field, discrete_field, WHOLE, TIME_FACE, TIME_FACTOR, SPACE_FACTOR
+  use view_expression                   , only : expression_view
+  use operation_manifold                , only : continuous_manifold, discrete_manifold
+  use operation_expansion               , only : expansion
+  use operation_family                  , only : family, chain, enrichment
+  use operation_weight                  , only : scheme_weight
+  use operation_coupling                , only : weights_of, weights_terms
+  use view_directed_connectivity        , only : connectivity_graph
+  use operation_scheme_stencil          , only : derived_constraints
   use operation_derivative_approximation, only : derivative_approximation, element_quadrature, tested_at
-  use operation_segment_trapezoid, only : segment_trapezoid
-  use operation_exchange       , only : exchange, state_summed_rows
-  use util_verbosity           , only : verbosity, set_verbosity
-  use transform_partitioner    , only : partitioner, PARTITION_BREADTH_FIRST
-  use operation_minimizer, only : minimizer
-  use operation_minimization, only : minimand, march_state, block_facts, discrete_minimizer, minimizer_of
-  use operation_minimization, only : system_solution, rows_evaluated
-  use operation_residual_operator, only : residual_operator, projection, stationarities, chain_block, lower_bounds
-  use operation_residual_operator, only : origin, HISTORY_MOMENTS, OWN_MOMENTS, EVERY_MOMENT
+  use operation_segment_trapezoid       , only : segment_trapezoid
+  use operation_exchange                , only : exchange, state_summed_rows
+  use util_verbosity                    , only : verbosity, set_verbosity
+  use transform_partitioner             , only : partitioner, PARTITION_BREADTH_FIRST
+  use operation_minimizer               , only : minimizer
+  use operation_minimization            , only : minimand, march_state, block_facts, discrete_minimizer, minimizer_of
+  use operation_minimization            , only : system_solution, rows_evaluated
+  use operation_residual_operator       , only : residual_operator, projection, stationarities, chain_block, lower_bounds
+  use operation_residual_operator       , only : origin, HISTORY_MOMENTS, OWN_MOMENTS, EVERY_MOMENT
 
   implicit none
 
@@ -60,55 +77,65 @@ module operation_lagrangian
   public :: equidistribution
   public :: operator(+), operator(*)
 
+  !-------------------------------------------------------------------!
+  ! Type that models one term of a continuous residual: the equations
+  ! of a condition on a manifold, each a scalar field, the multiplier
+  ! the condition declares, whether the two are paired, and whether
+  ! the condition is an inequality
+  !-------------------------------------------------------------------!
 
-  !===================================================================!
-  ! THE CONTINUOUS RESIDUAL: a condition, a chain of conditions, a
-  ! Lagrangian - one type. A condition is a list of equations, each a
-  ! scalar field, on one manifold; paired with a multiplier, an
-  ! unknown of that manifold with one component per equation,
-  ! declared by the condition itself, it contributes to the Lagrangian
-  ! the product of the two. The sum of two residuals is the residual
-  ! of their conditions in the order summed, so that a Lagrangian is a
-  ! chain of residuals and needs no type of its own. The equations of
-  ! a condition on a part of a manifold - a face at an instant, the
-  ! time factor - read the unknowns of the parent. The objective J, a
-  ! scalar integral over the manifold, enters the Lagrangian as a
-  ! term of its own, L = J + lambda_r . r + lambda . g: its
-  ! stationarity in the state is the adjoint equation, and the
-  ! multipliers are the sensitivities of J to their equalities.
+  type :: residual_term
+
+     type(continuous_manifold)              :: manifold
+     type(continuous_field)   , allocatable :: equation(:)
+     type(continuous_field)                 :: multiplier
+     logical                                :: paired = .false.
+     ! an inequality on the design factor: each equation at most zero,
+     ! its multiplier nonnegative and zero where the equation is below
+     ! zero
+     logical                                :: inequality = .false.
+
+  end type residual_term
+
+  ! The actions of a scheduled reverse sweep
+  integer, parameter :: ACTION_RESTORE = 1, ACTION_ADVANCE = 2, ACTION_STORE = 3, ACTION_REVERSE = 4
+
+  ! The iterations of Newton's method on a free design
+  integer, parameter :: MAX_DESIGN_ITERATIONS = 50
+
+  !-------------------------------------------------------------------!
+  ! Type that models the continuous residual: a condition, a chain of
+  ! conditions, a Lagrangian, one type.
   !
-  ! A CONDITION NEEDS NO MULTIPLIER. The reverse sweep, which runs
+  ! A condition is a list of equations, each a scalar field, on one
+  ! manifold; paired with a multiplier, an unknown of that manifold
+  ! with one component per equation, declared by the condition itself,
+  ! it contributes to the Lagrangian the product of the two. The sum
+  ! of two residuals is the residual of their conditions in the order
+  ! summed, so that a Lagrangian is a chain of residuals and needs no
+  ! type of its own. The equations of a condition on a part of a
+  ! manifold (a face at an instant, the time factor) read the unknowns
+  ! of the parent. The objective J, a scalar integral over the
+  ! manifold, enters the Lagrangian as a term of its own,
+  ! L = J + lambda_r . r + lambda . g: its stationarity in the state
+  ! is the adjoint equation, and the multipliers are the sensitivities
+  ! of J to their equalities.
+  !
+  !      L  =  J          +  lambda_r . r  +  lambda . g  +  h
+  !            objective     paired           paired         summed bare
+  !
+  ! A condition needs no multiplier. The reverse sweep, which runs
   ! when the equations are paired, solves the transposed system for
   ! the multiplier of every row, whether or not its condition was
   ! paired: the multipliers mirror the conditions. Pairing a condition
   ! names its multiplier, and a named multiplier is returned with the
-  ! solution; a condition summed bare, L = J + lambda_r . r + g, is
+  ! solution; a condition summed bare, L = J + lambda_r . r + h, is
   ! satisfied the same way and its multiplier is not returned.
-  !===================================================================!
-
-  type :: residual_term
-
-     type(continuous_manifold) :: manifold
-     type(continuous_field), allocatable :: equation(:)
-     type(continuous_field) :: multiplier
-     logical :: paired = .false.
-     ! an inequality on the design factor: each equation at most zero,
-     ! its multiplier nonnegative and zero where the equation is below
-     ! zero
-     logical :: inequality = .false.
-
-  end type residual_term
-
-
-  ! the actions of a scheduled reverse sweep
-  integer, parameter :: ACTION_RESTORE = 1, ACTION_ADVANCE = 2, ACTION_STORE = 3, ACTION_REVERSE = 4
-
-  ! the iterations of Newton's method on a free design
-  integer, parameter :: MAX_DESIGN_ITERATIONS = 50
+  !-------------------------------------------------------------------!
 
   type :: continuous_lagrangian
 
-     type(residual_term), allocatable :: term(:)
+     type(residual_term)   , allocatable :: term(:)
      type(continuous_field), allocatable :: objective
 
    contains
@@ -131,97 +158,69 @@ module operation_lagrangian
      module procedure paired_term
   end interface operator(*)
 
-  !===================================================================!
-  ! THE DISCRETE RESIDUAL: the equations of the whole manifold as one
-  ! Lagrangian rule, the conditions on its parts, the points, and the
-  ! derivative approximations along time (a chain of families) and
-  ! along space (a derivative_approximation of an order: finite
-  ! differences or finite volumes). minimize assembles
-  ! one residual_operator per block of the chain over the block's
-  ! instants, its stages and the cells, and solves the blocks in
-  ! order.
+  !-------------------------------------------------------------------!
+  ! Type that models the state of a march of the discrete residual:
+  ! the tuples at every instant and cell and the stages of every step,
+  ! in every column of the expansion; the space rows; the solution's
+  ! columns; and the adjoint's: the Lagrangian's differential at the
+  ! nodes, the multipliers, and at the block in reverse the jets of the
+  ! state along each expansion and the multipliers of each order.
   !
-  ! A condition on a face at an instant is affine in the components
-  ! of the parent unknowns' jets, with coefficient one on exactly one
-  ! of them, the component it determines: u - g = 0, or lambda_t -
-  ! u_t = 0. It becomes, at every cell of the instant, the prescribed
-  ! row of that component, the affine relation in place of the
-  ! component's own row. A condition on the time factor must be the
-  ! integral over the region of one parent unknown: it becomes, at
-  ! every moment, the prescribed row that the sum of the cell volumes
-  ! times the unknown vanishes, in place of that unknown's own row at
-  ! the first cell. Any other condition is refused.
-  !
-  ! THE ADJOINT. With the equations paired with a multiplier, minimize
-  ! follows the forward sweep over the blocks by a reverse sweep: each
-  ! block's jacobian at its solution, transposed, determines the
-  ! multipliers of the block's rows from the differential of the
-  ! objective and the multipliers the later blocks pass back through
-  ! the block's history instants. The multiplier of each equation at
-  ! each instant is returned under the name the term declared - for
-  ! a family marching by stages, the sum over the stages of the step
-  ! into the instant of their multipliers, the sensitivity of the
-  ! objective to a forcing of the equation over the step - the
-  ! multiplier of each face condition, the reaction, under its own
-  ! name at the face's points, the multiplier of each condition on
-  ! the time factor under its name at every cell of the instant, and
-  ! the multiplier of the design condition under its name at every
-  ! point. Every multiplier returned is that of a discrete row: the
-  ! sensitivity of the objective to a unit perturbation of that row.
-  ! The row of an equation at an instant is the equation times the
-  ! instant's step, so the multiplier is the continuous adjoint at
-  ! the instant times the step; the multiplier of a datum's row is the
-  ! sensitivity to the datum itself. A design field is an unknown
-  ! with a paired equation
-  ! f - f_0 = 0 among the equations of the manifold: the multiplier
-  ! of that equation at each instant is the sensitivity of the
-  ! objective to the datum there, the functional derivative.
-  !===================================================================!
-
-  !===================================================================!
-  ! THE STATE OF A MARCH of the discrete residual: the tuples at every
-  ! instant and cell and the stages of every step, in every column of
-  ! the expansion; the space rows; the solution's columns; and the
-  ! adjoint's - the Lagrangian's differential at the nodes, the
-  ! multipliers, and at the block in reverse the jets of the state
-  ! along each expansion and the multipliers of each order.
-  !
-  ! THE MULTIPLIERS of every row of L_h in every column of the
+  ! The multipliers of every row of L_h, in every column of the
   ! expansion. The differential of the objective in the jet is the
   ! source in column zero; in the column of order o along an
   ! expansion, the derivatives along it of that differential and of
   ! the product of the multipliers with the equations' jacobian, the
   ! multiplier's own derivative of that order left out. In the column
-  ! of the order o along the expansion d, adjoint(f, c, k, :) is the
-  ! o-th derivative along d of the multiplier of equation f at cell c
-  ! and instant k, reaction(c, e, :) of the e-th face condition
-  ! equation at cell c, gauge(k, g, :) of the g-th time-factor
-  ! condition equation at instant k, and design_multiplier(i, :) of the
-  ! multiplier of the design condition on the coordinate i, kappa_i =
-  ! -dJ/dnu_i, which is -d^(o+1) J / (dnu_i dnu_d^o) there.
-  !===================================================================!
+  ! of the order o along the expansion d:
+  !
+  !      adjoint(f, c, k, :)       the o-th derivative along d of the
+  !                                multiplier of equation f at cell c
+  !                                and instant k
+  !      reaction(c, e, :)         of the e-th face condition equation
+  !                                at cell c
+  !      gauge(k, g, :)            of the g-th time-factor condition
+  !                                equation at instant k
+  !      design_multiplier(i, :)   of the multiplier of the design
+  !                                condition on the coordinate i,
+  !                                kappa_i = -dJ/dnu_i, which is
+  !                                -d^(o+1) J / (dnu_i dnu_d^o) there
+  !-------------------------------------------------------------------!
 
   type, extends(march_state) :: chain_state
-     real(dp), allocatable :: tuple(:,:,:,:), stages(:,:,:,:,:)
-     type(stencil), allocatable :: rows_along(:,:)
-     real(dp), allocatable :: value(:,:), jet(:,:,:)
+     ! the tuples at every instant and cell, and the stages of every
+     ! step; the space rows
+     real(dp)         , allocatable :: tuple(:,:,:,:), stages(:,:,:,:,:)
+     type(stencil)    , allocatable :: rows_along(:,:)
+     ! the solution's columns, and the quadrature node of each stage
+     real(dp)         , allocatable :: value(:,:), jet(:,:,:)
      character(len=32), allocatable :: names(:)
-     integer , allocatable :: slot(:), stage_node(:,:,:)
-     integer :: nm = 0
-     real(dp), allocatable :: gradient(:,:,:), partial(:,:)
-     real(dp), allocatable :: adjoint(:,:,:,:), incoming(:,:,:,:), reaction(:,:,:), gauge(:,:,:)
-     real(dp), allocatable :: design_multiplier(:,:)
-     real(dp), allocatable :: jets(:,:,:), mu(:,:,:)
-     logical , allocatable :: gauged(:)
+     integer          , allocatable :: slot(:), stage_node(:,:,:)
+     integer                        :: nm = 0
+     ! the Lagrangian's differential at the nodes
+     real(dp)         , allocatable :: gradient(:,:,:), partial(:,:)
+     ! the multipliers, and those the later blocks pass back
+     real(dp)         , allocatable :: adjoint(:,:,:,:), incoming(:,:,:,:), reaction(:,:,:), gauge(:,:,:)
+     real(dp)         , allocatable :: design_multiplier(:,:)
+     ! at the block in reverse: the jets of the state along each
+     ! expansion and the multipliers of each order; the gauged unknowns
+     real(dp)         , allocatable :: jets(:,:,:), mu(:,:,:)
+     logical          , allocatable :: gauged(:)
   end type chain_state
 
-  !===================================================================!
-  ! THE EQUIDISTRIBUTION, a placement of the instants of a discrete
-  ! image of L in place of their positions: the count of the instants
-  ! of the manifold's image, the instants moved by minimize until the
-  ! estimate of the error of the objective is the same over every step
-  ! of the chain - the step density proportional to the local error
-  ! density to the power 1/(p + 1), p the order of the step's family.
+  !-------------------------------------------------------------------!
+  ! Type that models the equidistribution, a placement of the instants
+  ! of a discrete image of L in place of their positions: the count of
+  ! the instants of the manifold's image, the instants moved by
+  ! minimize until the estimate of the error of the objective is the
+  ! same over every step of the chain, the step density proportional to
+  ! the local error density to the power 1/(p + 1), p the order of the
+  ! step's family.
+  !
+  !      e(t)       ___/\_______/\___
+  !      instants   |  |||  |  |||  |      denser where e(t) is
+  !                                         larger
+  !
   ! With a tolerance the count is free: the instants are as many as
   ! place the estimate within the tolerance, relative to the size of
   ! the objective, or of the design when the design is free, unless
@@ -229,88 +228,148 @@ module operation_lagrangian
   ! from the pool with the instants (pool_iteration), to the least work
   ! within a tolerance, or to the least error at a work, a number of
   ! solves.
-  !===================================================================!
+  !-------------------------------------------------------------------!
 
   type :: equidistribution
-     real(dp) :: tolerance = 0.0_dp
-     logical  :: absolute  = .false.
+     real(dp)                  :: tolerance = 0.0_dp
+     logical                   :: absolute  = .false.
      type(family), allocatable :: pool(:)
-     integer  :: work      = 0
+     integer                   :: work      = 0
   end type equidistribution
+
+  !-------------------------------------------------------------------!
+  ! Type that models the discrete residual: the equations of the whole
+  ! manifold as one Lagrangian rule, the conditions on its parts, the
+  ! points, and the derivative approximations along time (a chain of
+  ! families) and along space (a derivative_approximation of an order:
+  ! finite differences or finite volumes). minimize assembles one
+  ! residual_operator per block of the chain over the block's
+  ! instants, its stages and the cells, and solves the blocks in
+  ! order.
+  !
+  ! Conditions on faces. A condition on a face at an instant is affine
+  ! in the components of the parent unknowns' jets, with coefficient
+  ! one on exactly one of them, the component it determines: u - g = 0,
+  ! or lambda_t - u_t = 0. It becomes, at every cell of the instant,
+  ! the prescribed row of that component, the affine relation in place
+  ! of the component's own row. A condition on the time factor must be
+  ! the integral over the region of one parent unknown: it becomes, at
+  ! every moment, the prescribed row that the sum of the cell volumes
+  ! times the unknown vanishes, in place of that unknown's own row at
+  ! the first cell. Any other condition is refused.
+  !
+  !      u - g = 0 on the face at T      row of u at every cell of T:
+  !                                      u(c, T) - g = 0
+  !      integral of u over the region   row of u at the first cell:
+  !        = 0, on the time factor       V_1 u_1 + V_2 u_2 + ... = 0
+  !
+  ! The adjoint. With the equations paired with a multiplier, minimize
+  ! follows the forward sweep over the blocks by a reverse sweep: each
+  ! block's jacobian at its solution, transposed, determines the
+  ! multipliers of the block's rows from the differential of the
+  ! objective and the multipliers the later blocks pass back through
+  ! the block's history instants.
+  !
+  !      forward   block 1 --> block 2 --> ... --> block B
+  !      reverse   block 1 <-- block 2 <-- ... <-- block B
+  !                each block: its jacobian, transposed, against dJ and
+  !                what the later blocks pass back
+  !
+  ! The multiplier of each equation at each instant is returned under
+  ! the name the term declared (for a family marching by stages, the
+  ! sum over the stages of the step into the instant of their
+  ! multipliers, the sensitivity of the objective to a forcing of the
+  ! equation over the step); the multiplier of each face condition,
+  ! the reaction, under its own name at the face's points; the
+  ! multiplier of each condition on the time factor under its name at
+  ! every cell of the instant; and the multiplier of the design
+  ! condition under its name at every point. Every multiplier returned
+  ! is that of a discrete row: the sensitivity of the objective to a
+  ! unit perturbation of that row. The row of an equation at an
+  ! instant is the equation times the instant's step, so the
+  ! multiplier is the continuous adjoint at the instant times the
+  ! step; the multiplier of a datum's row is the sensitivity to the
+  ! datum itself. A design field is an unknown with a paired equation
+  ! f - f_0 = 0 among the equations of the manifold: the multiplier of
+  ! that equation at each instant is the sensitivity of the objective
+  ! to the datum there, the functional derivative.
+  !-------------------------------------------------------------------!
 
   type, extends(minimand) :: discrete_lagrangian
 
-     type(discrete_manifold)   :: points
-     type(continuous_manifold) :: manifold
-     type(expression)          :: rule
-     type(chain)               :: schemes
-     logical                   :: with_chain = .false.
+     type(discrete_manifold)                      :: points
+     type(continuous_manifold)                    :: manifold
+     type(expression)                             :: rule
+     type(chain)                                  :: schemes
+     logical                                      :: with_chain = .false.
      class(derivative_approximation), allocatable :: differences
-     logical                   :: with_differences = .false.
-     type(residual_term), allocatable :: condition(:)
+     logical                                      :: with_differences = .false.
+     type(residual_term)            , allocatable :: condition(:)
      ! the representation laws paired with a multiplier, whose
      ! multipliers the reverse sweep returns under their names
-     type(residual_term), allocatable :: representation(:)
-     type(continuous_field), allocatable :: objective
-     logical                   :: with_adjoint = .false.
+     type(residual_term)            , allocatable :: representation(:)
+     type(continuous_field)         , allocatable :: objective
+     logical                                      :: with_adjoint = .false.
      ! two images divide a checkpointed reverse sweep: image 2 solves
      ! the segments again, image 1 forms their multipliers; every
      ! image then owns every expansion
-     logical                   :: overlapped = .false.
-     character(len=32)         :: adjoint_name = ''
-     ! THE LAW PROJECTED ON THE CELLS, for a method that tests it
+     logical                                      :: overlapped = .false.
+     character(len=32)                            :: adjoint_name = ''
+     ! The law projected on the cells, for a method that tests it
      ! against a basis: its flux form as a Lagrangian, each multiplier
      ! of which tests the equation tested(1, m) with the basis's
      ! derivative tested(2, m), and the elements of the region; the
      ! rule is then the layout of the coefficients a node stores
-     type(expression)        , allocatable :: flux
-     integer                 , allocatable :: tested(:,:)
-     type(element_quadrature), allocatable :: elements
-     ! THE RULE AT THE MANIFOLD'S FIRST INSTANT, where a law the initial
+     type(expression)               , allocatable :: flux
+     integer                        , allocatable :: tested(:,:)
+     type(element_quadrature)       , allocatable :: elements
+     ! The rule at the manifold's first instant, where a law the initial
      ! data satisfy is stated by its derivative along time; unallocated
      ! when no law is. Projected, the flux form there
-     type(expression)        , allocatable :: initial_rule
-     type(expression)        , allocatable :: initial_flux
+     type(expression)               , allocatable :: initial_rule
+     type(expression)               , allocatable :: initial_flux
      ! the derivatives along time initial_form takes of each law, zero
      ! for a law it states as it is, and the laws it differentiates
-     integer                 , allocatable :: initial_order(:)
-     logical                 , allocatable :: initial_varying(:)
-     ! THE PROJECTION OF THE EXPLICIT INSTANTS (projection_form): the
-     ! rule at an explicit instant ending a step of a family that marches
-     ! by stages, the laws that differ there from the rule at its stages,
-     ! the count of the unknowns it adds, and the unknown z of each order
-     ! along time and field, zero where there is none
-     type(expression)        , allocatable :: projection_rule
-     logical                 , allocatable :: projection_varying(:)
-     integer                 :: projection_unknowns = 0
-     integer                 , allocatable :: projection_field(:,:)
-     ! THE LAWS OF THE RULES, the stationarities of each rule's
+     integer                        , allocatable :: initial_order(:)
+     logical                        , allocatable :: initial_varying(:)
+     ! The projection of the explicit instants (projection_form): the
+     ! rule at an explicit instant ending a step of a family that
+     ! marches by stages, the laws that differ there from the rule at
+     ! its stages, the count of the unknowns it adds, and the unknown z
+     ! of each order along time and field, zero where there is none
+     type(expression)               , allocatable :: projection_rule
+     logical                        , allocatable :: projection_varying(:)
+     integer                                      :: projection_unknowns = 0
+     integer                        , allocatable :: projection_field(:,:)
+     ! The laws of the rules, the stationarities of each rule's
      ! Lagrangian in its multipliers, formed once for every block: of
      ! the rule (projected, the flux), of the rule at the first instant
      ! and of the rule at the corrected instants
-     type(expression)        , allocatable :: rule_laws(:), initial_rule_laws(:), projection_rule_laws(:)
+     type(expression)               , allocatable :: rule_laws(:), initial_rule_laws(:), projection_rule_laws(:)
      ! each block after the first starts from the solution at the last
      ! instant before it (minimize, continued)
-     logical                 :: continued = .false.
-     ! THE MULTIPLIERS OF THE INEQUALITIES ON FUNCTIONALS of the state,
+     logical                                      :: continued = .false.
+     ! The multipliers of the inequalities on functionals of the state,
      ! one per inequality in the order stated, zero for one on the
      ! design alone: the reverse sweep adds each functional's
      ! differential times its multiplier to the objective's, the
      ! Lagrangian's, so that the multipliers of the design and their
      ! expansion are its gradient and its hessian in the design
-     real(dp), allocatable   :: functional_weight(:)
+     real(dp)                       , allocatable :: functional_weight(:)
      ! the placement of the instants, an equidistribution, minimize
      ! moving them; unallocated, the instants are the image's
-     type(equidistribution), allocatable :: placement
-     ! THE PIN OF THE INSTANTS, t_k - t_k0 = 0, a condition on the design
-     ! of the discrete image, its multiplier named here: -(dJ/dt_k + mu .
-     ! dR/dt_k) = -dJ_h/dt_k at each instant, and along an expansion its
-     ! derivatives, as the multiplier of a condition on the design factor
-     ! is -dJ/dnu; unallocated, no pin is stated
-     character(len=32), allocatable :: instant_multiplier
+     type(equidistribution)         , allocatable :: placement
+     ! The pin of the instants, t_k - t_k0 = 0, a condition on the
+     ! design of the discrete image, its multiplier named here:
+     ! -(dJ/dt_k + mu . dR/dt_k) = -dJ_h/dt_k at each instant, and along
+     ! an expansion its derivatives, as the multiplier of a condition
+     ! on the design factor is -dJ/dnu; unallocated, no pin is stated
+     character(len=32)              , allocatable :: instant_multiplier
 
    contains
 
+     ! The minimization, the placement of the instants, the pool of
+     ! families and the design
      procedure :: minimize
      procedure :: disagreement
      procedure, private :: time_disagreement
@@ -331,6 +390,7 @@ module operation_lagrangian
      procedure, private :: num_represented
      procedure, private :: block_positions
 
+     ! The blocks, their rows, their faces and their adjoint
      procedure, private :: adjoint_block
      procedure, private :: adjoint_order
      procedure, private :: adjoint_rows
@@ -381,7 +441,7 @@ module operation_lagrangian
      procedure, private :: coefficient_derivative
      procedure, private :: fixed_coefficient
      procedure, private :: projected_datum
-     ! THE MINIMAND, what the minimization reads
+     ! The minimand, what the minimization reads
      procedure :: num_blocks           => march_blocks
      procedure :: history_of           => block_history
      procedure :: block_label
@@ -410,22 +470,21 @@ module operation_lagrangian
 
 contains
 
-
   !===================================================================!
-  ! A term: the equations on a manifold; with inequality, on the
-  ! design factor, each equation at most zero. Invalid input: an
+  ! Creates a term: the equations on a manifold; with inequality, on
+  ! the design factor, each equation at most zero. Invalid input: an
   ! equation that is not a scalar field, or one on neither the
   ! manifold nor its parent; an inequality on another part.
   !===================================================================!
 
   function create_continuous(manifold, equations, inequality) result(this)
 
-    type(continuous_manifold), intent(in) :: manifold
-    type(continuous_field)   , intent(in) :: equations(:)
+    type(continuous_manifold), intent(in)           :: manifold
+    type(continuous_field)   , intent(in)           :: equations(:)
     logical                  , intent(in), optional :: inequality
-    type(continuous_lagrangian) :: this
+    type(continuous_lagrangian)                     :: this
 
-    integer :: k
+    integer            :: k
     character(len=250) :: message
 
     allocate(this % term(1))
@@ -451,10 +510,16 @@ contains
 
   end function create_continuous
 
+  !===================================================================!
+  ! Returns the sum of two residuals: the terms of both in the order
+  ! summed, and the objective of either; two objectives stop the
+  ! program
+  !===================================================================!
+
   function residual_sum(a, b) result(this)
 
     type(continuous_lagrangian), intent(in) :: a, b
-    type(continuous_lagrangian) :: this
+    type(continuous_lagrangian)             :: this
 
     this % term = [a % term, b % term]
     if (allocated(a % objective) .and. allocated(b % objective)) then
@@ -466,17 +531,17 @@ contains
   end function residual_sum
 
   !===================================================================!
-  ! The objective added to a residual, J + lambda . r: a scalar
-  ! field, the integral of a function of the state over the
+  ! Returns the objective added to a residual, J + lambda . r: a
+  ! scalar field, the integral of a function of the state over the
   ! manifold, or the smooth maximum of several. Invalid input: a field
   ! that is neither, or a residual with an objective already.
   !===================================================================!
 
   function objective_sum(objective, residual) result(this)
 
-    type(continuous_field)   , intent(in) :: objective
+    type(continuous_field)     , intent(in) :: objective
     type(continuous_lagrangian), intent(in) :: residual
-    type(continuous_lagrangian) :: this
+    type(continuous_lagrangian)             :: this
 
     if (.not. objective % is_integral()) then
        error stop 'operation_lagrangian: the objective is the integral of a field over the manifold, or its &
@@ -494,20 +559,19 @@ contains
   end function objective_sum
 
   !===================================================================!
-  ! THE MULTIPLIER of a term: an unknown of the term's manifold with
-  ! one component per equation, the count read from the term - the
-  ! initial data of an equation of order n are n conditions, and
-  ! their multiplier has n components - a function of the coordinates
-  ! given as its arguments. Invalid input: a residual of several
-  ! terms.
+  ! Returns the multiplier of a term: an unknown of the term's manifold
+  ! with one component per equation, the count read from the term (the
+  ! initial data of an equation of order n are n conditions, and their
+  ! multiplier has n components), a function of the coordinates given
+  ! as its arguments. Invalid input: a residual of several terms.
   !===================================================================!
 
   function residual_multiplier(this, name, arguments) result(lambda)
 
-    class(continuous_lagrangian), intent(inout) :: this
-    character(len=*)            , intent(in)    :: name
+    class(continuous_lagrangian), intent(inout)        :: this
+    character(len=*)            , intent(in)           :: name
     type(continuous_field)      , intent(in), optional :: arguments(:)
-    type(continuous_field) :: lambda
+    type(continuous_field)                             :: lambda
 
     if (size(this % term) /= 1) then
        error stop 'operation_lagrangian: a multiplier is declared by one term; declare it before summing'
@@ -517,8 +581,8 @@ contains
   end function residual_multiplier
 
   !===================================================================!
-  ! The pairing lambda . g: the multiplier is an unknown of the term's
-  ! manifold with one component per equation. Invalid input: a
+  ! Returns the pairing lambda . g: the multiplier is an unknown of the
+  ! term's manifold with one component per equation. Invalid input: a
   ! multiplier of another manifold, or one that is not an unknown, or
   ! a residual of several terms, or a component count other than the
   ! equation count.
@@ -526,9 +590,9 @@ contains
 
   function paired_term(lambda, g) result(this)
 
-    type(continuous_field)   , intent(in) :: lambda
+    type(continuous_field)     , intent(in) :: lambda
     type(continuous_lagrangian), intent(in) :: g
-    type(continuous_lagrangian) :: this
+    type(continuous_lagrangian)             :: this
 
     character(len=250) :: message
 
@@ -553,27 +617,10 @@ contains
   end function paired_term
 
   !===================================================================!
-  ! THE DISCRETIZATION. Exactly one term on the whole manifold that
-  ! is not a representation law gives the rule, one equation per
-  ! unknown in order; every other term is a condition on a part of
-  ! that manifold, paired or bare. A coordinate present without its
-  ! approximation, or an approximation given for a coordinate absent,
-  ! is invalid input.
+  ! Returns the count of the equations of the representation laws
+  ! paired with a multiplier
   !===================================================================!
 
-  !===================================================================!
-  ! THE REPRESENTATION LAWS STATED, each column of defined the field,
-  ! the order and the coordinate of the jet component one law defines.
-  ! Along a coordinate with laws stated, every component the rule
-  ! stores along it, of order one to its degree, is defined exactly
-  ! once, and the coordinate has its concretion: the chain of families
-  ! along time, a derivative approximation along space. The rows stay
-  ! those the concretion builds. Invalid input: a component defined
-  ! twice or not at all, or a law along a coordinate without its
-  ! concretion.
-  !===================================================================!
-
-  ! the equations of the representation laws paired with a multiplier
   pure integer function num_represented(this)
 
     class(discrete_lagrangian), intent(in) :: this
@@ -588,14 +635,30 @@ contains
 
   end function num_represented
 
+  !===================================================================!
+  ! Checks the representation laws stated, each column of defined the
+  ! field, the order and the coordinate of the jet component one law
+  ! defines. Along a coordinate with laws stated, every component the
+  ! rule stores along it, of order one to its degree, is defined
+  ! exactly once, and the coordinate has its concretion: the chain of
+  ! families along time, a derivative approximation along space. The
+  ! rows stay those the concretion builds.
+  !
+  !      u of degree 2 along t   laws   D_t u - u_(1),  D_t u_(1) - u_(2)
+  !                              each of u_(1) and u_(2) defined once
+  !
+  ! Invalid input: a component defined twice or not at all, or a law
+  ! along a coordinate without its concretion.
+  !===================================================================!
+
   subroutine check_representations(this, defined, with_chain, with_differences)
 
     class(discrete_lagrangian), intent(in) :: this
     integer                   , intent(in) :: defined(:,:)
     logical                   , intent(in) :: with_chain, with_differences
 
-    integer :: c, f, o, top, times
-    logical :: along_time
+    integer            :: c, f, o, top, times
+    logical            :: along_time
     character(len=250) :: message
 
     do c = 1, this % rule % num_coordinates()
@@ -628,23 +691,44 @@ contains
 
   end subroutine check_representations
 
+  !===================================================================!
+  ! Returns the discretization: exactly one term on the whole manifold
+  ! that is not a representation law gives the rule, one equation per
+  ! unknown in order; every other term is a condition on a part of
+  ! that manifold, paired or bare.
+  !
+  !      term on           of the form          becomes
+  !      the whole         the physics          the rule, one equation
+  !                                             per unknown
+  !      the whole         D^b u - u_(b)        a representation law
+  !      the time factor   t_map - t, paired    the pin of the instants
+  !      a part            any other            a condition, paired or
+  !                                             bare
+  !
+  ! The objective covers the points: the integral over the whole
+  ! manifold, over the one factor of a manifold of time or of space
+  ! alone, or over the face at an instant. A coordinate present without
+  ! its approximation, or an approximation given for a coordinate
+  ! absent, is invalid input.
+  !===================================================================!
+
   function residual_discretize(this, points, time, space, placement) result(image)
 
-    class(continuous_lagrangian), intent(in) :: this
-    type(discrete_manifold)   , intent(in) :: points
-    type(chain)               , intent(in), optional :: time
+    class(continuous_lagrangian)   , intent(in)           :: this
+    type(discrete_manifold)        , intent(in)           :: points
+    type(chain)                    , intent(in), optional :: time
     class(derivative_approximation), intent(in), optional :: space
-    type(equidistribution)    , intent(in), optional :: placement
-    type(discrete_lagrangian) :: image
+    type(equidistribution)         , intent(in), optional :: placement
+    type(discrete_lagrangian)                             :: image
 
-    integer :: k, j, i, whole_term, num_conditions, nf, pin
-    integer, allocatable :: defined(:,:)
-    logical, allocatable :: representation(:)
-    logical :: covering, projected
-    type(expression) :: form
-    real(dp) :: given
+    integer               :: k, j, i, whole_term, num_conditions, nf, pin
+    integer , allocatable :: defined(:,:)
+    logical , allocatable :: representation(:)
+    logical               :: covering, projected
+    type(expression)      :: form
+    real(dp)              :: given
     real(dp), allocatable :: slope(:)
-    character(len=250) :: message
+    character(len=250)    :: message
 
     ! the terms on the whole manifold: the representation laws, every
     ! equation of which defines a jet component, and the one term of the
@@ -712,7 +796,7 @@ contains
          image % adjoint_name = t % multiplier % name
       end if
       ! the Lagrangian of the equations: its stationarity in the j-th
-      ! multiplier is the j-th equation, the row of the j-th unknown
+      ! multiplier is the j-th equation, the row of the j-th unknown,
       ! every derivative operator replaced by the jet components it
       ! denotes, here and nowhere else: the rule, the conditions and the
       ! objective are evaluated in their jet form. Under a projection on
@@ -891,21 +975,32 @@ contains
   end function residual_discretize
 
   !===================================================================!
-  ! THE ZERO OF THE DISCRETE RESIDUAL, at the design the image states,
-  ! or, when no condition is stated on the design, at the design where
-  ! dJ/ds = 0: the stationarity of L_h in the design once the
-  ! condition that would hold it is removed. That design is found by
-  ! Newton's iteration on s from the value the manifold states, each
-  ! iterate the zero with the design prescribed there, the gradient -kappa
-  ! and the hessian -dkappa/ds from the expansion of order one along
-  ! each design coordinate: the reduced-space method. The iteration
-  ! ends where |dJ/ds| is below 1e-10 times the larger of one and its
-  ! first value, and the solution is the zero at that design. A free
-  ! design requires an objective, the equations paired with their
-  ! multiplier, and the expansion of order one along each design
-  ! coordinate.
+  ! Minimizes the discrete residual: its zero at the design the image
+  ! states, or, when no condition is stated on the design, at the
+  ! design where dJ/ds = 0, the stationarity of L_h in the design once
+  ! the condition that would hold it is removed.
   !
-  ! UNDER INEQUALITIES c(s) <= 0 on the design factor, each step is the
+  !      continued differs   minimize a copy with continued set
+  !      a placement         placement_iteration
+  !      a fixed design      zero_at_design
+  !      a free design       design_iteration, Newton's iteration on s
+  !
+  ! Free design. The design is found by Newton's iteration on s from
+  ! the value the manifold states, each iterate the zero with the
+  ! design prescribed there, the gradient -kappa and the hessian
+  ! -dkappa/ds from the expansion of order one along each design
+  ! coordinate: the reduced-space method.
+  !
+  !      s_(n+1) = s_n - H^(-1) g,    g = dJ/ds = -kappa,
+  !                                   H = -dkappa/ds
+  !
+  ! The iteration ends where |dJ/ds| is below 1e-10 times the larger
+  ! of one and its first value, and the solution is the zero at that
+  ! design. A free design requires an objective, the equations paired
+  ! with their multiplier, and the expansion of order one along each
+  ! design coordinate.
+  !
+  ! Under inequalities c(s) <= 0 on the design factor, each step is the
   ! minimizer of the quadratic model of J under the inequalities
   ! linearized at the iterate, c + A d <= 0, with their multipliers mu,
   ! nonnegative and zero where an inequality is not active; the
@@ -916,34 +1011,39 @@ contains
   ! squares on the active inequalities. Invalid input: an inequality
   ! and an equality on the design factor together.
   !
-  ! An inequality on a FUNCTIONAL OF THE STATE - an integral or a
-  ! smooth maximum over the manifold - has its value and its gradient
-  ! from the expansion of the state, and enters the reverse sweep times
-  ! its multiplier of the step before: the hessian of the model is that
-  ! of the Lagrangian J + mu . c. The merit of an iterate is J plus
-  ! each violation times its penalty, at least twice the inequality's
-  ! own multiplier, zero while it has not been active - the next
-  ! step's linearization then restores it: the inequalities are of
-  ! their own units, and one penalty of the largest multiplier weighed
-  ! the rotor's smooth maximum of the stress, of multiplier 0.04, by
-  ! the 34.6 of its bounds on the thickness. A step that does not
-  ! decrease the merit by a tenth of the decrease its model predicts
-  ! is taken again from the design before it, at most half as long,
-  ! with the hessian shifted by sigma times the identity, sigma raised
-  ! fourfold from at least |dJ/ds| / (0.1 max(1, |s|)), and with each
-  ! violated inequality linearized to remove a quarter of the fraction
-  ! of its violation the step before removed, c + A d <= (1 - theta) c
-  ! - the shift does not shorten a step its active inequalities fix; a
-  ! hessian that is not positive definite is shifted from that value
-  ! too, and the shift falls and theta rises fourfold, to one, after a
-  ! step that decreases the merit by more than three quarters of its
-  ! prediction. A positive definite hessian whose steps all decrease
-  ! the merit is never shifted, and theta is one. Where no step meets
-  ! the inequalities linearized, theta is quartered for that step, three
-  ! times, and then zero: each violated inequality is then required
-  ! only not to grow, which the null step meets.
+  ! An inequality on a functional of the state (an integral or a smooth
+  ! maximum over the manifold) has its value and its gradient from the
+  ! expansion of the state, and enters the reverse sweep times its
+  ! multiplier of the step before: the hessian of the model is that of
+  ! the Lagrangian J + mu . c. The merit of an iterate is J plus each
+  ! violation times its penalty, at least twice the inequality's own
+  ! multiplier, zero while it has not been active (the next step's
+  ! linearization then restores it): the inequalities are of their own
+  ! units, and one penalty of the largest multiplier weighed the
+  ! rotor's smooth maximum of the stress, of multiplier 0.04, by the
+  ! 34.6 of its bounds on the thickness.
   !
-  ! CONTINUED, each block of the chain after the first starts Newton's
+  !      merit = J + p_1 max(0, c_1) + p_2 max(0, c_2) + ...,
+  !              p_j >= 2 mu_j
+  !
+  ! A step that does not decrease the merit by a tenth of the decrease
+  ! its model predicts is taken again from the design before it, at
+  ! most half as long, with the hessian shifted by sigma times the
+  ! identity, sigma raised fourfold from at least
+  ! |dJ/ds| / (0.1 max(1, |s|)), and with each violated inequality
+  ! linearized to remove a quarter of the fraction of its violation the
+  ! step before removed, c + A d <= (1 - theta) c; the shift does not
+  ! shorten a step its active inequalities fix. A hessian that is not
+  ! positive definite is shifted from that value too, and the shift
+  ! falls and theta rises fourfold, to one, after a step that decreases
+  ! the merit by more than three quarters of its prediction. A positive
+  ! definite hessian whose steps all decrease the merit is never
+  ! shifted, and theta is one. Where no step meets the inequalities
+  ! linearized, theta is quartered for that step, three times, and then
+  ! zero: each violated inequality is then required only not to grow,
+  ! which the null step meets.
+  !
+  ! Continued. Each block of the chain after the first starts Newton's
   ! iteration from the solution at the last instant before it, its
   ! unknowns of time alone extrapolated along time to the block's last
   ! instant, at its instants and the stages of its steps, rather than
@@ -954,9 +1054,9 @@ contains
 
   recursive subroutine minimize(this, estimate, solution, checkpoint, snapshots, continued, by)
 
-    class(discrete_lagrangian), intent(in)  :: this
-    type(discrete_field)      , intent(in)  :: estimate
-    type(discrete_field)      , intent(out) :: solution
+    class(discrete_lagrangian), intent(in)           :: this
+    type(discrete_field)      , intent(in)           :: estimate
+    type(discrete_field)      , intent(out)          :: solution
     integer                   , intent(in), optional :: checkpoint, snapshots
     logical                   , intent(in), optional :: continued
     type(discrete_minimizer)  , intent(in), optional :: by
@@ -1004,30 +1104,37 @@ contains
   end subroutine minimize
 
   !===================================================================!
-  ! THE ROUNDS OF AN EQUIDISTRIBUTION. Each round solves the
-  ! Lagrangian on the instants as they stand - the design free, from
-  ! the design the round before found - and estimates the error of the
+  ! Minimizes by the rounds of an equidistribution. Each round solves
+  ! the Lagrangian on the instants as they stand (the design free, from
+  ! the design the round before found) and estimates the error of the
   ! objective step by step, eta_k, by the disagreement along time.
-  ! A = sum |eta_k| is the measure the placement lowers; the
-  ! uncertainty of the estimate is the difference of sum eta_k from
-  ! J+(Q+) - J(Q), Q+ the solution of the enrichment on the same
-  ! instants. With the design free, the measure is that of the error of
-  ! the design found, its part of each step and its uncertainty by
-  ! design_disagreement, in place of eta_k.
+  ! A = |eta_1| + |eta_2| + ... is the measure the placement lowers;
+  ! the uncertainty of the estimate is the difference of
+  ! eta_1 + eta_2 + ... from J+(Q+) - J(Q), Q+ the solution of the
+  ! enrichment on the same instants. With the design free, the measure
+  ! is that of the error of the design found, its part of each step and
+  ! its uncertainty by design_disagreement, in place of eta_k.
   !
-  ! AT A COUNT of instants the rounds place them again
+  !      solve on the instants --> eta_k --> A --> place the instants
+  !        ^                                            |
+  !        +--------------------------------------------+
+  !
+  ! At a count of instants the rounds place them again
   ! (placement_instants), each solving from the solution's values at
-  ! the same points, until a round does not lower A - rejected, the
-  ! round before taken - or lowers it by less than the uncertainty -
-  ! taken: the placement at that count is then settled.
+  ! the same points, until a round does not lower A (rejected, the
+  ! round before taken) or lowers it by less than the uncertainty
+  ! (taken): the placement at that count is then settled.
   !
-  ! TO A TOLERANCE the settled placement is returned, met, where its A
-  ! is within the tolerance times the scale - sum |w f| over the nodes
-  ! for the objective, |J| on a face, the norm of the design for the
-  ! design, one when absolute. Otherwise the count of steps is raised
-  ! to the one at which A, falling as the steps to the power -r, would
-  ! meet the tolerance, at least by one, r the lowest order of the
-  ! chain's families until two counts observe the order themselves;
+  ! To a tolerance the settled placement is returned, met, where its A
+  ! is within the tolerance times the scale: the sum of |w f| over the
+  ! nodes for the objective, |J| on a face, the norm of the design for
+  ! the design, one when absolute. Otherwise the count of steps is
+  ! raised to the one at which A, falling as the steps to the power -r,
+  ! would meet the tolerance, at least by one, r the lowest order of
+  ! the chain's families until two counts observe the order themselves;
+  !
+  !      steps' = max(steps + 1, ceil(steps (A / (tol scale))^(1/r)))
+  !
   ! the chain is extended to it (chain % extension), the instants
   ! placed at that count, and the next round solves from the solution's
   ! values interpolated along time. A settled A that does not fall
@@ -1041,23 +1148,23 @@ contains
   !===================================================================!
 
   recursive subroutine placement_iteration(this, estimate, solution, checkpoint, snapshots, by)
-    type(discrete_minimizer), intent(in), optional :: by
+    type(discrete_minimizer)  , intent(in), optional :: by
 
-    class(discrete_lagrangian), intent(in)  :: this
-    type(discrete_field)      , intent(in)  :: estimate
-    type(discrete_field)      , intent(out) :: solution
+    class(discrete_lagrangian), intent(in)           :: this
+    type(discrete_field)      , intent(in)           :: estimate
+    type(discrete_field)      , intent(out)          :: solution
     integer                   , intent(in), optional :: checkpoint, snapshots
 
-    type(discrete_lagrangian) :: iterate, plus
-    type(discrete_field) :: start, trial, enriched, at_points, settled, objective_field
-    type(equidistribution) :: placement
-    real(dp), allocatable :: eta(:), goal(:), accepted_goal(:), position(:), total(:), total_plus(:)
-    real(dp), allocatable :: gradient(:,:,:), partial(:,:), slope(:), slope_plus(:), shift(:), density(:)
+    type(discrete_lagrangian)      :: iterate, plus
+    type(discrete_field)           :: start, trial, enriched, at_points, settled, objective_field
+    type(equidistribution)         :: placement
+    real(dp), allocatable          :: eta(:), goal(:), accepted_goal(:), position(:), total(:), total_plus(:)
+    real(dp), allocatable          :: gradient(:,:,:), partial(:,:), slope(:), slope_plus(:), shift(:), density(:)
     character(len=32), allocatable :: names(:)
-    real(dp) :: measure, measure_before, accepted, uncertainty, accepted_uncertainty, scale, accepted_scale
-    real(dp) :: settled_measure, signed, rate
-    integer :: round, rounds, nf, i, nd, b, count, settled_count
-    logical :: free, taken
+    real(dp)                       :: measure, measure_before, accepted, uncertainty, accepted_uncertainty, scale, accepted_scale
+    real(dp)                       :: settled_measure, signed, rate
+    integer                        :: round, rounds, nf, i, nd, b, count, settled_count
+    logical                        :: free, taken
 
     if (present(checkpoint) .or. present(snapshots)) then
        error stop 'operation_lagrangian: an equidistribution reads the stages of every step, which a checkpoint or &
@@ -1192,10 +1299,15 @@ contains
 
   contains
 
-    ! the instants placed at their count, the chain extended to it, and
-    ! the next estimate the solution's values along time there
+    !-----------------------------------------------------------------!
+    ! Sets the instants placed at their count, the chain extended to
+    ! it, and the next estimate the solution's values along time there
+    !-----------------------------------------------------------------!
+
     subroutine place(t)
+
       real(dp), intent(in) :: t(:)
+
       select type (on => solution % on)
       type is (discrete_manifold)
          iterate % points = on
@@ -1203,17 +1315,27 @@ contains
       if (size(t) /= iterate % points % num_instants()) iterate % schemes = iterate % schemes % extension(size(t))
       iterate % points % instant = t
       start = discrete_field(iterate % points, values_along(solution, t), names)
+
     end subroutine place
 
-    ! the unknowns of a field at the instants given, at every cell,
-    ! linear along time between the field's instants
+    !-----------------------------------------------------------------!
+    ! Returns the unknowns of a field at the instants given, at every
+    ! cell, linear along time between the field's instants
+    !
+    !      v(t_j) = (1 - w) field(s_k) + w field(s_(k+1)),
+    !      w = (t_j - s_k) / (s_(k+1) - s_k)
+    !-----------------------------------------------------------------!
+
     function values_along(field, t) result(v)
+
       type(discrete_field), intent(in) :: field
       real(dp)            , intent(in) :: t(:)
-      real(dp), allocatable :: v(:,:)
+      real(dp), allocatable            :: v(:,:)
+
       real(dp), allocatable :: s(:)
-      real(dp) :: w
-      integer :: j, k, c, ncells
+      real(dp)              :: w
+      integer               :: j, k, c, ncells
+
       select type (on => field % on)
       type is (discrete_manifold)
          s = on % instant
@@ -1231,17 +1353,26 @@ contains
                  & + w * field % value(k * ncells + c, 1:nf)
          end do
       end do
+
     end function values_along
 
   end subroutine placement_iteration
 
   !===================================================================!
-  ! THE CHOICE OF EACH STEP'S FAMILY FROM A POOL, with the instants.
-  ! The design of the discrete image along time is s = (t_2 .. t_(N-1),
-  ! c_(k,f)): the instants, and at each step k the weight c_(k,f) of
-  ! each family f of the pool, sum over f of c_(k,f) = 1. Its
-  ! constrained objective is the work, the solves of the steps, with
-  ! the error of J within the tolerance:
+  ! Minimizes by the choice of each step's family from a pool, with
+  ! the instants.
+  !
+  ! The design. The design of the discrete image along time is
+  ! s = (t_2 .. t_(N-1), c_(k,f)): the instants, and at each step k the
+  ! weight c_(k,f) of each family f of the pool, the sum over f of
+  ! c_(k,f) one.
+  !
+  !      instants   t_1     t_2     t_3     ...     t_(N-1)     t_N
+  !      steps          k=2     k=3     ...             k=N
+  !      family         f_2     f_3     ...             f_N
+  !
+  ! Its constrained objective is the work, the solves of the steps,
+  ! with the error of J within the tolerance:
   !
   !    L_s = sum_k sum_f c_(k,f) w_f + lambda (sum_k |e_k| - tol)
   !            + sum_k pi_k (sum_f c_(k,f) - 1),
@@ -1249,49 +1380,62 @@ contains
   ! w_f the solves of a step of f, its stages; e_k the error of J the
   ! step contributes; on the rows of history c_(k,f) = 0 where f would
   ! read an instant before the first, and on the rows of the ratio
-  ! h_k <= rho_f h_(k-1) where f bounds the ratio of its steps. At
-  ! leading order the stationarity of L_s splits by the instant: with
-  ! e = a_f h^(p_f + 1), a_f the error density of f and n = 1/h the
-  ! steps per unit time, n_f = (lambda p_f a_f / w_f)^(1/(p_f + 1)),
+  ! h_k <= rho_f h_(k-1) where f bounds the ratio of its steps.
+  !
+  ! The stationarity. At leading order the stationarity of L_s splits
+  ! by the instant: with e = a_f h^(p_f + 1), a_f the error density of
+  ! f and n = 1/h the steps per unit time,
+  !
+  !      n_f = (lambda p_f a_f / w_f)^(1/(p_f + 1)),
+  !
   ! and the family of least work per unit time, (1 + 1/p_f) w_f n_f;
-  ! lambda is the multiplier at which sum |e| meets the tolerance, and
-  ! a family with the least error density at no more work is chosen
-  ! wherever the tolerance tightens. AT A WORK W of solves the
-  ! objective is the error with the work within W, L_s = sum_k |e_k| +
-  ! mu (sum_k sum_f c_(k,f) w_f - W) + ..., whose stationarity is the
-  ! same at mu = 1/lambda: lambda is where the steps placed take W.
+  ! lambda is the multiplier at which the sum of |e| meets the
+  ! tolerance, and a family with the least error density at no more
+  ! work is chosen wherever the tolerance tightens. At a work W of
+  ! solves the objective is the error with the work within W,
+  ! L_s = sum_k |e_k| + mu (sum_k sum_f c_(k,f) w_f - W) + ..., whose
+  ! stationarity is the same at mu = 1/lambda: lambda is where the
+  ! steps placed take W.
   !
-  ! THE ERROR OF EVERY FAMILY AT EVERY STEP. J does not depend on s,
+  ! The error of every family at every step. J does not depend on s,
   ! so every derivative of J_h along s is minus that of J - J_h, and
-  ! the error of a design s is E(s0) - (J_h(s) - J_h(s0)) from any
-  ! base s0. The base family - of one step, of the highest order in
-  ! the pool - is solved on the instants, pinned, and the derivatives
-  ! of the pins' multipliers along three colours give the curvature of
-  ! J_h, and with it the error of each of its
-  ! steps (curvature_errors), and its uncertainty, the residual of the
-  ! curvature's sum over the steps. The change of J_h were step k's
-  ! family that of a chain of f, the disagreement with that chain, is
-  ! the derivative along c_(k,f) to first order, so that e_k(f) =
-  ! e_k(base) less it. The errors of a family reach as far below the
-  ! base family's as the curvature resolves the base family's own.
+  ! the error of a design s is E(s0) - (J_h(s) - J_h(s0)) from any base
+  ! s0. The base family (of one step, of the highest order in the pool)
+  ! is solved on the instants, pinned, and the derivatives of the pins'
+  ! multipliers along three colours give the curvature of J_h, and with
+  ! it the error of each of its steps (curvature_errors), and its
+  ! uncertainty, the residual of the curvature's sum over the steps.
+  ! The change of J_h were step k's family that of a chain of f, the
+  ! disagreement with that chain, is the derivative along c_(k,f) to
+  ! first order, so that e_k(f) = e_k(base) less it. The errors of a
+  ! family reach as far below the base family's as the curvature
+  ! resolves the base family's own.
   !
-  ! THE ROUNDS. Each round solves the base family on the instants as
-  ! they stand, measures the error and the work of the present
-  ! design, and places the instants and chooses the families by the
-  ! conditions above. THE STEP CONTROL is that of the design's own
-  ! iteration: the merit of a design is its work plus its error beyond
-  ! the tolerance times the penalty, at least twice the multiplier
-  ! lambda; a design whose merit falls by less than a tenth of the fall
-  ! the model of the design accepted before it predicted - its error
-  ! density over each step times the step to the power p + 1 - or on
-  ! which the base family does not converge is refused, and the design
-  ! halfway to it in the logarithm of the step density is measured in
-  ! its place. The rounds end where a design placed is one measured
-  ! before, where the design meets the tolerance and the placement
-  ! does not lower its work, where a design solved fails the tolerance
-  ! after one that met it, or where the design halfway has the count of
-  ! the design accepted. The design returned is,
-  ! of those measured, the one
+  ! The rounds. Each round solves the base family on the instants as
+  ! they stand, measures the error and the work of the present design,
+  ! and places the instants and chooses the families by the conditions
+  ! above.
+  !
+  !      solve the base family, pinned --> e_k(f) of every family
+  !        ^                                        |
+  !        |                                        v
+  !      place the instants and the   <-- measure the design, then
+  !      families at lambda               lambda by pool_choice
+  !
+  ! The step control is that of the design's own iteration: the merit
+  ! of a design is its work plus its error beyond the tolerance times
+  ! the penalty, at least twice the multiplier lambda; a design whose
+  ! merit falls by less than a tenth of the fall the model of the
+  ! design accepted before it predicted (its error density over each
+  ! step times the step to the power p + 1), or on which the base
+  ! family does not converge, is refused, and the design halfway to it
+  ! in the logarithm of the step density is measured in its place.
+  !
+  ! The end. The rounds end where a design placed is one measured
+  ! before, where the design meets the tolerance and the placement does
+  ! not lower its work, where a design solved fails the tolerance after
+  ! one that met it, or where the design halfway has the count of the
+  ! design accepted. The design returned is, of those measured, the one
   ! of least work that met the tolerance, or of least error where none
   ! did, solved with its own families from the base family's values,
   ! the user's expansion along the design restored; its error is
@@ -1301,38 +1445,39 @@ contains
   !===================================================================!
 
   subroutine pool_iteration(this, placement, estimate, solution, by)
-    type(discrete_minimizer), intent(in), optional :: by
+    type(discrete_minimizer)  , intent(in), optional :: by
 
-    class(discrete_lagrangian), intent(in)  :: this
-    type(equidistribution)    , intent(in)  :: placement
-    type(discrete_field)      , intent(in)  :: estimate
-    type(discrete_field)      , intent(out) :: solution
+    class(discrete_lagrangian), intent(in)           :: this
+    type(equidistribution)    , intent(in)           :: placement
+    type(discrete_field)      , intent(in)           :: estimate
+    type(discrete_field)      , intent(out)          :: solution
 
     ! a design of the rounds: its instants and chain, its solves, and
     ! its error by the errors of the round that measured it
     type :: design_record
-       real(dp), allocatable :: instants(:)
-       type(chain) :: schemes
-       integer  :: work = 0
-       real(dp) :: error = 0.0_dp
-       logical  :: met = .false.
-       real(dp) :: tolerance = 0.0_dp
+       real(dp)   , allocatable :: instants(:)
+       type(chain)              :: schemes
+       integer                  :: work = 0
+       real(dp)                 :: error = 0.0_dp
+       logical                  :: met = .false.
+       real(dp)                 :: tolerance = 0.0_dp
     end type design_record
 
-    type(discrete_lagrangian) :: iterate, base_residual
-    type(discrete_field) :: start, base_solution, objective_field, accepted_solution
+    type(discrete_lagrangian)        :: iterate, base_residual
+    type(discrete_field)             :: start, base_solution, objective_field, accepted_solution
     type(design_record), allocatable :: designs(:)
-    type(expansion) :: original
-    type(family) :: base
-    type(family), allocatable :: pool(:)
-    type(chain) :: proposed_schemes
-    real(dp), allocatable :: t(:), e_base(:), eta(:), e(:,:), gradient(:,:,:), partial(:,:), density(:)
-    real(dp), allocatable :: proposed(:), accepted_t(:), accepted_e(:,:)
-    integer , allocatable :: depth(:), proposed_family(:)
+    type(expansion)                  :: original
+    type(family)                     :: base
+    type(family), allocatable        :: pool(:)
+    type(chain)                      :: proposed_schemes
+
+    real(dp), allocatable          :: t(:), e_base(:), eta(:), e(:,:), gradient(:,:,:), partial(:,:), density(:)
+    real(dp), allocatable          :: proposed(:), accepted_t(:), accepted_e(:,:)
+    integer , allocatable          :: depth(:), proposed_family(:)
     character(len=32), allocatable :: names(:)
-    real(dp) :: scale, tol, error_current, j_base, j_final, uncertainty, lambda, penalty, predicted, decrease
-    integer :: nf, top, g, n, k, round, returned, a, level, accepted
-    logical :: converged, refused, at_work
+    real(dp)                       :: scale, tol, error_current, j_base, j_final, uncertainty, lambda, penalty, predicted, decrease
+    integer                        :: nf, top, g, n, k, round, returned, a, level, accepted
+    logical                        :: converged, refused, at_work
 
     if (free_design(this)) then
        error stop 'operation_lagrangian: a pool of families is chosen for a design fixed by an equality'
@@ -1452,10 +1597,11 @@ contains
        ! a design solved that fails the tolerance after one that met it
        ! ends the rounds; one not solved is refused, as before any met
        if (converged .and. .not. designs(round) % met .and. any(designs(1:round - 1) % met)) exit
-       ! THE STEP CONTROL, as of the design's own iteration: a design that
-       ! does not converge, or whose merit falls by less than a tenth of
-       ! the fall the model of the design accepted predicted, is refused,
-       ! and the design halfway from that one to it measured in its place
+       ! the step control, as of the design's own iteration: a design
+       ! that does not converge, or whose merit falls by less than a
+       ! tenth of the fall the model of the design accepted predicted,
+       ! is refused, and the design halfway from that one to it measured
+       ! in its place
        if (accepted > 0) then
           refused = .not. converged
           if (converged) then
@@ -1577,13 +1723,20 @@ contains
 
   contains
 
-    ! the families of a chain's steps, each run of one family by its
-    ! name, its order and the steps it takes
+    !-----------------------------------------------------------------!
+    ! Returns the families of a chain's steps, each run of one family
+    ! by its name, its order and the steps it takes: ' name(p) xm' for
+    ! each run
+    !-----------------------------------------------------------------!
+
     function runs(schemes) result(line)
-      type(chain), intent(in) :: schemes
+
+      type(chain), intent(in)       :: schemes
       character(len=:), allocatable :: line
+
       character(len=16) :: steps
-      integer :: k, first
+      integer           :: k, first
+
       line  = ''
       first = 2
       do k = 2, schemes % num_blocks()
@@ -1596,13 +1749,19 @@ contains
               & // digit(schemes % scheme(first) % accuracy()) // ') x' // trim(steps)
          first = k + 1
       end do
+
     end function runs
 
-    ! the base family on the instants t, by the curvature expansion: its
-    ! solution, the error of each of its steps and its J_h, or converged
-    ! false
+    !-----------------------------------------------------------------!
+    ! Solves the base family on the instants t, by the curvature
+    ! expansion: its solution, the error of each of its steps and its
+    ! J_h, or converged false
+    !-----------------------------------------------------------------!
+
     subroutine solve_base(converged)
+
       logical, intent(out) :: converged
+
       base_residual = iterate
       base_residual % schemes      = chain([(base, k = 1, n)], from=[(k, k = 1, n)])
       ! the instants pinned, the curvature their multipliers' derivatives
@@ -1613,36 +1772,65 @@ contains
       e_base = base_residual % curvature_errors(base_solution, base % accuracy(), uncertainty)
       objective_field = base_residual % objective % at(base_solution)
       j_base = objective_field % value(1, 1)
+
     end subroutine solve_base
 
-    ! the solves of the steps of a chain of one block per instant
+    !-----------------------------------------------------------------!
+    ! Returns the solves of the steps of a chain of one block per
+    ! instant: the stages of each step's family
+    !-----------------------------------------------------------------!
+
     integer function chain_work(schemes)
+
       type(chain), intent(in) :: schemes
+
       integer :: k
+
       chain_work = 0
       do k = 2, schemes % num_blocks()
          chain_work = chain_work + schemes % scheme(k) % num_stages()
       end do
+
     end function chain_work
 
+    !-----------------------------------------------------------------!
+    ! Returns the digit of an order, nine at most
+    !-----------------------------------------------------------------!
+
     character(len=1) function digit(p)
+
       integer, intent(in) :: p
+
       write(digit, '(i1)') min(p, 9)
+
     end function digit
 
-    ! whether the design placed is the design recorded
+    !-----------------------------------------------------------------!
+    ! Returns whether the design placed is the design recorded: its
+    ! families, and its instants to the rounding
+    !-----------------------------------------------------------------!
+
     logical function same_design(record)
+
       type(design_record), intent(in) :: record
+
       same_design = same_families(record)
       if (.not. same_design) return
       same_design = all(abs(record % instants - proposed) <= 4.0_dp * epsilon(1.0_dp) * maxval(abs(proposed)))
+
     end function same_design
 
-    ! whether the steps placed are as many as recorded, each of the
-    ! family recorded
+    !-----------------------------------------------------------------!
+    ! Returns whether the steps placed are as many as recorded, each
+    ! of the family recorded
+    !-----------------------------------------------------------------!
+
     logical function same_families(record)
+
       type(design_record), intent(in) :: record
+
       integer :: k
+
       same_families = size(record % instants) == size(proposed)
       if (.not. same_families) return
       do k = 2, size(proposed)
@@ -1650,25 +1838,42 @@ contains
               & == trim(pool(proposed_family(k)) % name()) .and. record % schemes % scheme(k) % accuracy() &
               & == pool(proposed_family(k)) % accuracy()
       end do
+
     end function same_families
 
-    ! the merit of a design measured: its work, and its error beyond the
-    ! tolerance at the penalty
+    !-----------------------------------------------------------------!
+    ! Returns the merit of a design measured: its work, and its error
+    ! beyond the tolerance at the penalty; at a work, its error, and
+    ! its work beyond the work at the penalty
+    !
+    !      to a tolerance   work + penalty max(error - tolerance, 0)
+    !      at a work        error + penalty max(work - W, 0)
+    !-----------------------------------------------------------------!
+
     real(dp) function merit(record)
+
       type(design_record), intent(in) :: record
+
       if (at_work) then
          merit = record % error + penalty * max(real(record % work - placement % work, dp), 0.0_dp)
       else
          merit = real(record % work, dp) + penalty * max(record % error - record % tolerance, 0.0_dp)
       end if
+
     end function merit
 
-    ! the merit of a design placed, its error by the model of the design
-    ! accepted
+    !-----------------------------------------------------------------!
+    ! Returns the merit of a design placed, its error by the model of
+    ! the design accepted
+    !-----------------------------------------------------------------!
+
     real(dp) function modelled_merit(placed, families)
+
       real(dp), intent(in) :: placed(:)
       integer , intent(in) :: families(:)
+
       integer :: work, j
+
       work = sum([(pool(families(j)) % num_stages(), j = 2, size(placed))])
       if (at_work) then
          modelled_merit = modelled_error(placed, families) + penalty * max(real(work - placement % work, dp), 0.0_dp)
@@ -1676,17 +1881,24 @@ contains
          modelled_merit = real(work, dp) + penalty * max(modelled_error(placed, families) &
               & - designs(accepted) % tolerance, 0.0_dp)
       end if
+
     end function modelled_merit
 
-    ! the error of a design placed by the model of the design accepted,
-    ! on the instants t: on each step of length h and family g, the mean
-    ! error density of g over the step accepted its midpoint lies in
-    ! times h^(p_g + 1)
+    !-----------------------------------------------------------------!
+    ! Returns the error of a design placed by the model of the design
+    ! accepted, on the instants t: on each step of length h and family
+    ! g, the mean error density of g over the step accepted its
+    ! midpoint lies in, times h^(p_g + 1)
+    !-----------------------------------------------------------------!
+
     real(dp) function modelled_error(placed, families)
+
       real(dp), intent(in) :: placed(:)
       integer , intent(in) :: families(:)
+
       real(dp) :: middle
-      integer :: j, cell
+      integer  :: j, cell
+
       modelled_error = 0.0_dp
       cell = 2
       do j = 2, size(placed)
@@ -1697,22 +1909,31 @@ contains
          modelled_error = modelled_error + density_mean(cell, families(j)) * (placed(j) - placed(j - 1)) &
               & **(pool(families(j)) % accuracy() + 1)
       end do
+
     end function modelled_error
 
-    ! THE DESIGN HALFWAY from the design accepted, on the instants t, to
-    ! the design refused, in the logarithm of the step density: the steps
-    ! per unit time the geometric mean of the two designs', the count of
-    ! steps its integral, three at least, the instants its quantiles;
-    ! each step takes the refused design's family where its midpoint
-    ! lies, or the base family where the history or the ratio rows
-    ! exclude that one
+    !-----------------------------------------------------------------!
+    ! Returns the design halfway from the design accepted, on the
+    ! instants t, to the design refused, in the logarithm of the step
+    ! density: the steps per unit time the geometric mean of the two
+    ! designs', the count of steps its integral, three at least, the
+    ! instants its quantiles; each step takes the refused design's
+    ! family where its midpoint lies, or the base family where the
+    ! history or the ratio rows exclude that one
+    !
+    !      n_halfway = (n_accepted n_refused)^(1/2)
+    !-----------------------------------------------------------------!
+
     subroutine halfway(placed, families)
+
       real(dp), allocatable, intent(inout) :: placed(:)
       integer , allocatable, intent(inout) :: families(:)
+
       real(dp), allocatable :: refused_at(:), s(:), mass(:), h(:)
       integer , allocatable :: refused_family(:)
-      real(dp) :: middle, target
-      integer :: i, j, k, m, r, steps, g
+      real(dp)              :: middle, target
+      integer               :: i, j, k, m, r, steps, g
+
       call move_alloc(placed, refused_at)
       call move_alloc(families, refused_family)
       ! the instants of both designs in order
@@ -1779,21 +2000,30 @@ contains
          end if
          families(j) = g
       end do
+
     end subroutine halfway
 
-    ! THE STATIONARITY OF L_s: at each step k of the instants t, of
-    ! length h_k, each family's error density a, the mean of |psi| over
-    ! the step (density_mean), and steps per unit time n_f = (lambda p_f
-    ! a / w_f)^(1/(p_f + 1)), the family of least (1 + 1/p_f) w_f n_f;
-    ! lambda where the error, the sum over the steps of h_k w_f n_f /
-    ! (lambda p_f), is the tolerance, or where the solves of the steps
-    ! placed are the work, by bisection of log lambda to the rounding,
-    ! and the placement at lambda; and lambda.
+    !-----------------------------------------------------------------!
+    ! Returns the placement by the stationarity of L_s: at each step k
+    ! of the instants t, of length h_k, each family's error density a,
+    ! the mean of |psi| over the step (density_mean), and steps per
+    ! unit time n_f = (lambda p_f a / w_f)^(1/(p_f + 1)), the family of
+    ! least (1 + 1/p_f) w_f n_f; lambda where the error, the sum over the
+    ! steps of h_k w_f n_f / (lambda p_f), is the tolerance, or where
+    ! the solves of the steps placed are the work, by bisection of
+    ! log lambda to the rounding, and the placement at lambda; and
+    ! lambda.
+    !
+    !      low <= lambda <= high,   middle = (low high)^(1/2)
+    !-----------------------------------------------------------------!
+
     subroutine pool_choice(tol, placed, families, lambda)
-      real(dp), intent(in) :: tol
+
+      real(dp)             , intent(in)  :: tol
       real(dp), allocatable, intent(out) :: placed(:)
       integer , allocatable, intent(out) :: families(:)
-      real(dp), intent(out) :: lambda
+      real(dp)             , intent(out) :: lambda
+
       real(dp) :: low, high, middle
 
       ! the bracket of lambda: the error falls and the work rises as
@@ -1818,16 +2048,23 @@ contains
       ! within the tolerance at high, within the work at low
       lambda = merge(low, high, at_work)
       call placement_at(lambda, placed, families)
+
     end subroutine pool_choice
 
-    ! the excess at lambda of the error over the tolerance, or of the
-    ! work over the solves of the steps placed, which falls as lambda
-    ! grows
+    !-----------------------------------------------------------------!
+    ! Returns the excess at lambda of the error over the tolerance, or
+    ! of the work over the solves of the steps placed, which falls as
+    ! lambda grows
+    !-----------------------------------------------------------------!
+
     real(dp) function excess_at(lambda, tol)
+
       real(dp), intent(in) :: lambda, tol
+
       real(dp), allocatable :: placed(:)
       integer , allocatable :: families(:)
-      integer :: j
+      integer               :: j
+
       if (at_work) then
          call placement_at(lambda, placed, families)
          excess_at = real(placement % work - sum([(pool(families(j)) % num_stages(), j = 2, size(placed))]), dp) &
@@ -1835,21 +2072,31 @@ contains
       else
          excess_at = error_at(lambda) - tol
       end if
+
     end function excess_at
 
-    ! THE PLACEMENT AT lambda: the count of steps the integral of n,
-    ! three at least for the curvature, the instants its quantiles; each
-    ! step placed takes the family chosen where its midpoint lies, unless
-    ! the history or the ratio rows exclude it there, the least work per
-    ! unit time among those they admit in its place
+    !-----------------------------------------------------------------!
+    ! Returns the placement at lambda: the count of steps the integral
+    ! of n, three at least for the curvature, the instants its
+    ! quantiles; each step placed takes the family chosen where its
+    ! midpoint lies, unless the history or the ratio rows exclude it
+    ! there, the least work per unit time among those they admit in its
+    ! place
+    !
+    !      mass(t) = integral of n from t_1 to t
+    !      t'_j    where mass = mass(t_N) (j - 1) / steps
+    !-----------------------------------------------------------------!
+
     subroutine placement_at(lambda, placed, families)
-      real(dp), intent(in) :: lambda
+
+      real(dp)             , intent(in)  :: lambda
       real(dp), allocatable, intent(out) :: placed(:)
       integer , allocatable, intent(out) :: families(:)
+
       real(dp), allocatable :: rate(:), mass(:), h(:)
       integer , allocatable :: choice(:)
-      real(dp) :: target
-      integer :: k, j, steps, cell
+      real(dp)              :: target
+      integer               :: k, j, steps, cell
 
       call density_at(lambda, rate, choice)
 
@@ -1882,30 +2129,46 @@ contains
          end do
          families(j) = admitted_choice(cell, j, h, lambda)
       end do
+
     end subroutine placement_at
 
-    ! the error of the choice at lambda
+    !-----------------------------------------------------------------!
+    ! Returns the error of the choice at lambda: the sum over the steps
+    ! of h_k w_f n_f / (lambda p_f)
+    !-----------------------------------------------------------------!
+
     real(dp) function error_at(lambda)
+
       real(dp), intent(in) :: lambda
+
       real(dp), allocatable :: rate(:)
       integer , allocatable :: choice(:)
-      integer :: k
+      integer               :: k
+
       call density_at(lambda, rate, choice)
       error_at = 0.0_dp
       do k = 2, n
          error_at = error_at + (t(k) - t(k - 1)) * pool(choice(k)) % num_stages() * rate(k) &
               & / (lambda * pool(choice(k)) % accuracy())
       end do
+
     end function error_at
 
-    ! the steps per unit time and the family chosen at each step at
-    ! lambda
+    !-----------------------------------------------------------------!
+    ! Returns the steps per unit time and the family chosen at each
+    ! step at lambda: the family of least (1 + 1/p_f) w_f n_f among
+    ! those the history rows admit
+    !-----------------------------------------------------------------!
+
     subroutine density_at(lambda, rate, choice)
-      real(dp), intent(in) :: lambda
+
+      real(dp)             , intent(in)  :: lambda
       real(dp), allocatable, intent(out) :: rate(:)
       integer , allocatable, intent(out) :: choice(:)
+
       real(dp) :: work, least, n_f
-      integer :: k, g
+      integer  :: k, g
+
       allocate(rate(n), source=0.0_dp)
       allocate(choice(n), source=a)
       do k = 2, n
@@ -1923,27 +2186,47 @@ contains
             end if
          end do
       end do
+
     end subroutine density_at
 
+    !-----------------------------------------------------------------!
+    ! Returns the steps per unit time of family g at step k,
+    ! n_f = (lambda p_f a / w_f)^(1/(p_f + 1))
+    !-----------------------------------------------------------------!
+
     real(dp) function steps_per_time(k, g, lambda)
+
       integer , intent(in) :: k, g
       real(dp), intent(in) :: lambda
+
       real(dp) :: p
+
       p = real(pool(g) % accuracy(), dp)
       steps_per_time = (lambda * p * density_mean(k, g) / pool(g) % num_stages())**(1.0_dp / (p + 1.0_dp))
+
     end function steps_per_time
 
-    ! THE ERROR DENSITY OF FAMILY g OVER STEP k, the mean of its
-    ! absolute value: the density psi = e / h^(p + 1), the error of the
-    ! step over its step to the power of the order, is a smooth
+    !-----------------------------------------------------------------!
+    ! Returns the error density of family g over step k, the mean of
+    ! its absolute value: the density psi = e / h^(p + 1), the error of
+    ! the step over its step to the power of the order, is a smooth
     ! function of t, signed; its values at the steps' midpoints are
     ! joined linearly, constant beyond the first and the last, and
     ! |psi| integrated over the step, so that a step at which psi
     ! changes sign is weighed by the density about it, not by the sum
     ! its signs cancel in
+    !
+    !      psi(k - 1)        psi(k)         psi(k + 1)
+    !          o--------------o--------------o          the midpoints
+    !                 |---- step k ----|
+    !-----------------------------------------------------------------!
+
     real(dp) function density_mean(k, g)
+
       integer, intent(in) :: k, g
+
       real(dp) :: midpoint, left, right, at_left, at_right, here
+
       here     = psi(k, g)
       midpoint = 0.5_dp * (t(k - 1) + t(k))
       at_left  = here
@@ -1957,31 +2240,56 @@ contains
          at_right = here + (psi(k + 1, g) - here) * (t(k) - midpoint) / (right - midpoint)
       end if
       density_mean = (absolute_integral(at_left, here) + absolute_integral(here, at_right)) / 2.0_dp
+
     end function density_mean
 
+    !-----------------------------------------------------------------!
+    ! Returns the signed error density of family g at step k,
+    ! e / h^(p + 1)
+    !-----------------------------------------------------------------!
+
     real(dp) function psi(k, g)
+
       integer, intent(in) :: k, g
+
       psi = e(k, g) / (t(k) - t(k - 1))**(pool(g) % accuracy() + 1)
+
     end function psi
 
-    ! the mean of |v| over an interval on which v is linear from v0 to v1
+    !-----------------------------------------------------------------!
+    ! Returns the mean of |v| over an interval on which v is linear
+    ! from v0 to v1
+    !
+    !      of one sign      (|v0| + |v1|) / 2
+    !      of two signs     (v0^2 + v1^2) / (2 (|v0| + |v1|))
+    !-----------------------------------------------------------------!
+
     pure real(dp) function absolute_integral(v0, v1)
+
       real(dp), intent(in) :: v0, v1
+
       if (v0 * v1 >= 0.0_dp) then
          absolute_integral = 0.5_dp * (abs(v0) + abs(v1))
       else
          absolute_integral = 0.5_dp * (v0**2 + v1**2) / (abs(v0) + abs(v1))
       end if
+
     end function absolute_integral
 
-    ! the family of least work per unit time at step `cell` of the
-    ! instants as they stand among those admitted at step j placed,
-    ! h the steps placed
+    !-----------------------------------------------------------------!
+    ! Returns the family of least work per unit time at step cell of
+    ! the instants as they stand, among those admitted at step j
+    ! placed, h the steps placed
+    !-----------------------------------------------------------------!
+
     integer function admitted_choice(cell, j, h, lambda)
+
       integer , intent(in) :: cell, j
       real(dp), intent(in) :: h(:), lambda
+
       real(dp) :: least, work
       integer  :: g
+
       admitted_choice = a
       least = huge(1.0_dp)
       do g = 1, size(pool)
@@ -1995,18 +2303,24 @@ contains
             admitted_choice = g
          end if
       end do
+
     end function admitted_choice
 
   end subroutine pool_iteration
 
   !===================================================================!
-  ! THE EXPANSION OF THE CURVATURE: the original's design coordinates
-  ! fixed, of order one along three directions, each moving every third
-  ! interior instant, colour c the instants a with mod(a, 3) = c - 1:
-  ! the derivative along colour c of the multiplier of the pin of
+  ! Returns the expansion of the curvature: the original's design
+  ! coordinates fixed, of order one along three directions, each moving
+  ! every third interior instant, colour c the instants a with
+  ! mod(a, 3) = c - 1
+  !
+  !      instant   1   2   3   4   5   6   7   ...   n
+  !      colour    -   3   1   2   3   1   2   ...   -    ends fixed
+  !
+  ! The derivative along colour c of the multiplier of the pin of
   ! instant b is minus row b of the Hessian of J_h in the instants
-  ! summed over the colour's instants, and where the Hessian's band
-  ! is one instant wide, its entry in the column of the one instant of
+  ! summed over the colour's instants, and, where the Hessian's band is
+  ! one instant wide, its entry in the column of the one instant of
   ! the colour next to b.
   !===================================================================!
 
@@ -2014,10 +2328,10 @@ contains
 
     type(expansion), intent(in) :: original
     integer        , intent(in) :: n
-    type(expansion) :: expanded
+    type(expansion)             :: expanded
 
     real(dp), allocatable :: seeds(:,:), along(:,:)
-    integer :: a
+    integer               :: a
 
     allocate(seeds(n, 3), along(max(1, original % num_designs()), 3), source=0.0_dp)
     do a = 2, n - 1
@@ -2029,46 +2343,56 @@ contains
 
   end function curvature_expansion
 
-  ! the colour of an instant: one of three, every third instant alike
+  !===================================================================!
+  ! Returns the colour of an instant: one of three, every third instant
+  ! alike
+  !===================================================================!
+
   pure integer function colour_of(a)
+
     integer, intent(in) :: a
+
     colour_of = mod(a, 3) + 1
+
   end function colour_of
 
   !===================================================================!
-  ! THE ERROR OF EACH STEP FROM THE CURVATURE of J_h in the instants,
-  ! on a solution of a chain of one-step families of order p by the
-  ! curvature expansion, the instants pinned: e_k, the error of J the
-  ! step into instant k contributes, homogeneous of degree m = p + 1 in
-  ! its step, so that with D_a = d^2 J_h / dt_a^2 and M_a = d^2 J_h /
-  ! dt_a dt_(a+1), minus the derivatives of the pins' multipliers along
-  ! the colours of a and of a + 1,
+  ! Returns the error of each step from the curvature of J_h in the
+  ! instants, on a solution of a chain of one-step families of order p
+  ! by the curvature expansion, the instants pinned: e_k, the error of
+  ! J the step into instant k contributes, homogeneous of degree
+  ! m = p + 1 in its step, so that with D_a = d^2 J_h / dt_a^2 and
+  ! M_a = d^2 J_h / dt_a dt_(a+1), minus the derivatives of the pins'
+  ! multipliers along the colours of a and of a + 1,
   !
   !    e_(a+1) = h_(a+1)^2 M_a / (m (m - 1)),   a = 2 .. n - 2,
   !
   ! and at the two steps with an end of the interval, fixed, by the
   ! diagonal at their free instant, D_a = -(M_(a-1) + M_a) the steps'
-  ! parts: e_2 = h_2^2 (-D_2 - M_2) / (m (m - 1)) and e_n = h_n^2
-  ! (-D_(n-1) - M_(n-2)) / (m (m - 1)). e_1 = 0, no step reaching the
-  ! first instant. Where the error is the sum of its steps' parts,
-  ! D_a + M_(a-1) + M_a = 0 at every instant a = 3 .. n - 2; its
-  ! residual there, times the square of the mean of the two steps over
-  ! m (m - 1), summed over those instants, is the uncertainty of the
-  ! steps' errors.
+  ! parts:
+  !
+  !    e_2 = h_2^2 (-D_2 - M_2) / (m (m - 1))
+  !    e_n = h_n^2 (-D_(n-1) - M_(n-2)) / (m (m - 1))
+  !
+  ! e_1 = 0, no step reaching the first instant. Where the error is the
+  ! sum of its steps' parts, D_a + M_(a-1) + M_a = 0 at every instant
+  ! a = 3 .. n - 2; its residual there, times the square of the mean of
+  ! the two steps over m (m - 1), summed over those instants, is the
+  ! uncertainty of the steps' errors.
   !===================================================================!
 
   function curvature_errors(this, solution, p, uncertainty) result(e)
 
-    class(discrete_lagrangian), intent(in)  :: this
-    type(discrete_field)      , intent(in)  :: solution
-    integer                   , intent(in)  :: p
+    class(discrete_lagrangian), intent(in)            :: this
+    type(discrete_field)      , intent(in)            :: solution
+    integer                   , intent(in)            :: p
     real(dp)                  , intent(out), optional :: uncertainty
-    real(dp), allocatable :: e(:)
+    real(dp), allocatable                             :: e(:)
 
-    type(discrete_field) :: pins
+    type(discrete_field)  :: pins
     real(dp), allocatable :: diagonal(:), mixed(:), t(:)
-    real(dp) :: m
-    integer :: n, a
+    real(dp)              :: m
+    integer               :: n, a
 
     t = this % points % instant
     n = size(t)
@@ -2097,9 +2421,12 @@ contains
   end function curvature_errors
 
   !===================================================================!
-  ! The values of a solution's first nf components, its unknowns, at
-  ! the instants placed, linear along time between the instants t it
-  ! is solved at.
+  ! Returns the values of a solution's first nf components, its
+  ! unknowns, at the instants placed, linear along time between the
+  ! instants t it is solved at
+  !
+  !      v(placed_j) = (1 - w) field(t_k) + w field(t_(k+1)),
+  !      w = (placed_j - t_k) / (t_(k+1) - t_k)
   !===================================================================!
 
   function values_at(field, t, placed, nf) result(v)
@@ -2107,10 +2434,10 @@ contains
     type(discrete_field), intent(in) :: field
     real(dp)            , intent(in) :: t(:), placed(:)
     integer             , intent(in) :: nf
-    real(dp), allocatable :: v(:,:)
+    real(dp), allocatable            :: v(:,:)
 
     real(dp) :: w
-    integer :: j, k
+    integer  :: j, k
 
     allocate(v(size(placed), nf))
     k = 1
@@ -2125,34 +2452,42 @@ contains
   end function values_at
 
   !===================================================================!
-  ! THE DISAGREEMENT IN THE DESIGN FOUND, the design free: the error
-  ! of nu* follows that of the gradient, nu* - nu_h ~ -H^(-1) E'(nu_h),
-  ! E = J - J_h, and each point's part of E' is the derivative of its
-  ! eta along each design coordinate, by the disagreement expanded
-  ! along it; H the derivative of the gradient, minus that of the
-  ! design multipliers along each coordinate, by the reverse sweep's
-  ! expansion - one solve at nu_h. contribution(p) = |H^(-1) d eta(p)
-  ! / dnu|; shift = -H^(-1) sum over the points of d eta / dnu, the
-  ! estimate of nu* - nu_h; uncertainty its distance from -H^(-1)
-  ! (slope_plus - slope), the gradients of J+ at Q+ and of J_h at Q.
+  ! Returns the disagreement in the design found, the design free: the
+  ! error of nu* follows that of the gradient,
+  !
+  !      nu* - nu_h ~ -H^(-1) E'(nu_h),    E = J - J_h,
+  !
+  ! and each point's part of E' is the derivative of its eta along each
+  ! design coordinate, by the disagreement expanded along it; H the
+  ! derivative of the gradient, minus that of the design multipliers
+  ! along each coordinate, by the reverse sweep's expansion, one solve
+  ! at nu_h.
+  !
+  !      contribution(p)   |H^(-1) d eta(p) / dnu|
+  !      shift             -H^(-1) times the sum over the points of
+  !                        d eta / dnu, the estimate of nu* - nu_h
+  !      uncertainty       its distance from -H^(-1) (slope_plus -
+  !                        slope), the gradients of J+ at Q+ and of
+  !                        J_h at Q
+  !
   ! Invalid input: an expansion along other than each design
   ! coordinate. A singular H stops the program.
   !===================================================================!
 
   subroutine design_disagreement(this, solution, slope, slope_plus, contribution, uncertainty, shift, by)
-    type(discrete_minimizer), intent(in), optional :: by
+    type(discrete_minimizer)  , intent(in), optional :: by
 
-    class(discrete_lagrangian), intent(in)  :: this
-    type(discrete_field)      , intent(in)  :: solution
-    real(dp)                  , intent(in)  :: slope(:), slope_plus(:)
-    real(dp), allocatable   , intent(out) :: contribution(:), shift(:)
-    real(dp)                  , intent(out) :: uncertainty
+    class(discrete_lagrangian), intent(in)           :: this
+    type(discrete_field)      , intent(in)           :: solution
+    real(dp)                  , intent(in)           :: slope(:), slope_plus(:)
+    real(dp), allocatable     , intent(out)          :: contribution(:), shift(:)
+    real(dp)                  , intent(out)          :: uncertainty
 
-    type(discrete_lagrangian) :: pinned
-    type(discrete_field) :: start, side
-    real(dp), allocatable :: values(:), derivative(:,:), hessian(:,:), eta(:), kappa(:,:), eta_derivative(:,:)
+    type(discrete_lagrangian)      :: pinned
+    type(discrete_field)           :: start, side
+    real(dp), allocatable          :: values(:), derivative(:,:), hessian(:,:), eta(:), kappa(:,:), eta_derivative(:,:)
     character(len=32), allocatable :: names(:)
-    integer :: nd, nf, npts, i, p
+    integer                        :: nd, nf, npts, i, p
 
     select type (this)
     type is (discrete_lagrangian)
@@ -2192,18 +2527,28 @@ contains
   end subroutine design_disagreement
 
   !===================================================================!
-  ! THE INSTANTS OF THE NEXT PLACEMENT, count of them: on each step of
-  ! a solution's instants, the step into instant k of length h_k, the
-  ! step density e_k^(1/(p_k + 1)) / h_k, e_k = sum over the cells of
-  ! |eta| at instant k and p_k the order of the step's family - the
-  ! density a_k^(1/(p_k + 1)) of the local error density a_k = e_k /
-  ! h_k^(p_k + 1), the stationary point of the error at a count of
-  ! steps; the instants its quantiles, the first and the last the
-  ! interval's ends. Each step is then limited to the bound the
-  ! chain's families state on its ratio to the step before it, from
-  ! the first step forward and from the last back, every step only
-  ! shortened, and the steps scaled to the interval, which keeps their
-  ! ratios. A density zero over every step returns no instant.
+  ! Returns the instants of the next placement, count of them. On each
+  ! step of a solution's instants, the step into instant k of length
+  ! h_k, the step density is e_k^(1/(p_k + 1)) / h_k, e_k the sum over
+  ! the cells of |eta| at instant k and p_k the order of the step's
+  ! family: the density a_k^(1/(p_k + 1)) of the local error density
+  ! a_k = e_k / h_k^(p_k + 1), the stationary point of the error at a
+  ! count of steps. The instants are its quantiles, the first and the
+  ! last the interval's ends.
+  !
+  !      mass(k) = mass(k - 1) + e_k^(1/(p_k + 1))
+  !      t'_j    where mass = mass(t_N) (j - 1) / (count - 1)
+  !
+  ! Each step is then limited to the bound the chain's families state
+  ! on its ratio to the step before it, from the first step forward
+  ! and from the last back, every step only shortened, and the steps
+  ! scaled to the interval, which keeps their ratios.
+  !
+  !      h_k <= bound h_(k-1)    forward from the first step
+  !      h_k <= bound h_(k+1)    back from the last
+  !      h   scaled to t_N - t_1
+  !
+  ! A density zero over every step returns no instant.
   !===================================================================!
 
   function placement_instants(this, solution, eta, count) result(position)
@@ -2212,12 +2557,12 @@ contains
     type(discrete_field)      , intent(in) :: solution
     real(dp)                  , intent(in) :: eta(:)
     integer                   , intent(in) :: count
-    real(dp), allocatable :: position(:)
+    real(dp), allocatable                  :: position(:)
 
     real(dp), allocatable :: t(:), mass(:), h(:)
     integer , allocatable :: accuracy(:)
-    real(dp) :: bound, target
-    integer :: ninst, ncells, nb, b, first, last, depth, k, j, c
+    real(dp)              :: bound, target
+    integer               :: ninst, ncells, nb, b, first, last, depth, k, j, c
 
     select type (on => solution % on)
     type is (discrete_manifold)
@@ -2281,29 +2626,32 @@ contains
   end function placement_instants
 
   !===================================================================!
-  ! SEVERAL LAGRANGIANS ON ONE DESIGN: residuals on manifolds of the
-  ! same design coordinates, each with its own estimate and solution,
-  ! the design free in every one - the scenarios of one design. The
-  ! design is found where the sum of the Lagrangians is stationary in
-  ! it: the sum of their objectives, any of which may have none, least
-  ! under the inequalities of all, by the iteration of minimize, every
-  ! residual's forward and reverse sweeps at each iterate and its
-  ! multipliers returned with its solution. Invalid input: residuals
-  ! of different design coordinates, a residual with an equality on
-  ! the design, or none with an objective.
+  ! Minimizes several Lagrangians on one design: residuals on manifolds
+  ! of the same design coordinates, each with its own estimate and
+  ! solution, the design free in every one, the scenarios of one
+  ! design. The design is found where the sum of the Lagrangians is
+  ! stationary in it: the sum of their objectives, any of which may
+  ! have none, least under the inequalities of all, by the iteration of
+  ! minimize, every residual's forward and reverse sweeps at each
+  ! iterate and its multipliers returned with its solution.
+  !
+  !      L = L_1 + L_2 + ... on one design s,    dL/ds = 0
+  !
+  ! Invalid input: residuals of different design coordinates, a
+  ! residual with an equality on the design, or none with an objective.
   !===================================================================!
 
   subroutine minimize_together(residuals, estimates, solutions, checkpoint, snapshots, continued, by)
-    type(discrete_minimizer), intent(in), optional :: by
+    type(discrete_minimizer) , intent(in), optional :: by
 
-    type(discrete_lagrangian), intent(in)  :: residuals(:)
-    type(discrete_field)     , intent(in)  :: estimates(:)
-    type(discrete_field)     , intent(out) :: solutions(:)
+    type(discrete_lagrangian), intent(in)           :: residuals(:)
+    type(discrete_field)     , intent(in)           :: estimates(:)
+    type(discrete_field)     , intent(out)          :: solutions(:)
     integer                  , intent(in), optional :: checkpoint, snapshots
     logical                  , intent(in), optional :: continued
 
     type(discrete_lagrangian), allocatable :: iterates(:)
-    integer :: k
+    integer                                :: k
 
     if (size(estimates) /= size(residuals) .or. size(solutions) /= size(residuals)) then
        error stop 'operation_lagrangian: one estimate and one solution for each residual minimized together'
@@ -2333,51 +2681,72 @@ contains
   end subroutine minimize_together
 
   !===================================================================!
-  ! THE STEP CONTROL OF AN ITERATION ON A DESIGN, the design's own
-  ! (design_iteration) and the rounds of a pool's (pool_iteration): a
-  ! step whose merit falls by less than a tenth of the fall its model
-  ! predicted is refused, a fall predicted below the rounding of the
-  ! merit, of size scale, not tested; and each penalty of the merit is
-  ! at least twice its multiplier.
+  ! Returns whether a step is refused, by the step control of an
+  ! iteration on a design, the design's own (design_iteration) and the
+  ! rounds of a pool's (pool_iteration): a step whose merit falls by
+  ! less than a tenth of the fall its model predicted is refused, a
+  ! fall predicted below the rounding of the merit, of size scale, not
+  ! tested
   !===================================================================!
 
   pure logical function refusal(fall, predicted, scale)
+
     real(dp), intent(in) :: fall, predicted, scale
+
     refusal = fall < 0.1_dp * predicted .and. predicted > 1.0e-12_dp * max(1.0_dp, scale)
+
   end function refusal
 
+  !===================================================================!
+  ! Returns each penalty of the merit, at least twice its multiplier
+  !===================================================================!
+
   elemental real(dp) function merit_penalty(penalty, multiplier)
+
     real(dp), intent(in) :: penalty, multiplier
+
     merit_penalty = max(penalty, 2.0_dp * multiplier)
+
   end function merit_penalty
 
   !===================================================================!
-  ! THE ITERATION ON THE FREE DESIGN of one residual or of several on
-  ! one design, as minimize states it: the gradient and the hessian
-  ! the sums of every residual's, the inequalities those of all, the
-  ! merit the sum of the objectives plus each violation times its
-  ! penalty.
+  ! Iterates on the free design of one residual or of several on one
+  ! design, as minimize states it: the gradient and the hessian the
+  ! sums of every residual's, the inequalities those of all, the merit
+  ! the sum of the objectives plus each violation times its penalty.
+  !
+  !      at each iterate s
+  !        every residual   zero_at_design: kappa, and its
+  !                         inequalities c and their gradients A
+  !        gradient         -(kappa_1 + kappa_2 + ...), less each
+  !                         functional's gradient times its multiplier
+  !        hessian          the expansion's, or the BFGS update's
+  !        refused          back to the design accepted, the step at
+  !                         most half as long, the shift raised
+  !        the step         quadratic_step under the inequalities
+  !                         c + A d <= (1 - theta) max(c, 0)
+  !        the end          |dJ/ds + A^T mu| < tolerance, every c <= 0
   !===================================================================!
 
   subroutine design_iteration(iterates, estimates, solutions, checkpoint, snapshots, by)
-    type(discrete_minimizer), intent(in), optional :: by
+    type(discrete_minimizer) , intent(in), optional :: by
 
-    type(discrete_lagrangian), intent(inout) :: iterates(:)
-    type(discrete_field)     , intent(in)    :: estimates(:)
-    type(discrete_field)     , intent(out)   :: solutions(:)
+    type(discrete_lagrangian), intent(inout)        :: iterates(:)
+    type(discrete_field)     , intent(in)           :: estimates(:)
+    type(discrete_field)     , intent(out)          :: solutions(:)
     integer                  , intent(in), optional :: checkpoint, snapshots
 
-    type(discrete_field)    :: functional
+    type(discrete_field)  :: functional
     real(dp), allocatable :: kappa(:,:), gradient(:), hessian(:,:), c(:), a(:,:), step(:), mu(:), weight(:)
     real(dp), allocatable :: accepted(:), accepted_gradient(:), accepted_hessian(:,:), accepted_c(:), accepted_a(:,:)
     real(dp), allocatable :: ck(:), ak(:,:), functional_kappa(:,:), quasi_hessian(:,:), penalty(:)
     integer , allocatable :: active(:), first(:)
     logical , allocatable :: of_state(:)
-    real(dp) :: tolerance, stationarity, objective, accepted_objective, shift, reach, predicted, decrease
-    real(dp) :: reduction, limit, theta
-    integer :: n, j, k, iteration, quartering
-    logical :: with_accepted, refused, quasi, solvable
-    character(len=250) :: message
+    real(dp)              :: tolerance, stationarity, objective, accepted_objective, shift, reach, predicted, decrease
+    real(dp)              :: reduction, limit, theta
+    integer               :: n, j, k, iteration, quartering
+    logical               :: with_accepted, refused, quasi, solvable
+    character(len=250)    :: message
 
     ! the hessian of the model: the expansion's of order one along each
     ! design coordinate, or, of order zero, the damped BFGS update's of
@@ -2557,26 +2926,26 @@ contains
   end subroutine design_iteration
 
   !===================================================================!
-  ! THE INEQUALITIES ON THE DESIGN FACTOR at the design the manifold
-  ! states: c(i) the value of the i-th equation, a(i, :) its gradient
-  ! in the design coordinates; none where no inequality is stated. A
-  ! functional of the state is evaluated on the solution, its gradient
-  ! the expansion's column of order one along each design coordinate,
-  ! or, given, the m-th column of gradients, -kappa of its own reverse
-  ! sweep.
+  ! Returns the inequalities on the design factor at the design the
+  ! manifold states: c(i) the value of the i-th equation, a(i, :) its
+  ! gradient in the design coordinates; none where no inequality is
+  ! stated. A functional of the state is evaluated on the solution, its
+  ! gradient the expansion's column of order one along each design
+  ! coordinate, or, given, the m-th column of gradients, -kappa of its
+  ! own reverse sweep.
   !===================================================================!
 
   subroutine inequalities_at(this, solution, c, a, gradients)
 
-    class(discrete_lagrangian), intent(in)  :: this
-    type(discrete_field)      , intent(in)  :: solution
-    real(dp), allocatable   , intent(out) :: c(:), a(:,:)
+    class(discrete_lagrangian), intent(in)           :: this
+    type(discrete_field)      , intent(in)           :: solution
+    real(dp), allocatable     , intent(out)          :: c(:), a(:,:)
     real(dp)                  , intent(in), optional :: gradients(:,:)
 
-    type(discrete_field) :: functional
+    type(discrete_field)  :: functional
     real(dp), allocatable :: slope(:)
-    real(dp) :: given
-    integer :: j, i, m, d
+    real(dp)              :: given
+    integer               :: j, i, m, d
 
     m = 0
     do j = 1, size(this % condition)
@@ -2608,12 +2977,15 @@ contains
 
   end subroutine inequalities_at
 
-  ! which of the inequalities, in the order stated, are on functionals
-  ! of the state
+  !===================================================================!
+  ! Returns which of the inequalities, in the order stated, are on
+  ! functionals of the state
+  !===================================================================!
+
   function functional_inequalities(this) result(of_state)
 
     class(discrete_lagrangian), intent(in) :: this
-    logical, allocatable :: of_state(:)
+    logical, allocatable                   :: of_state(:)
 
     integer :: j, i
 
@@ -2626,8 +2998,11 @@ contains
 
   end function functional_inequalities
 
-  ! the multipliers of the inequalities into the solution, each a
-  ! function on the design factor: its value at every point
+  !===================================================================!
+  ! Writes the multipliers of the inequalities into the solution, each
+  ! a function on the design factor: its value at every point
+  !===================================================================!
+
   subroutine place_inequality_multipliers(this, mu, solution)
 
     class(discrete_lagrangian), intent(in)    :: this
@@ -2658,50 +3033,59 @@ contains
   end subroutine place_inequality_multipliers
 
   !===================================================================!
-  ! THE STEP OF THE DESIGN UNDER ITS INEQUALITIES: the minimizer of
-  ! g . d + d . H d / 2 over the steps with c + A d <= 0, H positive
-  ! definite, and the multiplier of each inequality, nonnegative and
-  ! zero where it is not active; solvable false where no step meets
-  ! the inequalities.
+  ! Returns the step of the design under its inequalities: the
+  ! minimizer of g . d + d . H d / 2 over the steps with c + A d <= 0,
+  ! H positive definite, and the multiplier of each inequality,
+  ! nonnegative and zero where it is not active; solvable false where
+  ! no step meets the inequalities.
   !
   ! By the dual method of Goldfarb and Idnani: from the minimizer
   ! without inequalities, d = -H^-1 g, the most violated inequality p
   ! joins the active set by raising its multiplier t from zero, the
-  ! active ones remaining equalities - the step moves by -t z and their
+  ! active ones remaining equalities (the step moves by -t z and their
   ! multipliers by -t r, H z + N r = a_p and N^T z = 0, N the active
-  ! normals - until p is met; where an active multiplier vanishes
-  ! first, that inequality leaves and p goes on joining. The active
-  ! normals stay independent: a_p depends on them where a_p . z, which
-  ! is z . H z, is below 1e-6 of a_p . H^-1 a_p, and only the
-  ! multipliers then move; and no step exists where p is not met and no
-  ! active multiplier vanishes, (1, -r) on p and the active set then
-  ! the weights of the inequalities whose normals cancel and whose
-  ! constants sum to more than zero. At every move the step and the
-  ! multipliers are those of one solve of the active set's equalities,
-  ! not the sum of the moves. Of 2000 random problems: summed, and the
-  ! dependence at 1e-12, an inequality nearly dependent raised the
-  ! multipliers to 1e15 and the active values away from zero; at 1e-8,
-  ! two nearly dependent in turn made five normals active in four
-  ! dimensions; at 1e-6 every step meets its conditions to 1.3e-11, and
-  ! each of the 230 without one has the weights to 1.4e-5. Where the
-  ! primal active set it replaces settled, 1738 of them, the step and
-  ! the multipliers are its own to every digit; it took dependent
-  ! normals in, and the rotor's three scenarios at 2 cm, its eight
-  ! upper bounds active and three smooth maxima violated, made its
-  ! system singular.
+  ! normals) until p is met; where an active multiplier vanishes first,
+  ! that inequality leaves and p goes on joining.
+  !
+  !      d = -H^(-1) g, none active
+  !      repeat   p = the most violated inequality
+  !               raise its multiplier t:  d -> d - t z,  u -> u - t r
+  !                 an active multiplier vanishes first   it leaves
+  !                 p is met                              p joins
+  !      until every inequality is met
+  !
+  ! The active normals stay independent: a_p depends on them where
+  ! a_p . z, which is z . H z, is below 1e-6 of a_p . H^-1 a_p, and
+  ! only the multipliers then move; and no step exists where p is not
+  ! met and no active multiplier vanishes, (1, -r) on p and the active
+  ! set then the weights of the inequalities whose normals cancel and
+  ! whose constants sum to more than zero. At every move the step and
+  ! the multipliers are those of one solve of the active set's
+  ! equalities, not the sum of the moves.
+  !
+  ! Of 2000 random problems: summed, and the dependence at 1e-12, an
+  ! inequality nearly dependent raised the multipliers to 1e15 and the
+  ! active values away from zero; at 1e-8, two nearly dependent in turn
+  ! made five normals active in four dimensions; at 1e-6 every step
+  ! meets its conditions to 1.3e-11, and each of the 230 without one
+  ! has the weights to 1.4e-5. Where the primal active set it replaces
+  ! settled, 1738 of them, the step and the multipliers are its own to
+  ! every digit; it took dependent normals in, and the rotor's three
+  ! scenarios at 2 cm, its eight upper bounds active and three smooth
+  ! maxima violated, made its system singular.
   !===================================================================!
 
   subroutine quadratic_step(hessian, gradient, c, a, step, mu, solvable)
 
-    real(dp), intent(in)  :: hessian(:,:), gradient(:), c(:), a(:,:)
+    real(dp)             , intent(in)  :: hessian(:,:), gradient(:), c(:), a(:,:)
     real(dp), allocatable, intent(out) :: step(:), mu(:)
-    logical , intent(out) :: solvable
+    logical              , intent(out) :: solvable
 
     real(dp), allocatable :: u(:), r(:), z(:)
     integer , allocatable :: set(:)
-    logical :: active(size(c))
-    real(dp) :: tolerance, t1, t2, joining, met, along
-    integer :: j, p, leaving, iteration
+    logical               :: active(size(c))
+    real(dp)              :: tolerance, t1, t2, joining, met, along
+    integer               :: j, p, leaving, iteration
 
     tolerance = 1.0e-12_dp * max(1.0_dp, maxval(abs(c)))
     allocate(mu(size(c)), source=0.0_dp)
@@ -2755,17 +3139,28 @@ contains
 
   contains
 
-    ! the step and the multipliers of the active set with the multiplier
-    ! joining of p, H d + g + N u + joining a_p = 0 and N^T d = -c_N, by
-    ! one solve of their equalities; and given z and r, H z + N r = a_p
-    ! and N^T z = 0
+    !-----------------------------------------------------------------!
+    ! Returns the step and the multipliers of the active set with the
+    ! multiplier joining of p, by one solve of their equalities; and,
+    ! given z and r, the directions they move along as p joins
+    !
+    !      [ H    N ] [ d ]   [ -g - joining a_p ]
+    !      [ N^T  0 ] [ u ] = [ -c_N             ]
+    !
+    !      [ H    N ] [ z ]   [ a_p ]
+    !      [ N^T  0 ] [ r ] = [ 0   ]
+    !-----------------------------------------------------------------!
+
     subroutine active_solution(set, p, joining, step, u, z, r)
-      integer , intent(in)  :: set(:), p
-      real(dp), intent(in)  :: joining
-      real(dp), allocatable, intent(out) :: step(:), u(:)
+
+      integer              , intent(in)            :: set(:), p
+      real(dp)             , intent(in)            :: joining
+      real(dp), allocatable, intent(out)           :: step(:), u(:)
       real(dp), allocatable, intent(out), optional :: z(:), r(:)
+
       real(dp), allocatable :: system(:,:), x(:), right(:)
-      integer :: n, i
+      integer               :: n, i
+
       n = size(gradient)
       allocate(system(n + size(set), n + size(set)), source=0.0_dp)
       system(1:n, 1:n)    = hessian
@@ -2781,16 +3176,23 @@ contains
          z = x(1:n)
          r = x(n + 1:)
       end if
+
     end subroutine active_solution
 
   end subroutine quadratic_step
 
-  ! whether h + shift I is positive definite, the symmetric part of h
-  ! read: its factor by Cholesky exists
+  !===================================================================!
+  ! Returns whether h + shift I is positive definite, the symmetric
+  ! part of h read: its factor by Cholesky exists
+  !===================================================================!
+
   pure logical function positive_definite(h, shift)
+
     real(dp), intent(in) :: h(:,:), shift
+
     real(dp) :: l(size(h, 1), size(h, 1)), s
-    integer :: i, j
+    integer  :: i, j
+
     l = 0.0_dp
     positive_definite = .false.
     do j = 1, size(h, 1)
@@ -2802,21 +3204,28 @@ contains
        end do
     end do
     positive_definite = .true.
+
   end function positive_definite
 
   !===================================================================!
-  ! THE DAMPED BFGS UPDATE of b by the step s and the change y of the
-  ! gradient, Powell's: where s.y < s.b s / 5, y is replaced by
+  ! Updates b by the damped BFGS update of the step s and the change y
+  ! of the gradient, Powell's: where s.y < s.b s / 5, y is replaced by
   ! theta y + (1 - theta) b s, theta = 0.8 s.b s / (s.b s - s.y), so
   ! that b stays positive definite. A zero b is first the identity
   ! times y.y / s.y, and is left zero where s.y is not positive.
+  !
+  !      b' = b - (b s)(b s)^T / (s . b s) + r r^T / (s . r),
+  !      r  = theta y + (1 - theta) b s
   !===================================================================!
 
   pure subroutine bfgs_update(b, s, y)
+
     real(dp), intent(inout) :: b(:,:)
     real(dp), intent(in)    :: s(:), y(:)
+
     real(dp) :: bs(size(s)), r(size(s)), sbs, sy, theta
-    integer :: i
+    integer  :: i
+
     sy = dot_product(s, y)
     if (all(b == 0.0_dp)) then
        if (.not. sy > 0.0_dp) return
@@ -2832,36 +3241,58 @@ contains
     r = theta * y + (1.0_dp - theta) * bs
     b = b - spread(bs, 2, size(s)) * spread(bs, 1, size(s)) / sbs &
          & + spread(r, 2, size(s)) * spread(r, 1, size(s)) / dot_product(s, r)
+
   end subroutine bfgs_update
 
-  ! h + shift I
+  !===================================================================!
+  ! Returns h + shift I
+  !===================================================================!
+
   pure function shifted(h, shift) result(s)
+
     real(dp), intent(in) :: h(:,:), shift
-    real(dp) :: s(size(h, 1), size(h, 2))
+    real(dp)             :: s(size(h, 1), size(h, 2))
+
     integer :: i
+
     s = h
     if (shift == 0.0_dp) return
     do i = 1, size(h, 1)
        s(i, i) = s(i, i) + shift
     end do
+
   end function shifted
 
-  ! a design on which no equality is stated
+  !===================================================================!
+  ! Returns whether the design is free: a design on which no equality
+  ! is stated
+  !===================================================================!
+
   logical function free_design(this)
+
     class(discrete_lagrangian), intent(in) :: this
+
     integer :: j
+
     free_design = this % manifold % with_design
     do j = 1, size(this % condition)
        if (this % condition(j) % manifold % is_design_factor() .and. .not. this % condition(j) % inequality) &
             & free_design = .false.
     end do
+
   end function free_design
 
-  ! whether the expansions are along the design coordinates, one each
-  ! in their order
+  !===================================================================!
+  ! Returns whether the expansions are along the design coordinates,
+  ! one each in their order: along(:, e) the unit vector e_e
+  !===================================================================!
+
   logical function along_each_coordinate(expanded)
+
     type(expansion), intent(in) :: expanded
+
     integer :: e, i
+
     along_each_coordinate = expanded % num_expansions() == expanded % num_designs()
     if (.not. along_each_coordinate) return
     do e = 1, expanded % num_expansions()
@@ -2869,20 +3300,21 @@ contains
           if (expanded % along(i, e) /= merge(1.0_dp, 0.0_dp, i == e)) along_each_coordinate = .false.
        end do
     end do
+
   end function along_each_coordinate
 
   !===================================================================!
-  ! The solution x of A x = b by elimination with partial pivoting. A
-  ! singular A stops the program.
+  ! Returns the solution x of A x = b by elimination with partial
+  ! pivoting. A singular A stops the program.
   !===================================================================!
 
   function linear_solution(A, b) result(x)
 
     real(dp), intent(in) :: A(:,:), b(:)
-    real(dp) :: x(size(b))
+    real(dp)             :: x(size(b))
 
     real(dp) :: M(size(b), size(b) + 1), row(size(b) + 1)
-    integer :: n, k, i, p
+    integer  :: n, k, i, p
 
     n = size(b)
     M(:, 1:n)   = A
@@ -2906,59 +3338,68 @@ contains
   end function linear_solution
 
   !===================================================================!
-  ! THE ZERO AT THE DESIGN THE IMAGE STATES, from an estimate: the
-  ! minimization of the residual (operation_minimization), one block
-  ! of the chain after another, each a residual_operator over the
-  ! block's moments (its instants, and the stages of a one-step
-  ! family) and the cells. The rows of every block are solved by the
-  ! minimizer of by, or by the default their rows choose, and the
-  ! adjoint in reverse. The solution is a discrete field of the
-  ! manifold's unknowns at the instants.
+  ! Returns the zero at the design the image states, from an estimate:
+  ! the minimization of the residual (operation_minimization), one
+  ! block of the chain after another, each a residual_operator over the
+  ! block's moments (its instants, and the stages of a one-step family)
+  ! and the cells. The rows of every block are solved by the minimizer
+  ! of by, or by the default their rows choose, and the adjoint in
+  ! reverse. The solution is a discrete field of the manifold's
+  ! unknowns at the instants.
   !
-  ! SCHEDULES: with checkpoint = k or snapshots = s the state is not
+  !      a schedule, two images, time alone   halves, overlapped
+  !      a schedule                           scheduled_march
+  !      pipelined over the images            wavefront_march
+  !      otherwise                            M_h % minimize
+  !
+  ! Schedules. With checkpoint = k or snapshots = s the state is not
   ! stored over the chain. Both sweeps run over a window of instants,
   ! the blocks being solved with the history they read; the state at
-  ! the first instant of a block - the history instants before it -
-  ! is stored as a snapshot where the schedule places one, and the
-  ! reverse sweep solves blocks again from the snapshots, from the
-  ! same estimate and through the same iterates, to form their
-  ! multipliers: with checkpoint = k, a snapshot every k blocks and
-  ! each segment of k blocks solved once more, its stages retained
-  ! over the segment; with snapshots = s, the binomial schedule of
-  ! Griewank, which reverses n blocks with s snapshots in the least
-  ! number of block solves, t n - C(s + t + 1, t - 1) + n for the
-  ! least t with C(s + 1 + t, t) >= n, the stages retained over one
-  ! block. The solution stores the unknowns and the multipliers at
-  ! every point, and the objective's value in place of the quadrature
-  ! nodes, so that it integrates the objective alone. A chain
-  ! pipelined over the images retains every stage and takes no
-  ! schedule; two images on a manifold of time alone divide a
-  ! scheduled reverse sweep instead. With kappa present, the
-  ! multipliers of the design, -dJ/ds in every column of the
-  ! expansion, are returned in it. With converged present, a block
-  ! whose Newton iteration does not converge ends the march, converged
-  ! false and no solution formed, where it stops the program
-  ! otherwise; under a schedule or a pipelined chain it stops the
-  ! program either way.
+  ! the first instant of a block (the history instants before it) is
+  ! stored as a snapshot where the schedule places one, and the reverse
+  ! sweep solves blocks again from the snapshots, from the same
+  ! estimate and through the same iterates, to form their multipliers.
+  ! With checkpoint = k, a snapshot every k blocks and each segment of
+  ! k blocks solved once more, its stages retained over the segment;
+  !
+  !      checkpoint = 3   blocks     1 2 3 | 4 5 6 | 7 8 9 | ...
+  !                       snapshot   ^       ^       ^
+  !
+  ! with snapshots = s, the binomial schedule of Griewank, which
+  ! reverses n blocks with s snapshots in the least number of block
+  ! solves, t n - C(s + t + 1, t - 1) + n for the least t with
+  ! C(s + 1 + t, t) >= n, the stages retained over one block. The
+  ! solution stores the unknowns and the multipliers at every point,
+  ! and the objective's value in place of the quadrature nodes, so that
+  ! it integrates the objective alone. A chain pipelined over the
+  ! images retains every stage and takes no schedule; two images on a
+  ! manifold of time alone divide a scheduled reverse sweep instead.
+  !
+  ! With kappa present, the multipliers of the design, -dJ/ds in every
+  ! column of the expansion, are returned in it. With converged
+  ! present, a block whose Newton iteration does not converge ends the
+  ! march, converged false and no solution formed, where it stops the
+  ! program otherwise; under a schedule or a pipelined chain it stops
+  ! the program either way.
   !===================================================================!
 
   recursive subroutine zero_at_design(this, estimate, solution, checkpoint, snapshots, kappa, functional_kappa, &
        & converged, by)
 
-    class(discrete_lagrangian), intent(in)  :: this
-    type(discrete_field)      , intent(in)  :: estimate
-    type(discrete_field)      , intent(out) :: solution
-    integer                   , intent(in), optional :: checkpoint, snapshots
-    real(dp), allocatable   , intent(out), optional :: kappa(:,:), functional_kappa(:,:)
+    class(discrete_lagrangian), intent(in)            :: this
+    type(discrete_field)      , intent(in)            :: estimate
+    type(discrete_field)      , intent(out)           :: solution
+    integer                   , intent(in), optional  :: checkpoint, snapshots
+    real(dp), allocatable     , intent(out), optional :: kappa(:,:), functional_kappa(:,:)
     logical                   , intent(out), optional :: converged
-    type(discrete_minimizer)  , intent(in), optional :: by
+    type(discrete_minimizer)  , intent(in), optional  :: by
 
-    type(discrete_minimizer) :: M_h
+    type(discrete_minimizer)        :: M_h
     class(march_state), allocatable :: state
-    type(discrete_lagrangian) :: halves
-    integer :: ninst, segment, shots, nc, k
-    logical :: wavefront, scheduled
-    integer(8) :: tick, tock, rate
+    type(discrete_lagrangian)       :: halves
+    integer                         :: ninst, segment, shots, nc, k
+    logical                         :: wavefront, scheduled
+    integer(8)                      :: tick, tock, rate
 
     ninst = this % points % num_instants()
     if (present(converged)) converged = .true.
@@ -3009,7 +3450,7 @@ contains
        return
     end if
 
-    ! THE DISCRETE MINIMIZER M_h of this Lagrangian: the minimizer of by
+    ! the discrete minimizer M_h of this Lagrangian: the minimizer of by
     ! paired with the blocks of this one, which may differ from the
     ! blocks by was paired with. Without by, the default of each block.
     ! Across the images, the wavefront over the blocks and the orders.
@@ -3049,8 +3490,8 @@ contains
     if (present(functional_kappa)) then
        separate: block
          type(discrete_lagrangian) :: alone
-         logical , allocatable :: of_state(:)
-         integer :: m
+         logical , allocatable     :: of_state(:)
+         integer                   :: m
          select type (this)
          type is (discrete_lagrangian)
             alone = this
@@ -3074,27 +3515,27 @@ contains
   end subroutine zero_at_design
 
   !===================================================================!
-  ! THE MARCH BY A SCHEDULE: both sweeps by the schedule, the state in
-  ! a window, and the solution of the unknowns alone at every point,
-  ! the objective's value stored and the nodes not.
+  ! Marches by a schedule: both sweeps by the schedule, the state in a
+  ! window, and the solution of the unknowns alone at every point, the
+  ! objective's value stored and the nodes not
   !===================================================================!
 
   subroutine scheduled_march(this, estimate, segment, shots, solution, kappa, by)
-    type(discrete_minimizer), intent(in), optional :: by
+    type(discrete_minimizer)  , intent(in), optional  :: by
 
-    class(discrete_lagrangian), intent(in)  :: this
-    type(discrete_field)      , intent(in)  :: estimate
-    integer                   , intent(in)  :: segment, shots
-    type(discrete_field)      , intent(out) :: solution
-    real(dp), allocatable   , intent(out), optional :: kappa(:,:)
+    class(discrete_lagrangian), intent(in)            :: this
+    type(discrete_field)      , intent(in)            :: estimate
+    integer                   , intent(in)            :: segment, shots
+    type(discrete_field)      , intent(out)           :: solution
+    real(dp), allocatable     , intent(out), optional :: kappa(:,:)
 
-    real(dp), allocatable :: value(:,:), jet(:,:,:), adjoint(:,:,:,:), reaction(:,:,:), gauge(:,:,:)
-    real(dp), allocatable :: design_multiplier(:,:), objective_value(:), field_value(:,:,:,:)
-    integer , allocatable :: slot(:)
+    real(dp), allocatable          :: value(:,:), jet(:,:,:), adjoint(:,:,:,:), reaction(:,:,:), gauge(:,:,:)
+    real(dp), allocatable          :: design_multiplier(:,:), objective_value(:), field_value(:,:,:,:)
+    integer , allocatable          :: slot(:)
     character(len=32), allocatable :: names(:)
-    type(stencil), allocatable :: rows_along(:,:)
-    type(expression_view) :: view
-    integer :: nf, ncells, ninst, c, k, nc, nm
+    type(stencil), allocatable     :: rows_along(:,:)
+    type(expression_view)          :: view
+    integer                        :: nf, ncells, ninst, c, k, nc, nm
 
     nf     = this % manifold % num_unknowns
     ncells = this % points % num_cells()
@@ -3136,20 +3577,25 @@ contains
   end subroutine scheduled_march
 
   !===================================================================!
-  ! THE WAVEFRONT MARCH across the images, when they number the orders
-  ! plus one on a manifold of time alone with one expansion: image o +
-  ! 1 forms order o of every block, one block behind image o, forward
-  ! and in reverse, each image's multipliers of its own order summed
-  ! over the images at the end.
+  ! Marches by the wavefront across the images, when they number the
+  ! orders plus one on a manifold of time alone with one expansion:
+  ! image o + 1 forms order o of every block, one block behind image o,
+  ! forward and in reverse, each image's multipliers of its own order
+  ! summed over the images at the end
+  !
+  !      wave       1    2    3    4    ...
+  !      image 1    b1   b2   b3   b4         order 0
+  !      image 2         b1   b2   b3         order 1
+  !      image 3              b1   b2         order 2
   !===================================================================!
 
   subroutine wavefront_march(this, estimate, solution, state, by)
-    type(discrete_minimizer), intent(in), optional :: by
+    type(discrete_minimizer)       , intent(in), optional :: by
 
-    class(discrete_lagrangian)       , intent(in)  :: this
-    type(discrete_field)             , intent(in)  :: estimate
-    type(discrete_field)             , intent(out) :: solution
-    class(march_state), allocatable, intent(out) :: state
+    class(discrete_lagrangian)     , intent(in)           :: this
+    type(discrete_field)           , intent(in)           :: estimate
+    type(discrete_field)           , intent(out)          :: solution
+    class(march_state), allocatable, intent(out)          :: state
 
     call this % begun(estimate, state)
     select type (state)
@@ -3176,25 +3622,37 @@ contains
   end subroutine wavefront_march
 
   !===================================================================!
-  ! THE MINIMAND: what the minimization of the discrete Lagrangian
-  ! reads of it (operation_minimization). The blocks of the chain, or
-  ! the one system of the point manifold; the blocks whose instants a
-  ! block's history reads; the facts its default minimizer is chosen
-  ! from.
+  ! Returns the count of the blocks: those of the chain, or the one
+  ! system of the point manifold. This and the procedures after it are
+  ! the minimand, what the minimization of the discrete Lagrangian
+  ! reads of it (operation_minimization): the blocks, the blocks whose
+  ! instants a block's history reads, and the facts its default
+  ! minimizer is chosen from.
   !===================================================================!
 
   integer function march_blocks(this)
+
     class(discrete_lagrangian), intent(in) :: this
+
     march_blocks = 1
     if (this % with_chain) march_blocks = this % schemes % num_blocks()
+
   end function march_blocks
 
-  ! the blocks that solve the instants of block b's history, each once
+  !===================================================================!
+  ! Returns the blocks that solve the instants of block b's history,
+  ! each once: a block c before b whose own instants cf + cd .. cl hold
+  ! one of b's first depth instants
+  !===================================================================!
+
   function block_history(this, b) result(read)
+
     class(discrete_lagrangian), intent(in) :: this
-    integer                 , intent(in) :: b
-    integer, allocatable :: read(:)
+    integer                   , intent(in) :: b
+    integer, allocatable                   :: read(:)
+
     integer :: first, last, depth, k, c, cf, cl, cd
+
     allocate(read(0))
     if (.not. this % with_chain) return
     call this % block_extent(b, first, last, depth)
@@ -3205,15 +3663,23 @@ contains
           if (.not. any(read == c)) read = [read, c]
        end do
     end do
+
   end function block_history
 
-  ! the line a block is announced by
+  !===================================================================!
+  ! Returns the line a block is announced by: its family, its
+  ! instants, their times and its history
+  !===================================================================!
+
   function block_label(this, b) result(line)
+
     class(discrete_lagrangian), intent(in) :: this
-    integer                 , intent(in) :: b
-    character(len=:), allocatable :: line
+    integer                   , intent(in) :: b
+    character(len=:), allocatable          :: line
+
     character(len=250) :: text
-    integer :: first, last, depth
+    integer            :: first, last, depth
+
     line = ''
     if (.not. this % with_chain) return
     call this % block_extent(b, first, last, depth)
@@ -3221,11 +3687,18 @@ contains
          & '  instants ', first, '..', last, '  t = ', this % points % instant(first), ' .. ', &
          & this % points % instant(last), '  history ', depth, ' instants'
     line = trim(text)
+
   end function block_label
 
+  !===================================================================!
+  ! Returns the facts a block's default minimizer is chosen from
+  !===================================================================!
+
   function blocks_facts(this) result(facts)
+
     class(discrete_lagrangian), intent(in) :: this
-    type(block_facts) :: facts
+    type(block_facts)                      :: facts
+
     facts % with_space = this % manifold % with_space
     facts % whole_line = this % whole_line()
     facts % continued  = this % continued
@@ -3235,13 +3708,20 @@ contains
          & any(this % manifold % of_time_alone(1:this % manifold % num_unknowns))
     facts % cells      = this % points % num_cells()
     facts % width      = this % rule % num_components()
+
   end function blocks_facts
 
-  ! every block's history within the manifold
+  !===================================================================!
+  ! Checks every block's history lies within the manifold
+  !===================================================================!
+
   subroutine blocks_checked(this)
+
     class(discrete_lagrangian), intent(in) :: this
-    integer :: b, first, last, depth
+
+    integer            :: b, first, last, depth
     character(len=250) :: message
+
     if (.not. this % with_chain) return
     do b = 1, this % schemes % num_blocks()
        call this % block_extent(b, first, last, depth)
@@ -3251,36 +3731,49 @@ contains
           error stop trim(message)
        end if
     end do
+
   end subroutine blocks_checked
 
-  ! the design at every point of rows, their stored input
+  !===================================================================!
+  ! Returns the design at every point of rows, their stored input
+  !===================================================================!
+
   function rows_design(this, rows) result(design)
+
     class(discrete_lagrangian), intent(in) :: this
     type(residual_operator)   , intent(in) :: rows
-    type(stored_field) :: design
+    type(stored_field)                     :: design
+
     type(typed_field_domain) :: designs
+
     designs = rows % design_fields()
     design  = designs % design(design_at_points(this % points % expansion % values(), rows % designs, size(rows % at)))
+
   end function rows_design
 
   !===================================================================!
-  ! THE STATE FROM THE ESTIMATE: the tuples at every instant and cell,
-  ! in every column of the expansion along the design - in column zero
-  ! the values from the estimate, every derivative component zero, its
-  ! rates where the march continues; zero in the columns above - and
+  ! Returns the state from the estimate: the tuples at every instant
+  ! and cell, in every column of the expansion along the design, and
   ! the stages of the step into each instant, one set per family that
-  ! marches by stages, retained for the adjoint.
+  ! marches by stages, retained for the adjoint
+  !
+  !      tuple(:, c, k, 0)       the estimate's values at cell c and
+  !                              instant k, every derivative component
+  !                              zero, its rates where the march
+  !                              continues
+  !      tuple(:, c, k, 1:)      zero, in the columns above
+  !      stages(:, c, i, k, :)   stage i of the step into instant k
   !===================================================================!
 
   subroutine march_begun(this, estimate, state)
 
-    class(discrete_lagrangian)       , intent(in)  :: this
-    type(discrete_field)             , intent(in)  :: estimate
+    class(discrete_lagrangian)     , intent(in)  :: this
+    type(discrete_field)           , intent(in)  :: estimate
     class(march_state), allocatable, intent(out) :: state
 
     type(chain_state), allocatable :: march
-    integer :: stride, nf, ncells, ninst, ncol, top, b, k, c, f
-    character(len=250) :: message
+    integer                        :: stride, nf, ncells, ninst, ncol, top, b, k, c, f
+    character(len=250)             :: message
 
     stride = this % rule % num_components()
     nf     = this % manifold % num_unknowns
@@ -3324,14 +3817,19 @@ contains
   end subroutine march_begun
 
   !===================================================================!
-  ! THE ROWS OF BLOCK b AT THE STATE, column zero, with their design and
-  ! the owner of every point. Forward, the block's estimate is the
-  ! state; a march continued from the instant before starts every
-  ! moment after the history from the tuple of the last instant of the
-  ! history, its unknowns of time alone extrapolated along time to the
-  ! block's last instant. Reversed, the rows at the solution, the stages
-  ! as solved, and the jets of the state along each expansion at every
-  ! unknown of the block, from the columns of the expansion.
+  ! Returns the rows of block b at the state, column zero, with their
+  ! design and the owner of every point.
+  !
+  ! Forward, the block's estimate is the state; a march continued from
+  ! the instant before starts every moment after the history from the
+  ! tuple of the last instant of the history, its unknowns of time
+  ! alone extrapolated along time to the block's last instant.
+  ! Reversed, the rows at the solution, the stages as solved, and the
+  ! jets of the state along each expansion at every unknown of the
+  ! block, from the columns of the expansion.
+  !
+  !      jets(:, 0, d)   the block's unknowns q
+  !      jets(:, o, d)   their column of order o along the expansion d
   !===================================================================!
 
   subroutine march_block_system(this, b, state, reversed, blk)
@@ -3343,7 +3841,7 @@ contains
     type(chain_block)         , intent(out)   :: blk
 
     real(dp), allocatable :: predicted(:,:)
-    integer :: first, last, depth, m, c, stride, order, nd, d, o, column
+    integer               :: first, last, depth, m, c, stride, order, nd, d, o, column
 
     select type (state)
     type is (chain_state)
@@ -3384,26 +3882,40 @@ contains
 
   end subroutine march_block_system
 
-  ! a column of a block's unknowns written into the state at the
+  !===================================================================!
+  ! Writes a column of a block's unknowns into the state at the
   ! block's own instants and the stages of its steps
+  !===================================================================!
+
   subroutine block_written(this, blk, x, column, state)
+
     class(discrete_lagrangian), intent(in)    :: this
     type(chain_block)         , intent(in)    :: blk
     real(dp)                  , intent(in)    :: x(:)
     integer                   , intent(in)    :: column
     class(march_state)        , intent(inout) :: state
+
     select type (state)
     type is (chain_state)
        call blk % to_points(OWN_MOMENTS, origin, x, state % tuple(:, :, :, column), state % stages(:, :, :, :, column))
     end select
+
   end subroutine block_written
 
-  ! the columns of the expansion this image forms: (d, m, column),
-  ! direction outer and order inner
+  !===================================================================!
+  ! Returns the columns of the expansion this image forms, each as
+  ! (d, m, column), the direction outer and the order inner
+  !
+  !      (1, 1, c11) (1, 2, c12) ... (2, 1, c21) (2, 2, c22) ...
+  !===================================================================!
+
   function march_columns(this) result(columns)
+
     class(discrete_lagrangian), intent(in) :: this
-    integer, allocatable :: columns(:,:)
+    integer, allocatable                   :: columns(:,:)
+
     integer :: d, m
+
     allocate(columns(3, 0))
     do d = 1, this % points % expansion % num_expansions()
        if (.not. this % expansion_owned(d)) cycle
@@ -3411,25 +3923,34 @@ contains
           columns = reshape([columns, d, m, this % points % expansion % column(d, m)], [3, size(columns, 2) + 1])
        end do
     end do
+
   end function march_columns
 
+  !===================================================================!
+  ! Returns the right side of the expansion of order m along d of a
+  ! block
+  !===================================================================!
+
   subroutine march_expansion_side(this, blk, d, m, state, rhs)
+
     class(discrete_lagrangian), intent(in)    :: this
     type(chain_block)         , intent(in)    :: blk
     integer                   , intent(in)    :: d, m
     class(march_state)        , intent(inout) :: state
-    real(dp), allocatable   , intent(out)   :: rhs(:)
+    real(dp), allocatable     , intent(out)   :: rhs(:)
+
     select type (state)
     type is (chain_state)
        call this % expansion_source(blk, origin, d, m, state % tuple, state % stages, rhs)
     end select
+
   end subroutine march_expansion_side
 
   !===================================================================!
-  ! THE SOLUTION OF THE MARCH: the state at every point, with the jet
-  ! the rule lays out and the quadrature nodes; the expansions shared
-  ! among the images summed once first, column zero being complete on
-  ! every image.
+  ! Returns the solution of the march: the state at every point, with
+  ! the jet the rule lays out and the quadrature nodes; the expansions
+  ! shared among the images summed once first, column zero being
+  ! complete on every image
   !===================================================================!
 
   subroutine march_solved(this, state, solution)
@@ -3439,7 +3960,7 @@ contains
     type(discrete_field)      , intent(out)   :: solution
 
     real(dp), allocatable :: above(:,:,:,:), stages_above(:,:,:,:,:)
-    integer :: nf, ncells, ninst, stride, k, c, f
+    integer               :: nf, ncells, ninst, stride, k, c, f
 
     nf     = this % manifold % num_unknowns
     ncells = this % points % num_cells()
@@ -3474,18 +3995,30 @@ contains
 
   end subroutine march_solved
 
-  ! whether the equations are paired with their multiplier
+  !===================================================================!
+  ! Returns whether the equations are paired with their multiplier
+  !===================================================================!
+
   logical function pairing_of_equations(this)
+
     class(discrete_lagrangian), intent(in) :: this
+
     pairing_of_equations = this % with_adjoint
+
   end function pairing_of_equations
 
-  ! the adjoint's data from the solution: the Lagrangian's differential
-  ! at the nodes, and the multipliers of every equality, zero
+  !===================================================================!
+  ! Sets the adjoint's data from the solution: the Lagrangian's
+  ! differential at the nodes, and the multipliers of every equality,
+  ! zero
+  !===================================================================!
+
   subroutine march_adjoint_begun(this, solution, state)
+
     class(discrete_lagrangian), intent(in)    :: this
     type(discrete_field)      , intent(in)    :: solution
     class(march_state)        , intent(inout) :: state
+
     select type (state)
     type is (chain_state)
        call this % lagrangian_differential(solution, state % gradient, state % partial)
@@ -3493,15 +4026,16 @@ contains
             & state % incoming, state % reaction, state % gauge, state % design_multiplier)
        state % gauged = this % gauged_unknowns()
     end select
+
   end subroutine march_adjoint_begun
 
   !===================================================================!
-  ! THE RIGHT SIDE OF ONE ORDER of the adjoint of a block, the o-th
-  ! derivative along the expansion d: the objective's differential of
-  ! order o at the block's nodes, the multipliers passed in from the
+  ! Returns the right side of one order of the adjoint of a block, the
+  ! o-th derivative along the expansion d: the objective's differential
+  ! of order o at the block's nodes, the multipliers passed in from the
   ! block ahead at the block's own instants, and, above order zero, the
   ! derivatives of the transposed products with the multipliers of the
-  ! orders below.
+  ! orders below
   !===================================================================!
 
   subroutine march_adjoint_side(this, blk, o, d, state, rhs)
@@ -3510,7 +4044,7 @@ contains
     type(chain_block)         , intent(in)    :: blk
     integer                   , intent(in)    :: o, d
     class(march_state)        , intent(inout) :: state
-    real(dp), allocatable   , intent(out)   :: rhs(:)
+    real(dp), allocatable     , intent(out)   :: rhs(:)
 
     select type (state)
     type is (chain_state)
@@ -3520,9 +4054,17 @@ contains
 
   end subroutine march_adjoint_side
 
-  ! the multipliers of order o along d received: stored for the orders
+  !===================================================================!
+  ! Receives the multipliers of order o along d: stored for the orders
   ! above, those at the block's history rows passed to the blocks that
   ! determine those instants
+  !
+  !      x at the history rows   -->   incoming, at the instants
+  !                                    first .. first + depth - 1
+  !      x                       -->   mu(:, o, d), every d at order
+  !                                    zero
+  !===================================================================!
+
   subroutine march_adjoint_received(this, blk, o, d, x, state)
 
     class(discrete_lagrangian), intent(in)    :: this
@@ -3553,8 +4095,11 @@ contains
 
   end subroutine march_adjoint_received
 
-  ! the multipliers of the block's equations, of the gauges, of the
-  ! face conditions and of the design conditions, of every order
+  !===================================================================!
+  ! Places the multipliers of the block's equations, of the gauges, of
+  ! the face conditions and of the design conditions, of every order
+  !===================================================================!
+
   subroutine march_adjoint_placed(this, blk, state)
 
     class(discrete_lagrangian), intent(in)    :: this
@@ -3578,12 +4123,17 @@ contains
 
   end subroutine march_adjoint_placed
 
-  ! the solution with every multiplier, the expansions shared among
-  ! the images summed once first
+  !===================================================================!
+  ! Returns the solution with every multiplier, the expansions shared
+  ! among the images summed once first
+  !===================================================================!
+
   subroutine march_adjoint_solution(this, state, solution)
+
     class(discrete_lagrangian), intent(in)    :: this
     class(march_state)        , intent(inout) :: state
     type(discrete_field)      , intent(inout) :: solution
+
     select type (state)
     type is (chain_state)
        if (.not. this % pipelined()) call this % shared_expansions_summed(state % adjoint, state % reaction, &
@@ -3592,25 +4142,33 @@ contains
             & state % gauge, state % design_multiplier, state % names, state % jet, state % value, state % slot)
        call solution_completed(this, state % value, state % names, state % jet, state % slot, solution)
     end select
+
   end subroutine march_adjoint_solution
 
   !===================================================================!
-  ! THE COLUMNS OF A SOLUTION: one per unknown and, with the equations
-  ! paired, one per multiplier of every equality of L_h returned by the
-  ! reverse sweep - each equation's under the name its term declared,
-  ! each paired condition's under its multiplier's name at the points
-  ! of its part, the pin's - with a jet of nrow rows of the state and
-  ! one row per multiplier, in every column of the expansion.
+  ! Returns the columns of a solution: one per unknown and, with the
+  ! equations paired, one per multiplier of every equality of L_h
+  ! returned by the reverse sweep (each equation's under the name its
+  ! term declared, each paired condition's under its multiplier's name
+  ! at the points of its part, the pin's), with a jet of nrow rows of
+  ! the state and one row per multiplier, in every column of the
+  ! expansion.
+  !
+  !      columns   1 .. nf    nf + 1 .. 2 nf   conditions'  laws'  pin
+  !                unknowns   equations'       as stated
+  !
+  !      jet rows   1 .. nrow, the state | nrow + 1 .. nrow + nm, the
+  !                                        multipliers
   !===================================================================!
 
   subroutine solution_columns(this, nrow, value, names, jet, slot, nm)
 
-    class(discrete_lagrangian)      , intent(in)  :: this
-    integer                         , intent(in)  :: nrow
+    class(discrete_lagrangian)    , intent(in)  :: this
+    integer                       , intent(in)  :: nrow
     real(dp), allocatable         , intent(out) :: value(:,:), jet(:,:,:)
     character(len=32), allocatable, intent(out) :: names(:)
     integer , allocatable         , intent(out) :: slot(:)
-    integer                         , intent(out) :: nm
+    integer                       , intent(out) :: nm
 
     integer :: nf, npts, nc, j, f
 
@@ -3642,13 +4200,13 @@ contains
   end subroutine solution_columns
 
   !===================================================================!
-  ! EVERY MULTIPLIER, in every column of the expansion, as a component
-  ! with a row of the jet of its own after the nrow rows of the state:
-  ! the equations', the design conditions' - one value each at every
-  ! point, an inequality's the design iteration's - those of the
-  ! conditions on the time factor or a face of the region at every
-  ! cell of the instant, the reactions of the face conditions at their
-  ! instant, the representation laws', and the pin's, -dJ_h/dt_k at the
+  ! Places every multiplier, in every column of the expansion, as a
+  ! component with a row of the jet of its own after the nrow rows of
+  ! the state: the equations'; the design conditions', one value each
+  ! at every point, an inequality's the design iteration's; those of
+  ! the conditions on the time factor or a face of the region at every
+  ! cell of the instant; the reactions of the face conditions at their
+  ! instant; the representation laws'; and the pin's, -dJ_h/dt_k at the
   ! points of instant k.
   !===================================================================!
 
@@ -3745,15 +4303,21 @@ contains
 
   end subroutine multipliers_assembled
 
-  ! the solution with its multipliers, the quadrature nodes of the
-  ! solution of the state retained
+  !===================================================================!
+  ! Returns the solution with its multipliers, the quadrature nodes of
+  ! the solution of the state retained
+  !===================================================================!
+
   subroutine solution_completed(this, value, names, jet, slot, solution)
+
     class(discrete_lagrangian), intent(in)    :: this
     real(dp)                  , intent(in)    :: value(:,:), jet(:,:,:)
     character(len=32)         , intent(in)    :: names(:)
     integer                   , intent(in)    :: slot(:)
     type(discrete_field)      , intent(inout) :: solution
+
     type(discrete_field) :: with_nodes
+
     with_nodes = solution
     solution = discrete_field(this % points, value, names)
     solution % jet  = jet
@@ -3768,45 +4332,56 @@ contains
     solution % node_position    = with_nodes % node_position
     solution % node_face_weight = with_nodes % node_face_weight
     solution % node_image       = with_nodes % node_image
+
   end subroutine solution_completed
 
   !===================================================================!
-  ! THE QUADRATURE NODES of a solution: the families' own rule for the
-  ! integral of a functional over the manifold. Every point is a node
-  ! - an instant at a cell - with the weight the multistep families'
-  ! interpolatory rules over their steps give it, accumulated from
-  ! every step whose rule reads the instant, the step times the
+  ! Returns the quadrature nodes of a solution: the families' own rule
+  ! for the integral of a functional over the manifold. Every point is
+  ! a node (an instant at a cell) with the weight the multistep
+  ! families' interpolatory rules over their steps give it, accumulated
+  ! from every step whose rule reads the instant, the step times the
   ! weight over the unit step, and the cell's volume; every stage of a
-  ! staged family's steps is a node with the tableau's weight times
-  ! the step and the cell's volume, at the time
-  ! the instant behind plus the abscissa times the step, its jet from
-  ! the stages solved and their jets along the design; a point
-  ! manifold's one point has weight one. stage_node(k, i, c) is the
-  ! node of stage i of the step into instant k at cell c, zero where
-  ! there is none. With a density at the nodes, step_term(p) is the
-  ! integral of the density over the step into the instant of point p,
-  ! by that step's rule alone, at the cell of p.
+  ! staged family's steps is a node with the tableau's weight times the
+  ! step and the cell's volume, at the time the instant behind plus the
+  ! abscissa times the step, its jet from the stages solved and their
+  ! jets along the design; a point manifold's one point has weight one.
+  !
+  !      node                     weight                position
+  !      point (k, c)             h w_j V_c, summed     x(k, c)
+  !                               over the steps
+  !                               whose rule reads k
+  !      stage i of step into k   h b_i V_c             t_(k-1) + c_i h
+  !      the one point            1
+  !
+  ! stage_node(k, i, c) is the node of stage i of the step into instant
+  ! k at cell c, zero where there is none. With a density at the nodes,
+  ! step_term(p) is the integral of the density over the step into the
+  ! instant of point p, by that step's rule alone, at the cell of p.
+  ! Where an expansion moves the instants, each weight's derivatives
+  ! along it are stored; where the instants are pinned, each weight's
+  ! derivatives in the instants it depends on.
   !===================================================================!
 
   subroutine quadrature_nodes(this, lb, tuple, stages, solution, stage_node, blocks, density, step_term)
 
-    class(discrete_lagrangian), intent(in)    :: this
-    type(lower_bounds)        , intent(in)    :: lb
-    real(dp)                  , intent(in)    :: tuple(:,:,lb % instant:,0:), stages(:,:,:,lb % stage:,0:)
-    type(discrete_field)      , intent(inout) :: solution
-    integer , allocatable   , intent(out)   :: stage_node(:,:,:)
-    integer                   , intent(in), optional :: blocks(2)
-    real(dp)                  , intent(in), optional :: density(:)
-    real(dp), allocatable   , intent(out), optional :: step_term(:)
+    class(discrete_lagrangian), intent(in)            :: this
+    type(lower_bounds)        , intent(in)            :: lb
+    real(dp)                  , intent(in)            :: tuple(:,:,lb % instant:,0:), stages(:,:,:,lb % stage:,0:)
+    type(discrete_field)      , intent(inout)         :: solution
+    integer , allocatable     , intent(out)           :: stage_node(:,:,:)
+    integer                   , intent(in), optional  :: blocks(2)
+    real(dp)                  , intent(in), optional  :: density(:)
+    real(dp), allocatable     , intent(out), optional :: step_term(:)
 
     type(derivative_terms), allocatable :: dt(:), weight(:), moved(:), moved_weight(:)
-    type(derivative_terms) :: product
-    integer , allocatable :: instant(:), cell_owner(:)
-    real(dp), allocatable :: position(:), motion(:,:), column_values(:)
-    integer :: stride, ncells, ninst, npts, nb, b, first, last, depth, n, s, smax, k, i, c, j
-    integer :: nnodes, nn, nf, b1, b2, klo, khi, offset, d, o, order, node, a, m
-    logical :: staged, moving, pinned
-    real(dp) :: h
+    type(derivative_terms)              :: product
+    integer , allocatable               :: instant(:), cell_owner(:)
+    real(dp), allocatable               :: position(:), motion(:,:), column_values(:)
+    integer                             :: stride, ncells, ninst, npts, nb, b, first, last, depth, n, s, smax, k, i, c, j
+    integer                             :: nnodes, nn, nf, b1, b2, klo, khi, offset, d, o, order, node, a, m
+    logical                             :: staged, moving, pinned
+    real(dp)                            :: h
 
     ! an expansion that moves the instants moves the steps, and the
     ! weights the families' rules give the nodes with them
@@ -4036,22 +4611,37 @@ contains
 
   contains
 
-    ! the cell's volume, one without a region
+    !-----------------------------------------------------------------!
+    ! Returns the cell's volume, one without a region
+    !-----------------------------------------------------------------!
+
     pure real(dp) function cell_volume(c)
+
       integer, intent(in) :: c
+
       cell_volume = 1.0_dp
       if (this % manifold % with_space) cell_volume = this % points % volume(c)
+
     end function cell_volume
 
-    ! node's weight's derivative in instant a, in every column, added:
-    ! at the node's entry of the instant, or at a new one, the entries
-    ! doubled where the node has none free
+    !-----------------------------------------------------------------!
+    ! Adds the derivative of the node's weight in instant a, in every
+    ! column: at the node's entry of the instant, or at a new one, the
+    ! entries doubled where the node has none free
+    !
+    !      node_instant(:, node)          a_1   a_2   0   ...
+    !      node_instant_weight(:, node)   the derivatives in each
+    !-----------------------------------------------------------------!
+
     subroutine pin(node, a, derivative)
+
       integer , intent(in) :: node, a
       real(dp), intent(in) :: derivative(0:)
+
       integer , allocatable :: grown(:,:)
       real(dp), allocatable :: grown_weight(:,:,:)
-      integer :: l, lmax
+      integer               :: l, lmax
+
       lmax = size(solution % node_instant, 1)
       l = findloc(solution % node_instant(:, node), a, dim=1)
       if (l == 0) l = findloc(solution % node_instant(:, node), 0, dim=1)
@@ -4066,16 +4656,27 @@ contains
       end if
       solution % node_instant(l, node) = a
       solution % node_instant_weight(l, node, :) = solution % node_instant_weight(l, node, :) + derivative
+
     end subroutine pin
 
   end subroutine quadrature_nodes
 
-  ! the instants of block b: first - depth .. last, depth of history
+  !===================================================================!
+  ! Returns the instants of block b, its history among them: the
+  ! instants first .. last, the first depth of them the history
+  !
+  !      first ... first + depth - 1 | first + depth ... last
+  !      the history                 | from(b), the block's own
+  !===================================================================!
+
   subroutine block_extent(this, b, first, last, depth)
+
     class(discrete_lagrangian), intent(in)  :: this
     integer                   , intent(in)  :: b
     integer                   , intent(out) :: first, last, depth
+
     integer :: nb
+
     nb    = this % schemes % num_blocks()
     first = this % schemes % from(b)
     last  = this % points % num_instants()
@@ -4083,43 +4684,52 @@ contains
     depth = 0
     if (b > 1) depth = this % schemes % scheme(b) % history_depth(top_degree(this % rule, this % manifold % num_unknowns))
     first = first - depth
+
   end subroutine block_extent
 
   !===================================================================!
-  ! BOTH SWEEPS BY A SCHEDULE, the state in a window of instants. The
-  ! window of the blocks b1..b2 runs from reach instants before the
-  ! first own instant of b1, reach the deepest history of the chain,
-  ! to the last instant of b2; a snapshot of the boundary m is the
-  ! state at the reach instants before the first own instant of the
-  ! block m. The forward sweep solves block after block, stores the
-  ! unknowns at every point, sums the objective over each block's
-  ! quadrature nodes and stores the snapshots the schedule places.
-  ! The reverse sweep performs the schedule's actions: a snapshot
-  ! restored, blocks solved again from it, a snapshot stored, and the
-  ! blocks b1..b2 reversed - solved again with their stages, the
-  ! objective's differential formed at their nodes, their multipliers
-  ! formed from the last block to the first. The multipliers passed
-  ! to earlier instants are stored over the same window. A multistep
-  ! rule of a block weighs history instants, whose differential is
-  ! passed back with the multipliers to the blocks that own them.
+  ! Performs both sweeps by a schedule, the state in a window of
+  ! instants. The window of the blocks b1..b2 runs from reach instants
+  ! before the first own instant of b1, reach the deepest history of
+  ! the chain, to the last instant of b2; a snapshot of the boundary m
+  ! is the state at the reach instants before the first own instant of
+  ! the block m.
   !
-  ! With this % overlapped, image 2 performs the solves and image 1
-  ! the reversals: image 2 writes the window of each reversal into the
+  !      from(b1) - reach ... from(b1) - 1 | from(b1) ... last of b2
+  !      the history, from the state       | from the estimate
+  !
+  ! The forward sweep solves block after block, stores the unknowns at
+  ! every point, sums the objective over each block's quadrature nodes
+  ! and stores the snapshots the schedule places. The reverse sweep
+  ! performs the schedule's actions: a snapshot restored, blocks solved
+  ! again from it, a snapshot stored, and the blocks b1..b2 reversed:
+  ! solved again with their stages, the objective's differential
+  ! formed at their nodes, their multipliers formed from the last block
+  ! to the first. The multipliers passed to earlier instants are stored
+  ! over the same window. A multistep rule of a block weighs history
+  ! instants, whose differential is passed back with the multipliers to
+  ! the blocks that own them.
+  !
+  ! With this % overlapped, image 2 performs the solves and image 1 the
+  ! reversals: image 2 writes the window of each reversal into the
   ! coarray half of its parity and meets image 1, which reads it, so
   ! that image 2 is one reversal ahead.
+  !
+  !      image 2   solve 1 -> half 2   solve 2 -> half 1   solve 3
+  !      image 1                       reverse 1           reverse 2
   !===================================================================!
 
   subroutine scheduled_sweeps(this, estimate, rows_along, segment, shots, field_value, objective_value, &
        & adjoint, reaction, gauge, design_multiplier, by)
-    type(discrete_minimizer), intent(in), optional :: by
+    type(discrete_minimizer)  , intent(in), optional :: by
 
-    class(discrete_lagrangian), intent(in)  :: this
-    type(discrete_field)      , intent(in)  :: estimate
-    type(stencil)             , intent(in)  :: rows_along(:,:)
-    integer                   , intent(in)  :: segment, shots
-    real(dp), allocatable   , intent(out) :: field_value(:,:,:,:), objective_value(:)
-    real(dp), allocatable   , intent(out) :: adjoint(:,:,:,:), reaction(:,:,:), gauge(:,:,:)
-    real(dp), allocatable   , intent(out) :: design_multiplier(:,:)
+    class(discrete_lagrangian), intent(in)           :: this
+    type(discrete_field)      , intent(in)           :: estimate
+    type(stencil)             , intent(in)           :: rows_along(:,:)
+    integer                   , intent(in)           :: segment, shots
+    real(dp), allocatable     , intent(out)          :: field_value(:,:,:,:), objective_value(:)
+    real(dp), allocatable     , intent(out)          :: adjoint(:,:,:,:), reaction(:,:,:), gauge(:,:,:)
+    real(dp), allocatable     , intent(out)          :: design_multiplier(:,:)
 
     real(dp), allocatable :: state(:,:,:,:), stages(:,:,:,:,:)
     real(dp), allocatable :: incoming(:,:,:,:), moved(:,:,:,:)
@@ -4127,12 +4737,12 @@ contains
     real(dp), allocatable :: state_co(:,:,:,:,:)[:], stages_co(:,:,:,:,:,:)[:]
     real(dp), allocatable :: partial(:,:), part_value(:), part_partial(:,:), gradient(:,:,:)
     integer , allocatable :: taken(:), action(:,:), stage_node(:,:,:)
-    type(discrete_field) :: part
-    type(lower_bounds) :: lb
-    integer :: stride, nf, ncells, ninst, order, ncol, ni, nb, top, reach, b, first, last, depth, nslots, again
-    integer :: ia, k, c, f, b1, b2, wlo, whi, lo, width, half, reversals
-    integer(8) :: optimum, tick, tock, rate
-    logical :: solves, reverses
+    type(discrete_field)  :: part
+    type(lower_bounds)    :: lb
+    integer               :: stride, nf, ncells, ninst, order, ncol, ni, nb, top, reach, b, first, last, depth, nslots, again
+    integer               :: ia, k, c, f, b1, b2, wlo, whi, lo, width, half, reversals
+    integer(8)            :: optimum, tick, tock, rate
+    logical               :: solves, reverses
 
     stride = this % rule % num_components()
     nf     = this % manifold % num_unknowns
@@ -4169,7 +4779,7 @@ contains
     end if
     allocate(shot(stride, ncells, reach, 0:ncol - 1, nslots), source=0.0_dp)
 
-    ! THE FORWARD SWEEP
+    ! the forward sweep
     call system_clock(tick, rate)
     allocate(field_value(nf, ncells, ninst, 0:ncol - 1), source=0.0_dp)
     allocate(objective_value(ncol), partial(ni, 0:ncol - 1), source=0.0_dp)
@@ -4199,7 +4809,7 @@ contains
          & real(tock - tick, dp) / real(rate, dp), ' s; resident memory ', resident_kilobytes() / 1024, ' MB'
     if (.not. this % with_adjoint) return
 
-    ! THE REVERSE SWEEP
+    ! the reverse sweep
     tick = tock
     call this % allocate_multipliers(partial, 0, adjoint, incoming, reaction, gauge, design_multiplier)
 
@@ -4284,13 +4894,19 @@ contains
 
   contains
 
-    ! the window moved to the blocks b1..b2: the history before b1 from
-    ! the state, the own instants from the estimate, their columns
+    !-----------------------------------------------------------------!
+    ! Moves the window to the blocks b1..b2: the history before b1
+    ! from the state, the own instants from the estimate, their columns
     ! above zero
+    !-----------------------------------------------------------------!
+
     subroutine window_moved(b1, b2)
+
       integer, intent(in) :: b1, b2
+
       real(dp), allocatable :: window(:,:,:,:)
-      integer :: own, first, last, depth, k, c, f
+      integer               :: own, first, last, depth, k, c, f
+
       own = this % schemes % from(b1)
       call this % block_extent(b2, first, last, depth)
       wlo = max(1, own - reach)
@@ -4311,14 +4927,21 @@ contains
       end do
       if (this % continued .and. whi - own >= 2) call this % estimated_rates(window(:, :, own:whi, 0), own)
       call move_alloc(window, state)
+
     end subroutine window_moved
 
-    ! the blocks b1..b2 solved in the window, their stages retained;
+    !-----------------------------------------------------------------!
+    ! Solves the blocks b1..b2 in the window, their stages retained;
     ! the columns of expansions the images share summed once
+    !-----------------------------------------------------------------!
+
     subroutine blocks_solved(b1, b2)
+
       integer, intent(in) :: b1, b2
+
       real(dp), allocatable :: own(:,:,:,:), stages_own(:,:,:,:,:)
-      integer :: b, first, last, depth, from
+      integer               :: b, first, last, depth, from
+
       call this % block_extent(b1, first, last, depth)
       lo = first + 1
       lb = lower_bounds(instant=wlo, stage=lo, node=this % points % point_of(wlo, 1))
@@ -4336,36 +4959,59 @@ contains
          call co_sum(stages_own)
          stages(:, :, :, :, 1:) = stages_own
       end if
+
     end subroutine blocks_solved
 
-    ! the snapshot of the boundary m: the state at the reach instants
-    ! before the first own instant of the block m
+    !-----------------------------------------------------------------!
+    ! Stores the snapshot of the boundary m at the place: the state at
+    ! the reach instants before the first own instant of the block m
+    !-----------------------------------------------------------------!
+
     subroutine stored(m, place)
+
       integer, intent(in) :: m, place
+
       integer :: own, from
+
       own  = this % schemes % from(m)
       from = max(1, own - reach)
       if (own == from) return
       shot(:, :, 1:own - from, :, place) = state(:, :, from:own - 1, :)
+
     end subroutine stored
 
+    !-----------------------------------------------------------------!
+    ! Restores the snapshot of the boundary m from the place: the state
+    ! a window of those instants alone
+    !-----------------------------------------------------------------!
+
     subroutine restored(m, place)
+
       integer, intent(in) :: m, place
+
       integer :: own, from
+
       own  = this % schemes % from(m)
       from = max(1, own - reach)
       if (allocated(state)) deallocate(state)
       allocate(state(stride, ncells, from:own - 1, 0:ncol - 1))
       if (own == from) return
       state = shot(:, :, 1:own - from, :, place)
+
     end subroutine restored
 
-    ! the multipliers of the blocks b1..b2, solved in the window with
-    ! their stages: the objective's differential at their nodes, its
-    ! part at the history instants passed back with the multipliers
+    !-----------------------------------------------------------------!
+    ! Forms the multipliers of the blocks b1..b2, solved in the window
+    ! with their stages: the objective's differential at their nodes,
+    ! its part at the history instants passed back with the multipliers
+    !-----------------------------------------------------------------!
+
     subroutine reversed(b1, b2)
+
       integer, intent(in) :: b1, b2
+
       integer :: b, first, last, depth, own, k, c, low, high, node
+
       own = this % schemes % from(b1)
       call this % quadrature_nodes(lb, state, stages, part, stage_node, [b1, b2])
       if (allocated(this % objective)) then
@@ -4391,37 +5037,49 @@ contains
          call this % adjoint_block(this % schemes % scheme(b), first, last, depth, rows_along, lb, state, stages, &
               & gradient, stage_node, adjoint, incoming, reaction, gauge, design_multiplier, by=by)
       end do
+
     end subroutine reversed
 
   end subroutine scheduled_sweeps
 
   !===================================================================!
-  ! THE SCHEDULE of a reverse sweep over nb blocks. taken(m) is the
-  ! place of the snapshot the forward sweep stores at the boundary m,
-  ! zero where it stores none; action(:, i) is the i-th action of the
-  ! reverse sweep, (kind, a, b, place): the snapshot of the boundary a
-  ! restored from the place (place zero the beginning, which stores
-  ! nothing); the blocks a..b-1 solved again; the snapshot of the
-  ! boundary a stored at the place; the blocks a..b reversed.
+  ! Returns the schedule of a reverse sweep over nb blocks. taken(m) is
+  ! the place of the snapshot the forward sweep stores at the boundary
+  ! m, zero where it stores none; action(:, i) is the i-th action of
+  ! the reverse sweep, (kind, a, b, place):
+  !
+  !      ACTION_RESTORE   the snapshot of the boundary a restored from
+  !                       the place (place zero the beginning, which
+  !                       stores nothing)
+  !      ACTION_ADVANCE   the blocks a..b-1 solved again
+  !      ACTION_STORE     the snapshot of the boundary a stored at the
+  !                       place
+  !      ACTION_REVERSE   the blocks a..b reversed
   !
   ! With segment = k: a snapshot at the first block of every segment
   ! of k blocks, each segment restored and reversed whole.
+  !
+  !      segment 3, nb 7   taken: boundary 4 at place 1, 7 at place 2
+  !                        restore 7 from 2, reverse 7..7
+  !                        restore 4 from 1, reverse 4..6
+  !                        restore 1 from 0, reverse 1..3
   !
   ! With shots = s: the binomial schedule. cost(s, n), the least
   ! number of block solves that reverse n blocks from a stored state
   ! with s free places, one block being reversed by one solve, is
   !
   !      cost(s, 1) = 1,     cost(0, n) = n (n + 1) / 2,
-  !      cost(s, n) = min over l of  l + cost(s - 1, n - l) + cost(s, l),
+  !      cost(s, n) = min over l of l + cost(s - 1, n - l) + cost(s, l),
   !
   ! l blocks solved to the place of a snapshot, the blocks after it
   ! reversed with one place fewer, the blocks before it with all; the
-  ! least l that attains the minimum does not decrease with n and
-  ! grows by one at most, so that the table is formed from two
-  ! candidates per entry. cost(s, n) = t n - C(s + t + 1, t - 1) + n
-  ! for the least t with C(s + 1 + t, t) >= n, Griewank's count. The
-  ! forward sweep is the first descent: it solves every block once and
-  ! stores the snapshots of that descent.
+  ! least l that attains the minimum does not decrease with n and grows
+  ! by one at most, so that the table is formed from two candidates per
+  ! entry. cost(s, n) = t n - C(s + t + 1, t - 1) + n for the least t
+  ! with C(s + 1 + t, t) >= n, Griewank's count. The forward sweep is
+  ! the first descent: it solves every block once and stores the
+  ! snapshots of that descent. again counts the blocks the reverse
+  ! sweep solves.
   !===================================================================!
 
   subroutine reversal_schedule(nb, segment, shots, taken, action, again, optimum)
@@ -4433,8 +5091,8 @@ contains
 
     integer(8), allocatable :: cost(:,:)
     integer   , allocatable :: split(:,:), grown(:,:)
-    integer(8) :: candidate
-    integer :: count, s, n, l, sg, nseg, b1, b2, i
+    integer(8)              :: candidate
+    integer                 :: count, s, n, l, sg, nseg, b1, b2, i
 
     allocate(taken(nb + 1), source=0)
     allocate(action(4, 64), source=0)
@@ -4485,8 +5143,14 @@ contains
 
   contains
 
+    !-----------------------------------------------------------------!
+    ! Appends an action, the capacity doubled when it is exhausted
+    !-----------------------------------------------------------------!
+
     subroutine emitted(kind, a, b, place)
+
       integer, intent(in) :: kind, a, b, place
+
       if (count == size(action, 2)) then
          allocate(grown(4, 2 * count), source=0)
          grown(:, 1:count) = action
@@ -4494,15 +5158,26 @@ contains
       end if
       count = count + 1
       action(:, count) = [kind, a, b, place]
+
     end subroutine emitted
 
-    ! the blocks a..b-1 reversed from the state of the boundary a,
-    ! stored at place_a, with s free places; in the first descent
-    ! the solves and the snapshots are the forward sweep's
+    !-----------------------------------------------------------------!
+    ! Emits the reversal of the blocks a..b-1 from the state of the
+    ! boundary a, stored at place_a, with s free places; in the first
+    ! descent the solves and the snapshots are the forward sweep's
+    !
+    !      a ............ m ............ b
+    !      reversed       snapshot m,    reversed first, with s - 1
+    !      second, with s at place_m     places
+    !-----------------------------------------------------------------!
+
     recursive subroutine reversal(a, b, s, place_a, first_descent)
+
       integer, intent(in) :: a, b, s, place_a
       logical, intent(in) :: first_descent
+
       integer :: n, m, j, place_m
+
       n = b - a
       if (n == 1) then
          call emitted(ACTION_RESTORE, a, 0, place_a)
@@ -4528,18 +5203,21 @@ contains
       end if
       call reversal(m, b, s - 1, place_m, first_descent)
       call reversal(a, m, s, place_a, .false.)
+
     end subroutine reversal
 
   end subroutine reversal_schedule
 
   !===================================================================!
-  ! The resident memory of the process in kilobytes, from the kernel's
-  ! status of the process; zero where that is not readable.
+  ! Returns the resident memory of the process in kilobytes, from the
+  ! kernel's status of the process; zero where that is not readable
   !===================================================================!
 
   integer function resident_kilobytes()
+
     character(len=128) :: line
-    integer :: unit, status
+    integer            :: unit, status
+
     resident_kilobytes = 0
     open(newunit=unit, file='/proc/self/status', status='old', action='read', iostat=status)
     if (status /= 0) return
@@ -4552,25 +5230,30 @@ contains
        end if
     end do
     close(unit)
+
   end function resident_kilobytes
 
-
   !===================================================================!
-  ! THE DIFFERENTIAL OF THE LAGRANGIAN'S FUNCTIONALS on a solution:
-  ! the objective's, zero without one, and each functional of the state
-  ! an inequality states times its multiplier - the gradient in the jet
-  ! at every node and the partial in each design coordinate, in every
-  ! column of the expansion.
+  ! Returns the differential of the Lagrangian's functionals on a
+  ! solution: the objective's, zero without one, and each functional of
+  ! the state an inequality states times its multiplier; the gradient
+  ! in the jet at every node and the partial in each design coordinate,
+  ! in every column of the expansion
+  !
+  !      dL = dJ + w_1 dc_1 + w_2 dc_2 + ...,   w_m the multiplier of
+  !                                             the m-th inequality,
+  !                                             zero on the design
+  !                                             alone
   !===================================================================!
 
   subroutine lagrangian_differential(this, solution, gradient, partial)
 
     class(discrete_lagrangian), intent(in)  :: this
     type(discrete_field)      , intent(in)  :: solution
-    real(dp), allocatable   , intent(out) :: gradient(:,:,:), partial(:,:)
+    real(dp), allocatable     , intent(out) :: gradient(:,:,:), partial(:,:)
 
     real(dp), allocatable :: g(:,:,:), p(:,:)
-    integer :: ncol, ni, j, i, m
+    integer               :: ncol, ni, j, i, m
 
     ncol = this % points % expansion % num_columns()
     ni   = size(this % points % expansion % values())
@@ -4598,15 +5281,15 @@ contains
   end subroutine lagrangian_differential
 
   !===================================================================!
-  ! The difference rows along each space axis and order, once: the
-  ! stencil of the derivative of order o along axis c, empty without
-  ! differences.
+  ! Returns the difference rows along each space axis and order, once:
+  ! rows_along(c, o) the stencil of the derivative of order o along
+  ! axis c, empty without differences
   !===================================================================!
 
   function space_rows(this) result(rows_along)
 
     class(discrete_lagrangian), intent(in) :: this
-    type(stencil), allocatable :: rows_along(:,:)
+    type(stencil), allocatable             :: rows_along(:,:)
 
     integer :: top, c, o
 
@@ -4630,15 +5313,28 @@ contains
   end function space_rows
 
   !===================================================================!
-  ! The multipliers of the reverse sweep, zero, in the columns of the
-  ! partial given, with the incoming multipliers over ninst instants.
-  ! THE MULTIPLIERS OF THE DESIGN CONDITIONS nu_i - nu_i0 = 0 and
-  ! their derivatives: the stationarity of L in nu_i, kappa_i =
-  ! -(dJ/dnu_i at fixed state + the sum over every row of its
-  ! multiplier times the row's partial in nu_i) = -dJ/dnu_i, the total
-  ! derivative by the adjoint; the partial in nu_i here, the rows'
-  ! sums by the blocks. An expansion another image owns: its columns
-  ! are left zero here, and summed over the images at the end.
+  ! Returns the multipliers of the reverse sweep, zero, in the columns
+  ! of the partial given, with the incoming multipliers over ninst
+  ! instants
+  !
+  !      adjoint(f, c, k, :)       equation f, then the representation
+  !                                laws', at cell c and instant k
+  !      incoming(:, c, k, :)      those passed in, over ninst instants
+  !      reaction(c, e, :)         face condition equation e at cell c
+  !      gauge(k, g, :)            time-factor or space-face equation g
+  !      design_multiplier(i, :)   -partial(i, :), the rows' sums added
+  !                                by the blocks
+  !
+  ! The multipliers of the design conditions nu_i - nu_i0 = 0 and their
+  ! derivatives are the stationarity of L in nu_i:
+  !
+  !      kappa_i = -(dJ/dnu_i at fixed state + mu_1 dR_1/dnu_i
+  !                  + mu_2 dR_2/dnu_i + ...) = -dJ/dnu_i,
+  !
+  ! the total derivative by the adjoint, each row's multiplier times
+  ! the row's partial in nu_i; the partial in nu_i here, the rows' sums
+  ! by the blocks. An expansion another image owns: its columns are
+  ! left zero here, and summed over the images at the end.
   !===================================================================!
 
   subroutine allocate_multipliers(this, partial, ninst, adjoint, incoming, reaction, gauge, design_multiplier)
@@ -4646,8 +5342,8 @@ contains
     class(discrete_lagrangian), intent(in)  :: this
     real(dp)                  , intent(in)  :: partial(:,0:)
     integer                   , intent(in)  :: ninst
-    real(dp), allocatable   , intent(out) :: adjoint(:,:,:,:), incoming(:,:,:,:), reaction(:,:,:)
-    real(dp), allocatable   , intent(out) :: gauge(:,:,:), design_multiplier(:,:)
+    real(dp), allocatable     , intent(out) :: adjoint(:,:,:,:), incoming(:,:,:,:), reaction(:,:,:)
+    real(dp), allocatable     , intent(out) :: gauge(:,:,:), design_multiplier(:,:)
 
     integer :: nf, ncells, top, nc, ng, j, d
 
@@ -4678,8 +5374,11 @@ contains
 
   end subroutine allocate_multipliers
 
-  ! the columns of the expansions the images shared, summed once:
-  ! column zero is complete on every image and is left alone
+  !===================================================================!
+  ! Sums the columns of the expansions the images shared, once: column
+  ! zero is complete on every image and is left alone
+  !===================================================================!
+
   subroutine shared_expansions_summed(this, adjoint, reaction, gauge, design_multiplier)
 
     class(discrete_lagrangian), intent(in)    :: this
@@ -4704,52 +5403,55 @@ contains
 
   end subroutine shared_expansions_summed
 
+  !===================================================================!
+  ! Returns the highest degree along the first coordinate of the
+  ! first nf fields of a rule
+  !===================================================================!
+
   pure integer function top_degree(rule, nf)
+
     type(expression), intent(in) :: rule
     integer         , intent(in) :: nf
+
     integer :: f
+
     top_degree = 0
     do f = 1, nf
        top_degree = max(top_degree, rule % degree_of_field(f))
     end do
+
   end function top_degree
 
   !===================================================================!
-  ! Whether a family marches by stages: it does when no derived row of
-  ! its own determines a component below the top degree, so that the
-  ! tableau's stages determine the step.
+  ! Returns whether a family marches by stages: it does when no
+  ! derived row of its own determines a component below the top
+  ! degree, so that the tableau's stages determine the step
   !===================================================================!
 
   logical function marches_by_stages(scheme, nd)
+
     type(family), intent(in) :: scheme
     integer     , intent(in) :: nd
+
     integer, allocatable :: offset(:), degrees(:)
-    integer :: d
+    integer              :: d
+
     marches_by_stages = .true.
     do d = 0, nd - 1
        if (d == scheme % primary_degree(nd - 1)) cycle
        call scheme % row_pattern(d, nd - 1, offset, degrees)
        if (size(offset) > 0) marches_by_stages = .false.
     end do
+
   end function marches_by_stages
 
   !===================================================================!
-  ! ONE BLOCK'S ROWS: the block of the instants first..last, the first
-  ! `depth` of them solved by the blocks before, with the stages
-  ! between consecutive instants when the family marches by stages.
-  ! Its rows are stated with at((m - 1) ncells + c) the offset of the
-  ! tuple of moment m and cell c and primary(f) the row of equation f
-  ! within a tuple, and its q is the estimate - each instant's tuple
-  ! and, at a stage of the step into instant k + 1, the stage stored
-  ! at stages(:, c, i, k + 1) when the block was solved before, the
-  ! tuple of instant k otherwise.
-  !===================================================================!
-
-  !===================================================================!
-  ! The position of every point of a block, moment outer and cell
-  ! inner: the time of the moment - an instant's own, or for stage i
-  ! of the step into instant k the instant behind plus the stage's
-  ! abscissa times the step - then the cell's centre.
+  ! Returns the position of every point of a block, moment outer and
+  ! cell inner: the time of the moment, then the cell's centre
+  !
+  !      the moment of instant k         the instant's own position
+  !      the moment of stage i of the    t_(k-1) + c_i h_k, at the
+  !        step into instant k           cell's centre
   !===================================================================!
 
   function block_positions(this, scheme, first, n, instant_moment, stage_moment) result(positions)
@@ -4757,7 +5459,7 @@ contains
     class(discrete_lagrangian), intent(in) :: this
     type(family)              , intent(in) :: scheme
     integer                   , intent(in) :: first, n, instant_moment(:), stage_moment(:,:)
-    real(dp), allocatable :: positions(:,:)
+    real(dp), allocatable                  :: positions(:,:)
 
     integer :: ncells, k, i, c, m
 
@@ -4782,6 +5484,37 @@ contains
 
   end function block_positions
 
+  !===================================================================!
+  ! Returns one block's rows: the block of the instants first..last,
+  ! the first depth of them solved by the blocks before, with the
+  ! stages between consecutive instants when the family marches by
+  ! stages. Its rows are stated with at((m - 1) ncells + c) the offset
+  ! of the tuple of moment m and cell c and primary(f) the row of
+  ! equation f within a tuple, and its q is the estimate: each
+  ! instant's tuple and, at a stage of the step into instant k + 1, the
+  ! stage stored at stages(:, c, i, k + 1) when the block was solved
+  ! before, the tuple of instant k otherwise.
+  !
+  !      moments    instant 1 | stages of the step into 2 | instant 2 |
+  !      at         (m - 1) stride ncells + (c - 1) stride
+  !
+  ! The rows, in the order they are stated:
+  !
+  !      along time and space   the family's relations and the
+  !                             differences, as triples
+  !      corrected instants     the explicit instants projected
+  !      fixed                  the history, the values a face
+  !                             condition states at the first or the
+  !                             last instant, and the zero rows of the
+  !                             projection's unknowns
+  !      prescribed             the gauge rows and the face rows
+  !      tying                  the rows eliminated before a direct
+  !                             solve
+  !      reduced points         the law in its form at the first
+  !                             instant
+  !      projected              the law tested against the basis
+  !===================================================================!
+
   subroutine block_rows(this, scheme, first, last, depth, rows_along, lb, tuple, stages, solved_stages, blk)
 
     class(discrete_lagrangian), intent(in)  :: this
@@ -4793,32 +5526,32 @@ contains
     logical                   , intent(in)  :: solved_stages
     type(chain_block)         , intent(out) :: blk
 
-    integer , allocatable :: at(:), instant_moment(:), primary(:)
-    type(stencil) :: relations, gauge
-    type(connectivity_graph) :: connectivity
-    integer , allocatable :: stage_moment(:,:), fixed_rows(:)
-    integer , allocatable :: determined(:), source(:), gauge_rows(:), gauge_columns(:), face_rows(:), face_columns(:)
-    real(dp), allocatable :: weight(:), fixed(:), w(:), steps(:), gauge_weights(:), zeros(:), face_weights(:)
-    real(dp), allocatable :: face_constants(:), point_positions(:,:), space_weights(:)
-    integer , allocatable :: space_rows(:), space_columns(:)
-    logical , allocatable :: implicit_moment(:)
-    logical :: open_line
-    integer :: stride, nf, ncells, n, s, nm, m, k, i, f, c, e, count, nd, width, unknowns, npts
-    integer :: comp, axis, o, j, ne, history_last, time_relations, a, chain, chains, cells
-    integer , allocatable :: rule_primary(:)
-    type(projection) :: projected
-    type(expression) :: rule
-    logical :: staged
-    integer :: nodes, factor
-    integer , allocatable :: related(:), added(:), single(:)
-    logical , allocatable :: tying(:), entries(:), replaced(:), reduced_points(:), corrected_moment(:), varying(:)
-    logical , allocatable :: zero_moment(:)
-    integer , allocatable :: zero_rows(:)
-    integer :: nz
+    integer , allocatable         :: at(:), instant_moment(:), primary(:)
+    type(stencil)                 :: relations, gauge
+    type(connectivity_graph)      :: connectivity
+    integer , allocatable         :: stage_moment(:,:), fixed_rows(:)
+    integer , allocatable         :: determined(:), source(:), gauge_rows(:), gauge_columns(:), face_rows(:), face_columns(:)
+    real(dp), allocatable         :: weight(:), fixed(:), w(:), steps(:), gauge_weights(:), zeros(:), face_weights(:)
+    real(dp), allocatable         :: face_constants(:), point_positions(:,:), space_weights(:)
+    integer , allocatable         :: space_rows(:), space_columns(:)
+    logical , allocatable         :: implicit_moment(:)
+    logical                       :: open_line
+    integer                       :: stride, nf, ncells, n, s, nm, m, k, i, f, c, e, count, nd, width, unknowns, npts
+    integer                       :: comp, axis, o, j, ne, history_last, time_relations, a, chain, chains, cells
+    integer , allocatable         :: rule_primary(:)
+    type(projection)              :: projected
+    type(expression)              :: rule
+    logical                       :: staged
+    integer                       :: nodes, factor
+    integer , allocatable         :: related(:), added(:), single(:)
+    logical , allocatable         :: tying(:), entries(:), replaced(:), reduced_points(:), corrected_moment(:), varying(:)
+    logical , allocatable         :: zero_moment(:)
+    integer , allocatable         :: zero_rows(:)
+    integer                       :: nz
     type(expression), allocatable :: laws(:), variant_laws(:)
-    real(dp), allocatable :: derivative(:,:,:), table(:,:,:), instant_derivative(:,:,:,:), itable(:,:,:,:)
-    integer , allocatable :: relating(:)
-    logical :: moving, pinned
+    real(dp), allocatable         :: derivative(:,:,:), table(:,:,:), instant_derivative(:,:,:,:), itable(:,:,:,:)
+    integer , allocatable         :: relating(:)
+    logical                       :: moving, pinned
 
     stride = this % rule % num_components()
     nf     = this % manifold % num_unknowns
@@ -4854,7 +5587,7 @@ contains
        end do
     end do
 
-    ! THE ROWS ALONG TIME AND SPACE, as triples: the component
+    ! the rows along time and space, as triples: the component
     ! determined, the component it reads, the weight. Projected on the
     ! cells, every coefficient a node stores has a chain along time of
     ! its own, related by the family as the value's
@@ -4968,7 +5701,7 @@ contains
     end do
     open_line = this % open_line()
 
-    ! THE CORRECTED INSTANTS: an explicit instant of a family that
+    ! the corrected instants: an explicit instant of a family that
     ! marches by stages, after the history, the manifold's first instant
     ! aside, where the update of each component a condition's level
     ! reads at its highest order is less its correction z, the instant
@@ -5039,7 +5772,7 @@ contains
             & + scheme % primary_degree(this % rule % degree_of_field(f))
     end do
 
-    ! THE FIXED ROWS: every component of the history instants, and the
+    ! the fixed rows: every component of the history instants, and the
     ! values a face condition states at the first or the last instant
     call this % fixed_rows_of(first, last, depth, instant_moment, at, lb, tuple, fixed_rows, fixed)
     ! and the unknowns of the projection at every moment after the
@@ -5056,7 +5789,7 @@ contains
        fixed      = [fixed, spread(0.0_dp, 1, size(zero_rows))]
     end if
 
-    ! THE PRESCRIBED ROWS: the gauge rows - at every moment after the
+    ! the prescribed rows: the gauge rows - at every moment after the
     ! history, the mean of the integrated unknown over the cells, in
     ! place of its own row at the first cell - and the face rows at
     ! the block's own instants, one stencil with the faces' constants
@@ -5080,7 +5813,7 @@ contains
     else
        allocate(added(0))
     end if
-    ! THE TYING ROWS, with unknowns of time alone or on a manifold
+    ! the tying rows, with unknowns of time alone or on a manifold
     ! without space: the history, the family's relations, the rows of
     ! the unknowns of time alone, and the prescribed rows of one entry
     ! on their own diagonal; a prescribed row of several entries is
@@ -5103,7 +5836,7 @@ contains
     do e = 1, size(face_rows)
        zeros(face_rows(e)) = face_constants(e)
     end do
-    ! THE REDUCED POINTS, after the history, the manifold's first
+    ! the reduced points, after the history, the manifold's first
     ! instant aside, where a law that reads no component of top degree
     ! is stated in its form at the first instant (initial_form, and
     ! projected_form for a law projected on the cells): at an explicit
@@ -5125,7 +5858,7 @@ contains
           reduced_points((m - 1) * ncells + 1:m * ncells) = .true.
        end do
     end if
-    ! PROJECTED ON THE CELLS: each element at each moment an instance,
+    ! projected on the cells: each element at each moment an instance,
     ! the law in flux form tested at its quadrature points against the
     ! basis, its rules each in the row of the value's coefficient of
     ! the equation it tests
@@ -5270,15 +6003,31 @@ contains
 
   contains
 
+    !-----------------------------------------------------------------!
+    ! Returns the offset of the tuple of moment m at cell c
+    !-----------------------------------------------------------------!
+
     pure integer function at_of(m, c)
+
       integer, intent(in) :: m, c
+
       at_of = (m - 1) * width + (c - 1) * stride
+
     end function at_of
 
-    ! the moment of vertex v of a step's stage connectivity: 1 the
-    ! instant behind, 2..s+1 the stages, s+2 the instant ahead
+    !-----------------------------------------------------------------!
+    ! Returns the moment of vertex v of the stage connectivity of the
+    ! step into instant k + 1
+    !
+    !      vertex   1                 2 .. s + 1     s + 2
+    !      moment   the instant       the stages     the instant
+    !               behind                           ahead
+    !-----------------------------------------------------------------!
+
     pure integer function moment_of(v, k)
+
       integer, intent(in) :: v, k
+
       if (v == 1) then
          moment_of = instant_moment(k)
       else if (v == s + 2) then
@@ -5286,20 +6035,27 @@ contains
       else
          moment_of = stage_moment(k, v - 1)
       end if
+
     end function moment_of
 
-    ! table(j, o, d): the o-th derivative along the expansion d of the
-    ! weight of edge j of the connectivity, the step at vertex v that
-    ! ending at instant step_of(v), moving as the difference of its
-    ! instants; the steps seeded on the singletons of the order's
+    !-----------------------------------------------------------------!
+    ! Returns table(j, o, d), the o-th derivative along the expansion d
+    ! of the weight of edge j of the connectivity: the step at vertex
+    ! v that ending at instant step_of(v), moving as the difference of
+    ! its instants; the steps seeded on the singletons of the order's
     ! directions, so that the full subset of o of them is the o-th
     ! derivative
+    !-----------------------------------------------------------------!
+
     subroutine weight_table(steps, step_of, table)
-      real(dp), intent(in) :: steps(:)
-      integer , intent(in) :: step_of(:)
+
+      real(dp)             , intent(in)  :: steps(:)
+      integer              , intent(in)  :: step_of(:)
       real(dp), allocatable, intent(out) :: table(:,:,:)
+
       real(dp), allocatable :: seeds(:,:), terms(:,:), motion(:)
-      integer :: order, d, o, mask, v
+      integer               :: order, d, o, mask, v
+
       order = this % points % expansion % order
       allocate(table(connectivity % num_edges(), order, this % points % expansion % num_expansions()))
       allocate(seeds(size(steps), 2**order - 1))
@@ -5317,22 +6073,32 @@ contains
             table(:, o, d) = terms(:, 2**o - 1)
          end do
       end do
+
     end subroutine weight_table
 
-    ! itable(j, a, k, d): the derivative in the instant first - 2 + a,
-    ! a = 1 .. n + 1 the instants first - 1 .. last, of the k-th
-    ! derivative along the expansion d of edge j's weight; the steps
-    ! seeded on the singletons of the order's directions with their
-    ! derivatives along d, and on one direction more with their
+    !-----------------------------------------------------------------!
+    ! Returns itable(j, a, k, d), the derivative in the instant
+    ! first - 2 + a, a = 1 .. n + 1 the instants first - 1 .. last, of
+    ! the k-th derivative along the expansion d of edge j's weight; the
+    ! steps seeded on the singletons of the order's directions with
+    ! their derivatives along d, and on one direction more with their
     ! derivative in the instant, one where the step ends at it, minus
     ! one where it begins there; the step ending at the first instant,
     ! zero, has none
+    !
+    !      the step   t_(a-1) --- t_a --- t_(a+1)
+    !      d h / d t_a       +1         -1
+    !-----------------------------------------------------------------!
+
     subroutine instant_table(steps, step_of, itable)
-      real(dp), intent(in) :: steps(:)
-      integer , intent(in) :: step_of(:)
+
+      real(dp)             , intent(in)  :: steps(:)
+      integer              , intent(in)  :: step_of(:)
       real(dp), allocatable, intent(out) :: itable(:,:,:,:)
+
       real(dp), allocatable :: seeds(:,:), terms(:,:), motion(:)
-      integer :: order, d, a, k, mask, v, instant
+      integer               :: order, d, a, k, mask, v, instant
+
       order = this % points % expansion % order
       allocate(itable(connectivity % num_edges(), n + 1, 0:order, &
            & max(1, this % points % expansion % num_expansions())), source=0.0_dp)
@@ -5361,24 +6127,27 @@ contains
             end do
          end do
       end do
+
     end subroutine instant_table
 
   end subroutine block_rows
 
   !===================================================================!
-  ! The derivative of every step along the expansion d: the difference
-  ! of the derivatives of the instants it joins, zero at the first
-  ! instant, which no step ends at.
+  ! Returns the derivative of every step along the expansion d: the
+  ! difference of the derivatives of the instants it joins, zero at
+  ! the first instant, which no step ends at
+  !
+  !      motion(k) = t_k' - t_(k-1)',   motion(1) = 0
   !===================================================================!
 
   pure function step_seeds(points, d) result(motion)
 
     type(discrete_manifold), intent(in) :: points
     integer                , intent(in) :: d
-    real(dp), allocatable :: motion(:)
+    real(dp), allocatable               :: motion(:)
 
     real(dp), allocatable :: v(:)
-    integer :: k
+    integer               :: k
 
     v = points % expansion % instant_seed(d, points % num_instants())
     allocate(motion(size(v)), source=0.0_dp)
@@ -5388,10 +6157,9 @@ contains
 
   end function step_seeds
 
-
   !===================================================================!
-  ! The rows' inputs at the block's q, by which their jacobian is
-  ! formed there, and the image of every point of the block.
+  ! Sets the rows' inputs at the block's q, by which their jacobian is
+  ! formed there, and the image of every point of the block
   !===================================================================!
 
   subroutine block_inputs(this, blk)
@@ -5407,25 +6175,25 @@ contains
   end subroutine block_inputs
 
   !===================================================================!
-  ! ONE BLOCK SOLVED: its rows formed at the tuples of column zero,
-  ! and solved as one system of rows.
+  ! Solves one block: its rows formed at the tuples of column zero, and
+  ! solved as one system of rows
   !===================================================================!
 
   subroutine solve_block(this, scheme, first, last, depth, rows_along, lb, tuple, stages, expand, converged, by)
-    type(discrete_minimizer), intent(in), optional :: by
+    type(discrete_minimizer)  , intent(in), optional  :: by
 
-    class(discrete_lagrangian), intent(in)    :: this
-    type(family)              , intent(in)    :: scheme
-    integer                   , intent(in)    :: first, last, depth
-    type(stencil)             , intent(in)    :: rows_along(:,:)
-    type(lower_bounds)        , intent(in)    :: lb
-    real(dp)                  , intent(inout) :: tuple(:,:,lb % instant:,0:), stages(:,:,:,lb % stage:,0:)
-    logical                   , intent(in), optional :: expand
+    class(discrete_lagrangian), intent(in)            :: this
+    type(family)              , intent(in)            :: scheme
+    integer                   , intent(in)            :: first, last, depth
+    type(stencil)             , intent(in)            :: rows_along(:,:)
+    type(lower_bounds)        , intent(in)            :: lb
+    real(dp)                  , intent(inout)         :: tuple(:,:,lb % instant:,0:), stages(:,:,:,lb % stage:,0:)
+    logical                   , intent(in), optional  :: expand
     logical                   , intent(out), optional :: converged
 
-    type(chain_block) :: blk
+    type(chain_block)     :: blk
     real(dp), allocatable :: predicted(:,:)
-    integer :: m, c
+    integer               :: m, c
 
     if (verbosity >= 1) then
        print '(a,a,a,i0,a,i0,a,es12.4,a,es12.4,a,i0,a)', 'block  ', trim(scheme % name()), '  instants ', first, &
@@ -5453,23 +6221,26 @@ contains
   end subroutine solve_block
 
   !===================================================================!
-  ! ONE SYSTEM OF ROWS SOLVED - a block's, or the point manifold's:
+  ! Solves one system of rows, a block's or the point manifold's:
   ! Newton from the estimate, the block's own instants and the stages
   ! of its steps written to column zero, the stages retained for the
   ! adjoint, which linearizes the block at its solution; then every
   ! column above, expansion by expansion and order by order. With
   ! converged present, a Newton iteration that does not converge
   ! returns it false and forms no column.
+  !
+  !      Newton on the rows                --> column 0
+  !      d = 1, 2, ...,  m = 1 .. order    --> column(d, m)
   !===================================================================!
 
   subroutine solve_rows(this, blk, lb, tuple, stages, expand, converged, by)
-    type(discrete_minimizer), intent(in), optional :: by
+    type(discrete_minimizer)  , intent(in), optional  :: by
 
-    class(discrete_lagrangian), intent(in)    :: this
-    type(chain_block)         , intent(inout) :: blk
-    type(lower_bounds)        , intent(in)    :: lb
-    real(dp)                  , intent(inout) :: tuple(:,:,lb % instant:,0:), stages(:,:,:,lb % stage:,0:)
-    logical                   , intent(in), optional :: expand
+    class(discrete_lagrangian), intent(in)            :: this
+    type(chain_block)         , intent(inout)         :: blk
+    type(lower_bounds)        , intent(in)            :: lb
+    real(dp)                  , intent(inout)         :: tuple(:,:,lb % instant:,0:), stages(:,:,:,lb % stage:,0:)
+    logical                   , intent(in), optional  :: expand
     logical                   , intent(out), optional :: converged
 
     integer :: d, m
@@ -5496,33 +6267,37 @@ contains
   end subroutine solve_rows
 
   !===================================================================!
-  ! ONE ORDER OF THE EXPANSION of a block: the m-th derivative of the
-  ! block's unknowns along the expansion d is the solution of A x = b,
-  ! A the block's jacobian at its solution and b the m-th derivative
-  ! along d of the rows with the m-th derivative of the state left out
-  ! - at the row of an equation, by the jet arithmetic on the
-  ! derivatives of lower order and the design; at the fixed row of a
-  ! history instant, the derivative solved before; at the fixed row of
-  ! a face condition, the m-th derivative of the value it states; zero
-  ! at the rows along time and space, which are linear in the state.
-  ! The derivatives below m are read from their columns of the tuples
-  ! and of the stages, the m-th at the history instants from its own,
-  ! and the solution is written to that column at the block's own
-  ! instants and at the stages of its steps.
+  ! Solves one order of the expansion of a block: the m-th derivative
+  ! of the block's unknowns along the expansion d is the solution of
+  ! A x = b, A the block's jacobian at its solution and b the m-th
+  ! derivative along d of the rows with the m-th derivative of the
+  ! state left out, negated
+  !
+  !      d^m/dnu^m R(q(nu), nu) = 0   -->   A q^(m) = b
+  !
+  ! at the row of an equation, by the jet arithmetic on the derivatives
+  ! of lower order and the design; at the fixed row of a history
+  ! instant, the derivative solved before; at the fixed row of a face
+  ! condition, the m-th derivative of the value it states; zero at the
+  ! rows along time and space, which are linear in the state. The
+  ! derivatives below m are read from their columns of the tuples and
+  ! of the stages, the m-th at the history instants from its own, and
+  ! the solution is written to that column at the block's own instants
+  ! and at the stages of its steps.
   !===================================================================!
 
   subroutine expansion_order(this, blk, lb, d, m, tuple, stages, by)
-    type(discrete_minimizer), intent(in), optional :: by
+    type(discrete_minimizer)  , intent(in), optional :: by
 
-    class(discrete_lagrangian), intent(in)    :: this
-    type(chain_block)         , intent(in)    :: blk
-    type(lower_bounds)        , intent(in)    :: lb
-    integer                   , intent(in)    :: d, m
-    real(dp)                  , intent(inout) :: tuple(:,:,lb % instant:,0:), stages(:,:,:,lb % stage:,0:)
+    class(discrete_lagrangian), intent(in)           :: this
+    type(chain_block)         , intent(in)           :: blk
+    type(lower_bounds)        , intent(in)           :: lb
+    integer                   , intent(in)           :: d, m
+    real(dp)                  , intent(inout)        :: tuple(:,:,lb % instant:,0:), stages(:,:,:,lb % stage:,0:)
 
     type(residual_operator) :: lin
-    real(dp), allocatable :: rhs(:), x(:)
-    integer :: unknowns, column
+    real(dp), allocatable   :: rhs(:), x(:)
+    integer                 :: unknowns, column
 
     unknowns = size(blk % q)
     column   = this % points % expansion % column(d, m)
@@ -5536,13 +6311,18 @@ contains
   end subroutine expansion_order
 
   !===================================================================!
-  ! THE RIGHT SIDE b OF ONE ORDER OF THE EXPANSION of a block, as
-  ! expansion_order states it: on the block's rows at the tuple of
+  ! Returns the right side b of one order of the expansion of a block,
+  ! as expansion_order states it: on the block's rows at the tuple of
   ! column zero, the derivatives below m read from their columns of the
   ! tuples and of the stages, the m-th at the history instants from its
   ! own. At a state that is the rows' zero, A x = b gives the m-th
   ! derivative of the state; at any other, A x - b is the m-th
   ! derivative of the rows themselves, x the state's.
+  !
+  !      the rows of the equations   design_source and time_source
+  !      the history rows            the m-th column there
+  !      the face rows               the m-th derivative of the value
+  !                                  stated, or projected, of the datum
   !===================================================================!
 
   subroutine expansion_source(this, blk, lb, d, m, tuple, stages, rhs)
@@ -5552,12 +6332,12 @@ contains
     type(lower_bounds)        , intent(in)  :: lb
     integer                   , intent(in)  :: d, m
     real(dp)                  , intent(in)  :: tuple(:,:,lb % instant:,0:), stages(:,:,:,lb % stage:,0:)
-    real(dp), allocatable   , intent(out) :: rhs(:)
+    real(dp), allocatable     , intent(out) :: rhs(:)
 
     real(dp), allocatable :: jets(:,:), slopes(:), values(:), seed(:)
     integer , allocatable :: columns(:)
-    real(dp) :: given
-    integer :: unknowns, column, o, c, base, j, i, instant, row
+    real(dp)              :: given
+    integer               :: unknowns, column, o, c, base, j, i, instant, row
 
     unknowns = size(blk % q)
     values   = this % points % expansion % values()
@@ -5602,29 +6382,34 @@ contains
   end subroutine expansion_source
 
   !===================================================================!
-  ! THE WAVEFRONT over the blocks and the orders: on a manifold of
-  ! time alone with one expansion, when the images number the orders
+  ! Forms the wavefront over the blocks and the orders: on a manifold
+  ! of time alone with one expansion, when the images number the orders
   ! plus one, image m + 1 forms order m of every block, one block
   ! behind image m. Order m of block b reads the state of block b and
-  ! the orders below m, into their columns, from the images that
-  ! formed them, and its own order m at the block's history instants,
-  ! formed at the block before; each block ends with a rendezvous with
-  ! the next image, so that every image works while the others do. The
-  ! one expansion's column m is its order m. At the end every image
-  ! has column zero and its own order's column, the others above zero
-  ! set to zero, for the sum over the images that minimize takes.
+  ! the orders below m, into their columns, from the images that formed
+  ! them, and its own order m at the block's history instants, formed
+  ! at the block before; each block ends with a rendezvous with the
+  ! next image, so that every image works while the others do. The one
+  ! expansion's column m is its order m. At the end every image has
+  ! column zero and its own order's column, the others above zero set
+  ! to zero, for the sum over the images that minimize takes.
+  !
+  !      wave       1    2    3    4    ...
+  !      image 1    b1   b2   b3   b4         the state
+  !      image 2         b1   b2   b3         order 1
+  !      image 3              b1   b2         order 2
   !===================================================================!
 
   subroutine wavefront_expansion(this, rows_along, tuple, stages, by)
-    type(discrete_minimizer), intent(in), optional :: by
+    type(discrete_minimizer)  , intent(in), optional :: by
 
-    class(discrete_lagrangian), intent(in)    :: this
-    type(stencil)             , intent(in)    :: rows_along(:,:)
-    real(dp)                  , intent(inout) :: tuple(:,:,:,0:), stages(:,:,:,:,0:)
+    class(discrete_lagrangian), intent(in)           :: this
+    type(stencil)             , intent(in)           :: rows_along(:,:)
+    real(dp)                  , intent(inout)        :: tuple(:,:,:,0:), stages(:,:,:,:,0:)
 
     real(dp), allocatable :: tuple_co(:,:,:,:)[:], stages_co(:,:,:,:,:)[:]
-    type(chain_block) :: blk
-    integer :: m, me, b, first, last, depth, o, s, order
+    type(chain_block)     :: blk
+    integer               :: m, me, b, first, last, depth, o, s, order
 
     order = this % points % expansion % order
     me    = this_image()
@@ -5674,15 +6459,16 @@ contains
   end subroutine wavefront_expansion
 
   !===================================================================!
-  ! Whether the blocks and the orders are pipelined over the images:
-  ! a chain on a manifold of time alone, one expansion, and as many
-  ! images as orders plus one.
+  ! Returns whether the blocks and the orders are pipelined over the
+  ! images: a chain on a manifold of time alone, one expansion, and as
+  ! many images as orders plus one
   !===================================================================!
 
   function pipelined(this)
 
     class(discrete_lagrangian), intent(in) :: this
-    logical :: pipelined
+    logical                                :: pipelined
+
     integer :: order
 
     order = this % points % expansion % order
@@ -5692,8 +6478,8 @@ contains
   end function pipelined
 
   !===================================================================!
-  ! THE WAVEFRONT IN REVERSE over the blocks and the orders of the
-  ! adjoint: image o + 1 forms order o of the multipliers of every
+  ! Forms the wavefront in reverse over the blocks and the orders of
+  ! the adjoint: image o + 1 forms order o of the multipliers of every
   ! block from the last, one block behind image o. Order o of block b
   ! reads the multipliers of the orders below o at block b from the
   ! images that formed them, and its own order at the block's history
@@ -5701,26 +6487,30 @@ contains
   ! below enter the design conditions' multipliers. Every image leaves
   ! the multipliers of the other orders zero, for the sum over the
   ! images the sweep takes.
+  !
+  !      wave       1    2    3    ...
+  !      image 1    bB   bB-1 bB-2        order 0
+  !      image 2         bB   bB-1        order 1
   !===================================================================!
 
   subroutine wavefront_adjoint(this, rows_along, tuple, stages, gradient, stage_node, &
        & adjoint, incoming, reaction, gauge, in_design, by)
-    type(discrete_minimizer), intent(in), optional :: by
+    type(discrete_minimizer)  , intent(in), optional :: by
 
-    class(discrete_lagrangian), intent(in)    :: this
-    type(stencil)             , intent(in)    :: rows_along(:,:)
-    real(dp)                  , intent(in)    :: tuple(:,:,:,0:), stages(:,:,:,:,0:)
-    real(dp)                  , intent(in)    :: gradient(:,:,0:)
-    integer                   , intent(in)    :: stage_node(:,:,:)
-    real(dp)                  , intent(inout) :: adjoint(:,:,:,0:), incoming(:,:,:,0:), reaction(:,:,0:)
-    real(dp)                  , intent(inout) :: gauge(:,:,0:), in_design(:,0:)
+    class(discrete_lagrangian), intent(in)           :: this
+    type(stencil)             , intent(in)           :: rows_along(:,:)
+    real(dp)                  , intent(in)           :: tuple(:,:,:,0:), stages(:,:,:,:,0:)
+    real(dp)                  , intent(in)           :: gradient(:,:,0:)
+    integer                   , intent(in)           :: stage_node(:,:,:)
+    real(dp)                  , intent(inout)        :: adjoint(:,:,:,0:), incoming(:,:,:,0:), reaction(:,:,0:)
+    real(dp)                  , intent(inout)        :: gauge(:,:,0:), in_design(:,0:)
 
     real(dp), allocatable :: mu_co(:,:,:)[:], smu_co(:,:,:,:)[:], reaction_co(:,:,:)[:]
     real(dp), allocatable :: below(:,:,:), stages_below(:,:,:,:)
-    type(chain_block) :: blk
+    type(chain_block)     :: blk
     real(dp), allocatable :: jets(:,:), mu(:,:), x(:)
     logical , allocatable :: gauged(:)
-    integer :: o, me, b, first, last, depth, j, s, stride, ncells, ninst, order, smax
+    integer               :: o, me, b, first, last, depth, j, s, stride, ncells, ninst, order, smax
 
     stride = this % rule % num_components()
     ncells = this % points % num_cells()
@@ -5779,14 +6569,19 @@ contains
   end subroutine wavefront_adjoint
 
   !===================================================================!
-  ! THE ROWS ALONG TIME WHERE THE INSTANTS MOVE: each row q(row) -
-  ! w q(column) of a block's family, its weight w a function of the
-  ! steps. Its m-th derivative along the expansion d with the m-th
-  ! derivative of the state left out is minus the sum over j = 1..m of
-  ! binomial(m, j) times the j-th derivative of w times the (m - j)-th
-  ! of q(column); negated, it is added to the forward source at the
-  ! row. Transposed, the same sum of the multiplier at the row is added
-  ! to the adjoint source at the column. The product rule on symmetric
+  ! Adds the source of the rows along time where the instants move:
+  ! each row q(row) - w q(column) of a block's family, its weight w a
+  ! function of the steps. Its m-th derivative along the expansion d
+  ! with the m-th derivative of the state left out is minus the sum
+  ! over j = 1..m of binomial(m, j) times the j-th derivative of w
+  ! times the (m - j)-th of q(column); negated, it is added to the
+  ! forward source at the row.
+  !
+  !      C(m, 1) w' q^(m-1) + C(m, 2) w'' q^(m-2) + ...
+  !        + C(m, m) w^(m) q
+  !
+  ! Transposed, the same sum of the multiplier at the row is added to
+  ! the adjoint source at the column. The product rule on symmetric
   ! subsets forms the sum, the weight's value standing at zero, since
   ! it multiplies the derivative left out.
   !===================================================================!
@@ -5816,14 +6611,17 @@ contains
   end subroutine time_source
 
   !===================================================================!
-  ! The m-th derivative along the design coordinate d of every
+  ! Adds the m-th derivative along the design coordinate d of every
   ! equation row at the points not fixed, with the m-th derivative of
   ! the state left out, negated: each component of a point's tuple
   ! enters as the quantity whose k-th derivative is the k-th jet
   ! coefficient for k below m and zero at m, the coordinate d as the
-  ! quantity with derivative one; the coefficient of the full subset
-  ! of m directions is the m-th derivative by the product rule on
-  ! subsets.
+  ! quantity with derivative one; the coefficient of the full subset of
+  ! m directions is the m-th derivative by the product rule on subsets.
+  ! Each image forms the rows of the points it owns, summed over the
+  ! images.
+  !
+  !      q(c) = [ q_c, q_c', ..., q_c^(m-1), 0 ]  along d
   !===================================================================!
 
   subroutine design_source(rows, jets, m, values, seed, owner, b)
@@ -5836,10 +6634,10 @@ contains
     real(dp)               , intent(inout) :: b(:)
 
     type(derivative_terms), allocatable :: q(:), design(:)
-    type(derivative_terms) :: r
-    logical, allocatable :: is_fixed(:)
-    real(dp), allocatable :: source(:)
-    integer :: deg, npts, j, p, c, k, row
+    type(derivative_terms)              :: r
+    logical , allocatable               :: is_fixed(:)
+    real(dp), allocatable               :: source(:)
+    integer                             :: deg, npts, j, p, c, k, row
 
     if (allocated(rows % projected)) then
        call projected_design_source(rows, jets, m, values, seed, owner, b)
@@ -5872,10 +6670,10 @@ contains
   end subroutine design_source
 
   !===================================================================!
-  ! The m-th derivative along the design coordinate d of the value a
-  ! face condition states: the condition g(u) = u - h(x, nu)
+  ! Returns the m-th derivative along the design coordinate d of the
+  ! value a face condition states: the condition g(u) = u - h(x, nu)
   ! evaluated on a state without derivatives, so that the m-th
-  ! coefficient is -h^(m), negated.
+  ! coefficient is -h^(m), negated
   !===================================================================!
 
   real(dp) function stated_derivative(equation, m, values, seed, position)
@@ -5885,7 +6683,7 @@ contains
     real(dp)              , intent(in) :: values(:), seed(:)
     real(dp)              , intent(in) :: position(:)
 
-    type(expression) :: g
+    type(expression)                    :: g
     type(derivative_terms), allocatable :: q(:)
 
     g = equation % graph(1)
@@ -5895,10 +6693,10 @@ contains
   end function stated_derivative
 
   !===================================================================!
-  ! The derivatives along the design coordinate d, to order o, of the
-  ! partial derivative in the coordinate i of the value a face
+  ! Returns the derivatives along the design coordinate d, to order o,
+  ! of the partial derivative in the coordinate i of the value a face
   ! condition states: slope(k) = d^k/dnu_d^k (dh/dnu_i), from one
-  ! evaluation over o + 1 directions, the last seeded on i.
+  ! evaluation over o + 1 directions, the last seeded on i
   !===================================================================!
 
   function stated_partial_jet(equation, i, seed, o, values, position) result(slope)
@@ -5907,12 +6705,12 @@ contains
     integer               , intent(in) :: i, o
     real(dp)              , intent(in) :: seed(:), values(:)
     real(dp)              , intent(in) :: position(:)
-    real(dp), allocatable :: slope(:)
+    real(dp), allocatable              :: slope(:)
 
-    type(expression) :: g
+    type(expression)                    :: g
     type(derivative_terms), allocatable :: q(:), nu(:)
-    type(derivative_terms) :: r
-    integer :: k
+    type(derivative_terms)              :: r
+    integer                             :: k
 
     g  = equation % graph(1)
     nu = design_terms(values, seed, o, o + 1)
@@ -5927,23 +6725,31 @@ contains
   end function stated_partial_jet
 
   !===================================================================!
-  ! ONE BLOCK'S ADJOINT, at order zero and then order by order along
-  ! each expansion: the transposed linear system A^T mu = rhs
-  ! at the block's solution, A the block's jacobian; rhs at every
-  ! component of the block's own instants is the negative of the
-  ! objective's differential there (its o-th derivative along the
-  ! coordinate at order o) plus the multipliers the later blocks
-  ! passed to the instant, less, above order zero, the o-th derivative
-  ! of the product of the multipliers with the equations' jacobian
-  ! with the o-th derivative of the multipliers left out; zero at the
-  ! history instants. mu at the row of an equation is the multiplier
-  ! of that equation at the instant; mu at the fixed row of a history
-  ! instant is what this block passes to the block that determines
-  ! the instant; mu at the fixed row of a face condition is the
-  ! condition's multiplier, the reaction. The block's rows' partial
-  ! derivatives in each design coordinate, each times its multiplier
-  ! and differentiated along the coordinate of the expansion, are
-  ! subtracted from the design conditions' multipliers.
+  ! Solves one block's adjoint, at order zero and then order by order
+  ! along each expansion: the transposed linear system A^T mu = rhs at
+  ! the block's solution, A the block's jacobian.
+  !
+  !      rhs at the block's    -dJ there (its o-th derivative along the
+  !        own instants        expansion at order o), plus the
+  !                            multipliers the later blocks passed to
+  !                            the instant, less, above order zero, the
+  !                            o-th derivative of the multipliers'
+  !                            product with the equations' jacobian,
+  !                            their o-th derivative left out
+  !      rhs at the history    zero
+  !        instants
+  !
+  !      mu at the row of an   the equation's multiplier at the instant
+  !        equation
+  !      mu at a history row   passed to the block that determines the
+  !                            instant
+  !      mu at the fixed row   the condition's multiplier, the reaction
+  !        of a face condition
+  !
+  ! The block's rows' partial derivatives in each design coordinate,
+  ! each times its multiplier and differentiated along the coordinate
+  ! of the expansion, are subtracted from the design conditions'
+  ! multipliers.
   !===================================================================!
 
   subroutine adjoint_block(this, scheme, first, last, depth, rows_along, lb, tuple, stages, gradient, &
@@ -5976,9 +6782,13 @@ contains
   end subroutine adjoint_block
 
   !===================================================================!
-  ! THE ADJOINT OF ONE SYSTEM OF ROWS - a block's, or the point
-  ! manifold's, which has one moment, no history and no stages - as
-  ! described above.
+  ! Solves the adjoint of one system of rows, a block's or the point
+  ! manifold's, which has one moment, no history and no stages, as
+  ! adjoint_block states it: column zero once, with the first
+  ! expansion, then the columns above it expansion by expansion
+  !
+  !      expansion 1        orders 0, 1, ..., order
+  !      expansion d > 1    orders 1, ..., order, column zero shared
   !===================================================================!
 
   subroutine adjoint_rows(this, blk, lb, tuple, stages, gradient, stage_node, adjoint, incoming, reaction, gauge, &
@@ -5996,7 +6806,7 @@ contains
 
     real(dp), allocatable :: mu(:,:,:), x(:), jets(:,:,:)
     logical , allocatable :: gauged(:)
-    integer :: o, order, d, nd, column
+    integer               :: o, order, d, nd, column
 
     order = this % points % expansion % order
     nd    = max(1, this % points % expansion % num_expansions())
@@ -6042,13 +6852,15 @@ contains
   end subroutine adjoint_rows
 
   !===================================================================!
-  ! The unknowns a gauge replaces the first cell's row of.
+  ! Returns the unknowns a gauge replaces the first cell's row of:
+  ! those a condition on the time factor integrates
   !===================================================================!
 
   function gauged_unknowns(this) result(gauged)
 
     class(discrete_lagrangian), intent(in) :: this
-    logical, allocatable :: gauged(:)
+    logical, allocatable                   :: gauged(:)
+
     integer :: i, j
 
     allocate(gauged(this % manifold % num_unknowns), source=.false.)
@@ -6062,15 +6874,19 @@ contains
   end function gauged_unknowns
 
   !===================================================================!
-  ! ONE ORDER of the adjoint of a block: the o-th derivative along the
-  ! expansion d of the multipliers of the block's rows, the solution x
-  ! of the transposed system whose right side is the objective's
-  ! differential of order o at the block's nodes, the multipliers
-  ! passed in from the block ahead at the block's own instants, and,
-  ! above order zero, the derivatives of the transposed products with
-  ! the multipliers of the orders below. The multipliers at the
-  ! block's history rows are passed to the blocks that determine those
-  ! instants.
+  ! Returns the right side of one order of the adjoint of a block, the
+  ! o-th derivative along the expansion d: the objective's differential
+  ! of order o at the block's nodes, the multipliers passed in from the
+  ! block ahead at the block's own instants, and, above order zero, the
+  ! derivatives of the transposed products with the multipliers of the
+  ! orders below
+  !
+  !      at instant k, cell c   -dJ/dq there, plus the multipliers
+  !                             passed in
+  !      at a stage             -dJ/dq at its quadrature node
+  !      projected              the differential at the sites, returned
+  !                             to the nodes by the transpose of the
+  !                             basis that formed the sites' jets
   !===================================================================!
 
   subroutine adjoint_right_side_of(this, lb, blk, o, d, jets, mu, gradient, stage_node, incoming, rhs)
@@ -6082,9 +6898,9 @@ contains
     real(dp)                  , intent(in)    :: jets(:,0:), mu(:,0:), gradient(:,lb % node:,0:)
     integer                   , intent(in)    :: stage_node(lb % stage:,:,:)
     real(dp)                  , intent(in)    :: incoming(:,:,lb % instant:,0:)
-    real(dp), allocatable   , intent(out)   :: rhs(:)
+    real(dp), allocatable     , intent(out)   :: rhs(:)
 
-    integer :: stride, n, k, c, i, base, unknowns, column, nsites, site
+    integer              :: stride, n, k, c, i, base, unknowns, column, nsites, site
     integer, allocatable :: formed(:,:)
 
     stride   = blk % rows % degrees
@@ -6140,6 +6956,14 @@ contains
 
   end subroutine adjoint_right_side_of
 
+  !===================================================================!
+  ! Solves one order of the adjoint of a block: the o-th derivative
+  ! along the expansion d of the multipliers of the block's rows, x,
+  ! the solution of the transposed system A^T x = rhs; the multipliers
+  ! at the block's history rows are passed to the blocks that determine
+  ! those instants
+  !===================================================================!
+
   subroutine adjoint_order(this, lb, blk, o, d, jets, mu, gradient, stage_node, incoming, x, by)
     type(discrete_minimizer), intent(in), optional :: by
 
@@ -6150,11 +6974,11 @@ contains
     real(dp)                  , intent(in)    :: jets(:,0:), mu(:,0:), gradient(:,lb % node:,0:)
     integer                   , intent(in)    :: stage_node(lb % stage:,:,:)
     real(dp)                  , intent(inout) :: incoming(:,:,lb % instant:,0:)
-    real(dp), allocatable   , intent(out)   :: x(:)
+    real(dp), allocatable     , intent(out)   :: x(:)
 
     type(residual_operator) :: lin
-    real(dp), allocatable :: rhs(:)
-    integer :: stride, k, c, base, unknowns, column
+    real(dp), allocatable   :: rhs(:)
+    integer                 :: stride, k, c, base, unknowns, column
 
     stride   = blk % rows % degrees
     unknowns = size(blk % q)
@@ -6176,22 +7000,31 @@ contains
   end subroutine adjoint_order
 
   !===================================================================!
-  ! THE MULTIPLIERS OF THE EQUATIONS of order o along the expansion d
-  ! at the block's own instants: the multiplier at the equation's row
-  ! at the instant and, for a family marching by stages, at the
-  ! stages of the step into it; a row the gauge of a time-factor
-  ! condition replaces, the first cell's row of the integrated
-  ! unknown, stores the gauge's multiplier instead, which is returned
-  ! as the condition's; the multiplier at the fixed row of a face
-  ! condition is the condition's, the reaction.
+  ! Places the multipliers of order o along the expansion d at the
+  ! block's own instants.
   !
-  ! THE DESIGN CONDITIONS' MULTIPLIERS: minus the o-th derivative
-  ! along the expansion of the sum over the block's own rows of the
-  ! multiplier times the row's partial in the coordinate i - at the
-  ! equation rows the partial of the equation, at the fixed rows of
-  ! the face conditions minus the derivative of the datum, from the
-  ! reactions of the orders to o; the rows along time and space, and
-  ! the history rows, which the block does not own, add nothing.
+  ! The equations'. The multiplier at the equation's row at the instant
+  ! and, for a family marching by stages, at the stages of the step
+  ! into it; a row the gauge of a time-factor condition replaces, the
+  ! first cell's row of the integrated unknown, stores the gauge's
+  ! multiplier instead, which is returned as the condition's; the
+  ! multiplier at the fixed row of a face condition is the condition's,
+  ! the reaction.
+  !
+  !      adjoint(f, c, k)   mu at f's row of cell c, summed over the
+  !                         moments of the step into instant k
+  !      gauge(k, g)        the same at the row a condition of time
+  !                         alone takes
+  !      reaction(c, e)     mu at the face condition's row
+  !
+  ! The design conditions'. Minus the o-th derivative along the
+  ! expansion of the sum over the block's own rows of the multiplier
+  ! times the row's partial in the coordinate i: at the equation rows
+  ! the partial of the equation, at the fixed rows of the face
+  ! conditions minus the derivative of the datum, from the reactions of
+  ! the orders to o; the rows along time and space, and the history
+  ! rows, which the block does not own, add nothing. The pins of the
+  ! instants have their multipliers after the design's.
   !===================================================================!
 
   subroutine multipliers_of_order(this, blk, o, d, gauged, jets, mu, adjoint, gauge, reaction, in_design)
@@ -6206,20 +7039,20 @@ contains
 
     ! the orders of a slope from zero: an allocatable assigned the
     ! function's result would have them from one
-    real(dp) :: slope(0:o)
+    real(dp)              :: slope(0:o)
     real(dp), allocatable :: products(:), slopes(:), values(:), seed(:)
     integer , allocatable :: columns(:), target(:), row_point(:), row_offset(:), field(:), determined(:,:)
     integer , allocatable :: moved(:), determined_degrees(:)
     logical , allocatable :: occupied(:)
-    real(dp) :: given
-    integer :: stride, nf, ncells, n, k, c, f, m, j, i, instant, degree, e, g, ni, face_point, row
-    integer :: law(3), law_row, q, column, lo, first, last, depth, s
-    logical :: along_time
+    real(dp)              :: given
+    integer               :: stride, nf, ncells, n, k, c, f, m, j, i, instant, degree, e, g, ni, face_point, row
+    integer               :: law(3), law_row, q, column, lo, first, last, depth, s
+    logical               :: along_time
     integer , allocatable :: equation_row(:), on_face(:)
     real(dp), allocatable :: position(:)
     logical , allocatable :: attributed(:)
-    real(dp) :: tau
-    integer :: node, el_cell, qp, i0, k0, row_field, row_order, kd
+    real(dp)              :: tau
+    integer               :: node, el_cell, qp, i0, k0, row_field, row_order, kd
 
     stride = this % rule % num_components()
     nf     = this % manifold % num_unknowns
@@ -6395,7 +7228,7 @@ contains
        end do
     end do
 
-    ! THE PINS OF THE INSTANTS: their multipliers after the design's,
+    ! the pins of the instants: their multipliers after the design's,
     ! less the o-th derivative along d of the multiplier of each row
     ! along time times the row's partial in the instant, -(dw/dt_a)
     ! times the component it reads
@@ -6475,15 +7308,18 @@ contains
   end subroutine multipliers_of_order
 
   !===================================================================!
-  ! THE SOURCE OF THE ADJOINT EXPANSION at order o along the design
-  ! coordinate d: for every equation row not fixed and every component
-  ! of its point, the o-th derivative along d of the multiplier times
-  ! the partial of the equation in the component, the multiplier's
-  ! o-th derivative left out, subtracted from rhs at the component.
-  ! The partial's derivatives along d come from one evaluation of the
-  ! equation on the jets over o + 1 directions, the last seeded on the
-  ! component: its coefficients on the first k directions with the
-  ! last are the k-th derivatives of the partial.
+  ! Adds the source of the adjoint expansion at order o along the
+  ! design coordinate d: for every equation row not fixed and every
+  ! component of its point, the o-th derivative along d of the
+  ! multiplier times the partial of the equation in the component, the
+  ! multiplier's o-th derivative left out, subtracted from rhs at the
+  ! component. The partial's derivatives along d come from one
+  ! evaluation of the equation on the jets over o + 1 directions, the
+  ! last seeded on the component: its coefficients on the first k
+  ! directions with the last are the k-th derivatives of the partial.
+  !
+  !      rhs(comp) -= d^o ( mu(row) dR_row/dq_comp ),
+  !                   the o-th derivative of mu left out
   !===================================================================!
 
   subroutine adjoint_source(rows, jets, mu, o, values, seed, owner, rhs)
@@ -6496,11 +7332,11 @@ contains
     real(dp)               , intent(inout) :: rhs(:)
 
     type(derivative_terms), allocatable :: q(:), design(:)
-    type(derivative_terms) :: r, along
-    real(dp), allocatable :: partial(:), lower(:), source(:)
-    logical, allocatable :: is_fixed(:)
-    integer, allocatable :: reads(:), rule_reads(:), variant_reads(:)
-    integer :: deg, npts, j, p, c, k, row, m
+    type(derivative_terms)              :: r, along
+    real(dp), allocatable               :: partial(:), lower(:), source(:)
+    logical, allocatable                :: is_fixed(:)
+    integer, allocatable                :: reads(:), rule_reads(:), variant_reads(:)
+    integer                             :: deg, npts, j, p, c, k, row, m
 
     if (allocated(rows % projected)) then
        call projected_adjoint_source(rows, jets, mu, o, values, seed, owner, rhs)
@@ -6553,13 +7389,15 @@ contains
   end subroutine adjoint_source
 
   !===================================================================!
-  ! The o-th derivative along the design coordinate d of the sum over
-  ! the equation rows not fixed of the multiplier times the partial
-  ! of the equation in the design coordinate i, every jet complete to
-  ! order o: at order zero by the reverse pass of every rule, all
-  ! coordinates at once; above, the partial's derivatives from one
-  ! evaluation on the jets over o + 1 directions, the last seeded on
-  ! the coordinate i.
+  ! Returns the o-th derivative along the design coordinate d of the
+  ! sum over the equation rows not fixed of the multiplier times the
+  ! partial of the equation in the design coordinate i, every jet
+  ! complete to order o: at order zero by the reverse pass of every
+  ! rule, all coordinates at once; above, the partial's derivatives
+  ! from one evaluation on the jets over o + 1 directions, the last
+  ! seeded on the coordinate i.
+  !
+  !      total(i) = d^o ( mu_1 dR_1/dnu_i + mu_2 dR_2/dnu_i + ... )
   !===================================================================!
 
   function design_products(rows, jets, mu, o, values, seed, owner) result(total)
@@ -6569,14 +7407,14 @@ contains
     integer                , intent(in) :: o
     real(dp)               , intent(in) :: values(:), seed(:)
     integer                , intent(in) :: owner(:)
-    real(dp), allocatable :: total(:)
+    real(dp), allocatable               :: total(:)
 
     type(derivative_terms), allocatable :: q(:), design(:)
-    type(derivative_terms) :: r
-    real(dp), allocatable :: partial(:), g(:), gd(:), x(:)
-    logical, allocatable :: is_fixed(:)
-    real(dp) :: value
-    integer :: deg, npts, j, p, c, k, i, row
+    type(derivative_terms)              :: r
+    real(dp), allocatable               :: partial(:), g(:), gd(:), x(:)
+    logical, allocatable                :: is_fixed(:)
+    real(dp)                            :: value
+    integer                             :: deg, npts, j, p, c, k, i, row
 
     if (allocated(rows % projected)) then
        total = projected_design_products(rows, jets, mu, o, values, seed, owner)
@@ -6628,16 +7466,20 @@ contains
   end function design_products
 
   !===================================================================!
-  ! THE PROJECTED SOURCES AND PRODUCTS, as the three above with the
-  ! point replaced by the site: the tuple's jets along the design at a
-  ! site formed by the basis from the nodes' columns; the m-th
-  ! derivative of the rule's value tested into the rows of the
-  ! instance's nodes; the multiplier at a site, of the rule's equation,
-  ! the sum of the rows' multipliers times the weight and the test
-  ! function; and the partial in a component of the site's tuple
-  ! returned to the nodes' components by the basis that formed it. An
-  ! instance belongs to the image of its first node, and the sums are
-  ! taken over the images once.
+  ! Adds the source of the expansion projected on the cells: as
+  ! design_source, with the point replaced by the site. This and the
+  ! two after it are the projected sources and products: the tuple's
+  ! jets along the design at a site formed by the basis from the nodes'
+  ! columns; the m-th derivative of the rule's value tested into the
+  ! rows of the instance's nodes; the multiplier at a site, of the
+  ! rule's equation, the sum of the rows' multipliers times the weight
+  ! and the test function; and the partial in a component of the site's
+  ! tuple returned to the nodes' components by the basis that formed
+  ! it. An instance belongs to the image of its first node, and the
+  ! sums are taken over the images once.
+  !
+  !      nodes' columns --basis--> jets at a site --rule--> tested into
+  !                                                         the rows
   !===================================================================!
 
   subroutine projected_design_source(rows, jets, m, values, seed, owner, b)
@@ -6650,11 +7492,11 @@ contains
     real(dp)               , intent(inout) :: b(:)
 
     type(derivative_terms), allocatable :: q(:), design(:)
-    type(derivative_terms) :: r
-    logical , allocatable :: is_fixed(:)
-    real(dp), allocatable :: source(:), formed(:,:)
-    integer :: width, nq, j, f, d, n, e, qp, s, c, k, i, p, row, o
-    real(dp) :: value
+    type(derivative_terms)              :: r
+    logical , allocatable               :: is_fixed(:)
+    real(dp), allocatable               :: source(:), formed(:,:)
+    integer                             :: width, nq, j, f, d, n, e, qp, s, c, k, i, p, row, o
+    real(dp)                            :: value
 
     is_fixed = rows % fixed_indicator()
     width    = size(rows % projected % formed, 2)
@@ -6702,6 +7544,14 @@ contains
 
   end subroutine projected_design_source
 
+  !===================================================================!
+  ! Adds the source of the adjoint expansion projected on the cells: as
+  ! adjoint_source, with the point replaced by the site, the multiplier
+  ! at a site the sum of the rows' multipliers times the weight and the
+  ! test function, and the partial returned to the nodes' components by
+  ! the basis
+  !===================================================================!
+
   subroutine projected_adjoint_source(rows, jets, mu, o, values, seed, owner, rhs)
 
     type(residual_operator), intent(in)    :: rows
@@ -6712,12 +7562,12 @@ contains
     real(dp)               , intent(inout) :: rhs(:)
 
     type(derivative_terms), allocatable :: q(:), design(:)
-    type(derivative_terms) :: r, along
-    logical , allocatable :: is_fixed(:)
-    real(dp), allocatable :: source(:), formed(:,:), lambda(:), partial(:), lower(:)
-    integer , allocatable :: reads(:), variant_reads(:)
-    integer :: width, nq, j, f, d, n, e, qp, s, c, k, i, p, row, i2, p2, k2, offset, dd, m
-    real(dp) :: value, tau
+    type(derivative_terms)              :: r, along
+    logical , allocatable               :: is_fixed(:)
+    real(dp), allocatable               :: source(:), formed(:,:), lambda(:), partial(:), lower(:)
+    integer , allocatable               :: reads(:), variant_reads(:)
+    integer                             :: width, nq, j, f, d, n, e, qp, s, c, k, i, p, row, i2, p2, k2, offset, dd, m
+    real(dp)                            :: value, tau
 
     is_fixed = rows % fixed_indicator()
     width    = size(rows % projected % formed, 2)
@@ -6795,6 +7645,11 @@ contains
 
   end subroutine projected_adjoint_source
 
+  !===================================================================!
+  ! Returns the design products projected on the cells: as
+  ! design_products, with the point replaced by the site
+  !===================================================================!
+
   function projected_design_products(rows, jets, mu, o, values, seed, owner) result(total)
 
     type(residual_operator), intent(in) :: rows
@@ -6802,14 +7657,14 @@ contains
     integer                , intent(in) :: o
     real(dp)               , intent(in) :: values(:), seed(:)
     integer                , intent(in) :: owner(:)
-    real(dp), allocatable :: total(:)
+    real(dp), allocatable               :: total(:)
 
     type(derivative_terms), allocatable :: q(:), design(:)
-    type(derivative_terms) :: r
-    logical , allocatable :: is_fixed(:)
-    real(dp), allocatable :: formed(:,:), lambda(:), partial(:), g(:), gd(:)
-    integer :: width, nq, j, f, d, n, e, qp, s, c, k, i, p, row, l
-    real(dp) :: value, tau
+    type(derivative_terms)              :: r
+    logical , allocatable               :: is_fixed(:)
+    real(dp), allocatable               :: formed(:,:), lambda(:), partial(:), g(:), gd(:)
+    integer                             :: width, nq, j, f, d, n, e, qp, s, c, k, i, p, row, l
+    real(dp)                            :: value, tau
 
     is_fixed = rows % fixed_indicator()
     width    = size(rows % projected % formed, 2)
@@ -6872,9 +7727,9 @@ contains
   end function projected_design_products
 
   !===================================================================!
-  ! The condition on the design factor at the design values: given =
-  ! -g(nu_0) and slope(i) = dg/dnu_i, so that nu_k - nu_k0 = 0 gives
-  ! zero and the k-th unit vector. Each slope by a jet of one
+  ! Returns the condition on the design factor at the design values:
+  ! given = -g(nu_0) and slope(i) = dg/dnu_i, so that nu_k - nu_k0 = 0
+  ! gives zero and the k-th unit vector. Each slope by a jet of one
   ! direction, seeded on nu_i: a jet of every coordinate's direction
   ! stores the mixed derivatives of every subset of them, 2^48 terms
   ! for the 48 strips of the rotor.
@@ -6887,10 +7742,10 @@ contains
     real(dp)              , intent(out) :: given
     real(dp), allocatable , intent(out) :: slope(:)
 
-    type(expression) :: g
+    type(expression)                    :: g
     type(derivative_terms), allocatable :: q(:), nu(:)
-    type(derivative_terms) :: r
-    integer :: i, j, nd
+    type(derivative_terms)              :: r
+    integer                             :: i, j, nd
 
     g  = equation % graph(1)
     nd = size(values)
@@ -6910,8 +7765,8 @@ contains
   end subroutine design_condition
 
   !===================================================================!
-  ! The point manifold as a block: one moment, one cell, no rows along
-  ! any coordinate; the equations alone.
+  ! Returns the point manifold as a block: one moment, one cell, no
+  ! rows along any coordinate; the equations alone
   !===================================================================!
 
   subroutine point_rows(this, tuple, blk)
@@ -6920,9 +7775,9 @@ contains
     real(dp)                  , intent(in)  :: tuple(:,:,:)
     type(chain_block)         , intent(out) :: blk
 
-    type(stencil) :: relations
+    type(stencil)         :: relations
     integer , allocatable :: primary(:)
-    integer :: stride, nf, f
+    integer               :: stride, nf, f
 
     stride = this % rule % num_components()
     nf     = this % manifold % num_unknowns
@@ -6938,24 +7793,25 @@ contains
   end subroutine point_rows
 
   !===================================================================!
-  ! Newton on one residual_operator: a direct inner solve on a point
-  ! manifold, GMRES preconditioned by block Gauss-Seidel over the
+  ! Solves one residual_operator by Newton: a direct inner solve on a
+  ! point manifold, GMRES preconditioned by block Gauss-Seidel over the
   ! tuples elsewhere. A solve that does not converge stops the program
   ! with the solver's description, or, with converged present, returns
   ! it false.
   !===================================================================!
 
   subroutine solved(this, rows, unknowns, stride, npts, q, converged, by)
-    type(discrete_minimizer), intent(in), optional :: by
 
-    class(discrete_lagrangian), intent(in)    :: this
-    type(residual_operator)   , intent(in)    :: rows
-    integer                   , intent(in)    :: unknowns, stride, npts
-    real(dp)                  , intent(inout) :: q(:)
+    type(discrete_minimizer)  , intent(in), optional  :: by
+
+    class(discrete_lagrangian), intent(in)            :: this
+    type(residual_operator)   , intent(in)            :: rows
+    integer                   , intent(in)            :: unknowns, stride, npts
+    real(dp)                  , intent(inout)         :: q(:)
     logical                   , intent(out), optional :: converged
 
     class(minimizer), allocatable :: M_b
-    logical :: met
+    logical                       :: met
 
     ! the rows solved by the minimizer of by, or by the default they
     ! choose (operation_minimization);
@@ -6979,10 +7835,11 @@ contains
   end subroutine solved
 
   !===================================================================!
-  ! The design vector at every point, in the point order: the
-  ! manifold's values, as many as the rules read, repeated per point.
-  ! A rule reading a design the manifold does not have is invalid
-  ! input.
+  ! Returns the design vector at every point, in the point order: the
+  ! manifold's values, as many as the rules read, repeated per point. A
+  ! rule reading a design the manifold does not have is invalid input.
+  !
+  !      [ nu_1 .. nu_nd | nu_1 .. nu_nd | ... ]    one copy per point
   !===================================================================!
 
   function design_at_points(values, designs, npts) result(v)
@@ -7004,11 +7861,11 @@ contains
   end function design_at_points
 
   !===================================================================!
-  ! The jets of the design vector over a width of directions: each
-  ! coordinate the quantity whose derivative on the first direction
-  ! (symmetric over the expansion's) is its entry of the seed, the
-  ! seed being the unit vector of a coordinate or a direction in the
-  ! design.
+  ! Returns the jets of the design vector over a width of directions:
+  ! each coordinate the quantity whose derivative on the first
+  ! direction (symmetric over the expansion's) is its entry of the
+  ! seed, the seed being the unit vector of a coordinate or a direction
+  ! in the design
   !===================================================================!
 
   function design_terms(values, seed, order, width) result(nu)
@@ -7018,7 +7875,7 @@ contains
     type(derivative_terms), allocatable :: nu(:)
 
     real(dp), allocatable :: unit(:)
-    integer :: i
+    integer               :: i
 
     if (size(seed) /= size(values)) then
        error stop 'operation_lagrangian: a seed of the expansion has one entry per design coordinate'
@@ -7033,16 +7890,17 @@ contains
   end function design_terms
 
   !===================================================================!
-  ! A build of one image (-fcoarray=single) started by an MPI
-  ! launcher with several processes is invalid: every process would
-  ! solve the whole problem and print as image 1. The launcher's
-  ! process count is read from the environment (OpenMPI, MPICH).
+  ! Requires one process per image: a build of one image
+  ! (-fcoarray=single) started by an MPI launcher with several
+  ! processes is invalid, every process solving the whole problem and
+  ! printing as image 1. The launcher's process count is read from the
+  ! environment (OpenMPI, MPICH).
   !===================================================================!
 
   subroutine require_images()
 
     character(len=32) :: value
-    integer :: status, ranks
+    integer           :: status, ranks
 
     if (num_images() > 1) return
     ranks = 1
@@ -7057,27 +7915,20 @@ contains
   end subroutine require_images
 
   !===================================================================!
-  ! THE OWNER OF EVERY UNKNOWN of a block: the cells are partitioned
-  ! over the images by the partitioner's breadth-first rule on the
-  ! mesh, each part connected, and every unknown at a cell, at every
-  ! moment, is owned by the cell's image.
-  !===================================================================!
-
-  !===================================================================!
-  ! THE OWNER OF EVERY CELL: image 1 of everything on one image; over
-  ! several, the partitioner's breadth-first rule on the mesh, each
-  ! part connected. The points of a block, moment outer and cell
-  ! inner, are owned by their cell's image, and every loop of the
-  ! sensitivity work over the points - the sources of the expansions,
-  ! the adjoint's, the design products, the functional over its nodes
-  ! - runs over the owned points alone and sums its result over the
+  ! Returns the owner of every cell: image 1 of everything on one
+  ! image; over several, the partitioner's breadth-first rule on the
+  ! mesh, each part connected. The points of a block, moment outer and
+  ! cell inner, are owned by their cell's image, and every loop of the
+  ! sensitivity work over the points (the sources of the expansions,
+  ! the adjoint's, the design products, the functional over its nodes)
+  ! runs over the owned points alone and sums its result over the
   ! images once.
   !===================================================================!
 
   function cell_owners(this) result(cell_owner)
 
     class(discrete_lagrangian), intent(in) :: this
-    integer, allocatable :: cell_owner(:)
+    integer, allocatable                   :: cell_owner(:)
 
     type(partitioner) :: cut
 
@@ -7091,14 +7942,18 @@ contains
   end function cell_owners
 
   !===================================================================!
-  ! THE IMAGE OF AN EXPANSION. On a manifold with a region the images
-  ! share the cells, and every expansion runs on every image over its
-  ! owned points. On a manifold of time alone there are no cells to
-  ! share, and the expansions are shared instead: expansion d runs on
-  ! image mod(d - 1, images) + 1 alone, its jets and its multipliers'
-  ! derivatives summed over the images once at the end, the other
-  ! images having left them zero. The expansions never read each
-  ! other, so nothing else is exchanged.
+  ! Returns whether this image runs the expansion d. On a manifold with
+  ! a region the images share the cells, and every expansion runs on
+  ! every image over its owned points; so too on one image, and where
+  ! two images overlap a scheduled sweep. On a manifold of time alone
+  ! there are no cells to share, and the expansions are shared instead:
+  ! expansion d runs on image mod(d - 1, images) + 1 alone, its jets
+  ! and its multipliers' derivatives summed over the images once at the
+  ! end, the other images having left them zero. The expansions never
+  ! read each other, so nothing else is exchanged.
+  !
+  !      time alone, 3 images   expansion   1  2  3  4  5
+  !                             image       1  2  3  1  2
   !===================================================================!
 
   logical function expansion_owned(this, d)
@@ -7112,15 +7967,19 @@ contains
 
   end function expansion_owned
 
-  ! the owner of every point of a block, moment outer and cell inner
+  !===================================================================!
+  ! Returns the owner of every point of a block, moment outer and cell
+  ! inner: its cell's
+  !===================================================================!
+
   function point_owners(this, npts) result(owner)
 
     class(discrete_lagrangian), intent(in) :: this
-    integer                 , intent(in) :: npts
-    integer, allocatable :: owner(:)
+    integer                   , intent(in) :: npts
+    integer, allocatable                   :: owner(:)
 
     integer, allocatable :: cell_owner(:)
-    integer :: ncells, p, m
+    integer              :: ncells, p, m
 
     cell_owner = this % cell_owners()
     ncells     = this % points % num_cells()
@@ -7132,14 +7991,22 @@ contains
 
   end function point_owners
 
+  !===================================================================!
+  ! Returns the owner of every unknown of a block: the cells are
+  ! partitioned over the images by the partitioner's breadth-first rule
+  ! on the mesh, each part connected, and every unknown at a cell, at
+  ! every moment, is owned by the cell's image. An unknown at no point
+  ! stops the program.
+  !===================================================================!
+
   function owners_of_unknowns(this, unknowns, stride, npts) result(owner)
 
     class(discrete_lagrangian), intent(in) :: this
-    integer                 , intent(in) :: unknowns, stride, npts
-    integer, allocatable :: owner(:)
+    integer                   , intent(in) :: unknowns, stride, npts
+    integer, allocatable                   :: owner(:)
 
     integer, allocatable :: cell_owner(:)
-    integer :: ncells, p, c, m, at, width
+    integer              :: ncells, p, c, m, at, width
 
     ncells     = this % points % num_cells()
     cell_owner = this % cell_owners()
@@ -7159,19 +8026,22 @@ contains
   end function owners_of_unknowns
 
   !===================================================================!
-  ! THE PROJECTED FORM of the physics on the cells, for a method that
-  ! tests the law against a basis. Each equation in flux form, each
-  ! group of its terms paired with a multiplier of its own and tested
-  ! with the derivative of the basis the group names: the Lagrangian of
-  ! the projection. The coefficients a node stores reach one order
-  ! below the highest derivative along space that the flux form puts
-  ! on the unknown or on the multiplier, and their layout becomes the
-  ! rule's; the basis's jet reaches that highest order. The equation
-  ! of an unknown of time alone is one group, tested with the weight
-  ! alone at the first point of each moment: its terms of time over the
-  ! measure of the region, so that they sum to themselves, and the
-  ! integrand of its integral over the region as it is. Invalid input:
-  ! a representation law along space, which the basis states.
+  ! Sets the projected form of the physics on the cells, for a method
+  ! that tests the law against a basis. Each equation is put in flux
+  ! form, each group of its terms paired with a multiplier of its own
+  ! and tested with the derivative of the basis the group names: the
+  ! Lagrangian of the projection. The coefficients a node stores reach
+  ! one order below the highest derivative along space that the flux
+  ! form puts on the unknown or on the multiplier, and their layout
+  ! becomes the rule's; the basis's jet reaches that highest order. The
+  ! equation of an unknown of time alone is one group, tested with the
+  ! weight alone at the first point of each moment: its terms of time
+  ! over the measure of the region, so that they sum to themselves, and
+  ! the integrand of its integral over the region as it is. Invalid
+  ! input: a representation law along space, which the basis states.
+  !
+  !      equation --flux_form--> groups g --> lambda_g tested with
+  !                                           D^(order(g)) of the basis
   !===================================================================!
 
   subroutine projected_form(image, physics, space, points, defined)
@@ -7183,12 +8053,12 @@ contains
     integer                        , intent(in)    :: defined(:,:)
 
     type(expression), allocatable :: flux(:), groups(:), over_region(:)
-    type(expression) :: law, region_part
-    integer, allocatable :: coordinate(:), order(:), group(:,:)
-    logical, allocatable :: with_region(:)
-    integer :: first, last, j, g, m, c, top, o
-    real(dp) :: volume
-    logical :: differentiated, reads_region
+    type(expression)              :: law, region_part
+    integer, allocatable          :: coordinate(:), order(:), group(:,:)
+    logical, allocatable          :: with_region(:)
+    integer                       :: first, last, j, g, m, c, top, o
+    real(dp)                      :: volume
+    logical                       :: differentiated, reads_region
 
     first = merge(FIRST_COORDINATE + 1, FIRST_COORDINATE, image % manifold % with_time)
     last  = first + points % dimension - 1
@@ -7266,7 +8136,7 @@ contains
     image % flux = law
     image % rule = coefficient_form(law, first, last, max(top - 1, 0))
 
-    ! AT THE FIRST INSTANT an equation of time alone that reads no
+    ! at the first instant an equation of time alone that reads no
     ! component of top degree - a joint's condition - is stated by its
     ! derivative along time of the least order that reads one, as on
     ! a manifold of time alone (initial_form)
@@ -7290,15 +8160,19 @@ contains
   end subroutine projected_form
 
   !===================================================================!
-  ! THE LAWS AT THE FIRST INSTANT. There the initial data fix every
-  ! component of a field below its top degree along time, so a law
-  ! that reads no component of top degree - a joint's condition on
-  ! the positions - is satisfied by the data and determines nothing:
-  ! the reaction paired with it has no row. Such a law is stated at
-  ! the first instant by its derivative along time of the least order
-  ! that reads a component of top degree, the condition hidden in its
-  ! holding at every instant, which determines the reaction there. The
-  ! rule at the first instant is the rule with those laws
+  ! Sets the laws at the first instant. There the initial data fix
+  ! every component of a field below its top degree along time, so a
+  ! law that reads no component of top degree (a joint's condition on
+  ! the positions) is satisfied by the data and determines nothing: the
+  ! reaction paired with it has no row. Such a law is stated at the
+  ! first instant by its derivative along time of the least order that
+  ! reads a component of top degree, the condition hidden in its
+  ! holding at every instant, which determines the reaction there.
+  !
+  !      c(q) = 0, reading q alone,   -->   at the first instant,
+  !      q'' the top degree                 c'' = 0, which reads q''
+  !
+  ! The rule at the first instant is the rule with those laws
   ! differentiated, on the rule's domain; it is not formed when no law
   ! is differentiated. It is the rule at every explicit moment too, an
   ! instant whose components below the top degree the family's
@@ -7312,8 +8186,8 @@ contains
     type(residual_term)      , intent(in)    :: physics
 
     type(expression), allocatable :: laws(:)
-    integer :: j, o, nf
-    logical :: differentiated
+    integer                       :: j, o, nf
+    logical                       :: differentiated
 
     nf = image % manifold % num_unknowns
     differentiated = .false.
@@ -7334,16 +8208,16 @@ contains
   end subroutine initial_form
 
   !===================================================================!
-  ! THE PROJECTION OF THE EXPLICIT INSTANTS of a family that marches
-  ! by stages. At its stages a condition c_j that reads no component
-  ! of top degree is stated by c_j^(nu_j), nu_j its order in
+  ! Sets the projection of the explicit instants of a family that
+  ! marches by stages. At its stages a condition c_j that reads no
+  ! component of top degree is stated by c_j^(nu_j), nu_j its order in
   ! initial_form; at the instant ending a step the update fixes the
   ! components below the top degree, q~^(o), and the levels c_j, c_j',
-  ! .., c_j^(nu_j - 1) are off zero there by the error of the step.
-  ! The instant is projected onto them: each component a level reads
-  ! at its highest order is corrected, q^(o) = q~^(o) - z_o, by the
-  ! correction of least norm in the metric W = dR/dq^(d) of the laws'
-  ! derivatives in the components of top degree,
+  ! .., c_j^(nu_j - 1) are off zero there by the error of the step. The
+  ! instant is projected onto them: each component a level reads at its
+  ! highest order is corrected, q^(o) = q~^(o) - z_o, by the correction
+  ! of least norm in the metric W = dR/dq^(d) of the laws' derivatives
+  ! in the components of top degree,
   !
   !     W z_o - sum_j C_j^T eta_(j, o - r_j) = 0,   c_j^(l)(q) = 0,
   !
@@ -7362,13 +8236,13 @@ contains
     type(discrete_lagrangian), intent(inout) :: image
     type(residual_term)      , intent(in)    :: physics
 
-    type(expression), allocatable :: laws(:), reduced(:), zeros(:), rows(:)
-    type(expression) :: row
+    type(expression), allocatable                                    :: laws(:), reduced(:), zeros(:), rows(:)
+    type(expression)                                                 :: row
     character(len=len(image % manifold % unknown_name)), allocatable :: names(:)
-    integer , allocatable :: level_field(:,:), read_order(:,:), degree(:)
-    logical , allocatable :: corrected(:)
-    integer :: nf, ns, j, l, o, f, g, top
-    character(len=12) :: number
+    integer , allocatable                                            :: level_field(:,:), read_order(:,:), degree(:)
+    logical , allocatable                                            :: corrected(:)
+    integer                                                          :: nf, ns, j, l, o, f, g, top
+    character(len=12)                                                :: number
 
     nf  = image % manifold % num_unknowns
     top = top_degree(image % rule, nf)
@@ -7462,26 +8336,29 @@ contains
   end subroutine projection_form
 
   !===================================================================!
-  ! Whether a law reads a component of top degree along time of one of
-  ! the nf fields: the field's degree in the rule.
+  ! Returns whether a law reads a component of top degree along time of
+  ! one of the nf fields: the field's degree in the rule
   !===================================================================!
 
   pure logical function reads_top_degree(x, rule, nf)
+
     type(expression), intent(in) :: x, rule
     integer         , intent(in) :: nf
-    integer :: f
+    integer                      :: f
+
     reads_top_degree = .false.
     do f = 1, nf
        if (x % highest_order_read(f) == rule % degree_of_field(f)) reads_top_degree = .true.
     end do
+
   end function reads_top_degree
 
   !===================================================================!
-  ! THE COMPONENT OF A NODE'S TUPLE storing the coefficient k of the
-  ! field f at the order a along time: the value's own order for the
-  ! coefficient zero, and otherwise the mixed component of the order
-  ! of the coefficient's derivative along its axis. Without time the
-  ! order a is zero.
+  ! Returns the component of a node's tuple storing the coefficient k
+  ! of the field f at the order a along time: the value's own order for
+  ! the coefficient zero, and otherwise the mixed component of the
+  ! order of the coefficient's derivative along its axis. Without time
+  ! the order a is zero.
   !===================================================================!
 
   pure integer function coefficient_component(this, f, k, a) result(at)
@@ -7507,9 +8384,9 @@ contains
   end function coefficient_component
 
   !===================================================================!
-  ! THE FIELD AND THE ORDER ALONG TIME of a component of a node's
-  ! tuple that stores no derivative along space: the condition on a
-  ! time face reads and determines such components alone.
+  ! Returns the field and the order along time of a component of a
+  ! node's tuple that stores no derivative along space: the condition
+  ! on a time face reads and determines such components alone
   !===================================================================!
 
   pure subroutine stored_order(this, component, field, order)
@@ -7537,18 +8414,21 @@ contains
   end subroutine stored_order
 
   !===================================================================!
-  ! HOW THE TUPLE THE FLUX FORM READS IS FORMED at a quadrature point:
-  ! for each of its components, formed(0, c) the derivative of the
-  ! basis - zero the value, (a - 1) d + o the order o along the axis a,
-  ! d the basis's highest order - and formed(k + 1, c) the component of
-  ! a node's tuple that the coefficient k contributes, of the same
-  ! field and the same order along time.
+  ! Returns how the tuple the flux form reads is formed at a quadrature
+  ! point, for each of its components
+  !
+  !      formed(0, c)       the derivative of the basis: zero the
+  !                         value, (a - 1) d + o the order o along the
+  !                         axis a, d the basis's highest order
+  !      formed(k + 1, c)   the component of a node's tuple that the
+  !                         coefficient k contributes, of the same
+  !                         field and the same order along time
   !===================================================================!
 
   subroutine formed_components(this, formed)
 
     class(discrete_lagrangian), intent(in)  :: this
-    integer, allocatable    , intent(out) :: formed(:,:)
+    integer, allocatable      , intent(out) :: formed(:,:)
 
     integer :: f, a, c, cc, o, k, axis, first, top, nk
 
@@ -7594,8 +8474,8 @@ contains
   end subroutine formed_components
 
   !===================================================================!
-  ! THE QUADRATURE NODES OF A PROJECTED SOLUTION: every site of the
-  ! cells at every instant and at every stage of a staged family's
+  ! Returns the quadrature nodes of a projected solution: every site of
+  ! the cells at every instant and at every stage of a staged family's
   ! steps, the site (e - 1) nq + q at the quadrature point q of the
   ! element e; its weight the family's rule in time times the site's in
   ! space, its jet the one the tuples of the element's nodes form there
@@ -7604,16 +8484,19 @@ contains
   ! is a node without a point. With a density at the nodes, step_term
   ! at the point of an element's first node at instant k is the
   ! integral of the density over the element and the step into k.
+  !
+  !      node weight = (the family's weight in time)
+  !                    x (the site's weight in space)
   !===================================================================!
 
   subroutine projected_nodes(this, tuple, stages, solution, stage_node, density, step_term)
 
-    class(discrete_lagrangian), intent(in)    :: this
-    real(dp)                  , intent(in)    :: tuple(:,:,:,0:), stages(:,:,:,:,0:)
-    type(discrete_field)      , intent(inout) :: solution
-    integer , allocatable   , intent(out)   :: stage_node(:,:,:)
-    real(dp)                  , intent(in), optional :: density(:)
-    real(dp), allocatable   , intent(out), optional :: step_term(:)
+    class(discrete_lagrangian), intent(in)            :: this
+    real(dp)                  , intent(in)            :: tuple(:,:,:,0:), stages(:,:,:,:,0:)
+    type(discrete_field)      , intent(inout)         :: solution
+    integer , allocatable     , intent(out)           :: stage_node(:,:,:)
+    real(dp)                  , intent(in), optional  :: density(:)
+    real(dp), allocatable     , intent(out), optional :: step_term(:)
 
     type(derivative_terms), allocatable :: dt(:), weight(:)
     integer , allocatable :: instant(:), cell_owner(:), formed(:,:)
@@ -7739,14 +8622,12 @@ contains
   end subroutine projected_nodes
 
   !===================================================================!
-  ! THE JET AT A QUADRATURE POINT of the layout of the flux's tuple,
-  ! in every column: each component - of a field, an order along time
-  ! and an order along space - the sum over the element's nodes and
+  ! Returns the jet at a quadrature point of the layout of the flux's
+  ! tuple, in every column: each component (of a field, an order along
+  ! time and an order along space) the sum over the element's nodes and
   ! their coefficients of the basis's derivative it names times the
   ! nodes' components of the same field and order along time, as
-  ! formed_components lays them out. site_gradient is its transpose: a
-  ! differential at the quadrature point returned to the nodes' rows
-  ! at a moment of a block, subtracted from rhs.
+  ! formed_components lays them out
   !===================================================================!
 
   pure function site_jet(this, formed, e, q, tuples) result(jet)
@@ -7754,7 +8635,7 @@ contains
     class(discrete_lagrangian), intent(in) :: this
     integer                   , intent(in) :: formed(0:,:), e, q
     real(dp)                  , intent(in) :: tuples(:,:,0:)
-    real(dp) :: jet(size(formed, 2), 0:ubound(tuples, 3))
+    real(dp)                               :: jet(size(formed, 2), 0:ubound(tuples, 3))
 
     integer :: c, i, k
 
@@ -7771,6 +8652,12 @@ contains
     end associate
 
   end function site_jet
+
+  !===================================================================!
+  ! Subtracts a differential at a quadrature point, returned to the
+  ! nodes' rows at a moment of a block, from rhs: the transpose of
+  ! site_jet
+  !===================================================================!
 
   subroutine site_gradient(this, formed, site, g, blk, m, rhs)
 
@@ -7799,10 +8686,10 @@ contains
   end subroutine site_gradient
 
   !===================================================================!
-  ! THE COMPONENT A CONDITION ON A FACE OF THE REGION FIXES under a
-  ! projection, within a node's tuple: of the field of equation i of
-  ! condition j, the coefficient it determines, at the order along time
-  ! of the equations' rows (equation_row less the field's offset).
+  ! Returns the component a condition on a face of the region fixes
+  ! under a projection, within a node's tuple: of the field of equation
+  ! i of condition j, the coefficient it determines, at the order along
+  ! time of the equations' rows (equation_row less the field's offset)
   !===================================================================!
 
   integer function fixed_coefficient(this, j, i, field, equation_row) result(component)
@@ -7813,8 +8700,8 @@ contains
 
     integer , allocatable :: column_of(:)
     real(dp), allocatable :: slopes(:), position(:)
-    real(dp) :: given
-    integer  :: along(2), coefficient, first
+    real(dp)              :: given
+    integer               :: along(2), coefficient, first
 
     first    = merge(FIRST_COORDINATE + 1, FIRST_COORDINATE, this % manifold % with_time)
     position = this % points % position(1)
@@ -7826,11 +8713,12 @@ contains
   end function fixed_coefficient
 
   !===================================================================!
-  ! THE m-th DERIVATIVE ALONG THE DESIGN of the data of a condition on
-  ! a time face, projected: at the row of each node's coefficient, the
-  ! integral over the cells around the node of the coefficient's basis
-  ! function times the derivative of the value the condition states,
-  ! written into rhs at the row the condition occupies in the block.
+  ! Writes the m-th derivative along the design of the data of a
+  ! condition on a time face, projected: at the row of each node's
+  ! coefficient, the integral over the cells around the node of the
+  ! coefficient's basis function times the derivative of the value the
+  ! condition states, written into rhs at the row the condition
+  ! occupies in the block
   !===================================================================!
 
   subroutine projected_datum(this, equation, instant, m, values, seed, blk, rhs)
@@ -7844,8 +8732,8 @@ contains
 
     integer , allocatable :: columns(:)
     real(dp), allocatable :: slopes(:), position(:)
-    real(dp) :: given, stated
-    integer  :: e, q, i0, k0, row, row_field, row_order, moment, r
+    real(dp)              :: given, stated
+    integer               :: e, q, i0, k0, row, row_field, row_order, moment, r
     logical , allocatable :: written(:)
 
     moment = this % face_row_moment(instant, blk % first, blk % last, blk % depth, blk % instant_moment)
@@ -7872,34 +8760,41 @@ contains
 
   end subroutine projected_datum
 
-  ! the derivative of the basis a coefficient names: the value for the
-  ! coefficient zero, the same order along the same axis otherwise
+  !===================================================================!
+  ! Returns the derivative of the basis a coefficient names: the value
+  ! for the coefficient zero, the same order along the same axis
+  ! otherwise
+  !===================================================================!
+
   pure integer function coefficient_derivative(this, k) result(d)
+
     class(discrete_lagrangian), intent(in) :: this
     integer                   , intent(in) :: k
-    integer :: axis, o
+    integer                                :: axis, o
+
     d = 0
     if (k == 0) return
     axis = (k - 1) / this % elements % order + 1
     o    = k - (axis - 1) * this % elements % order
     d    = (axis - 1) * this % elements % derivatives + o
+
   end function coefficient_derivative
 
   !===================================================================!
-  ! THE POINTS ON A FACE OF THE REGION: those whose coordinate along
-  ! the face's axis is the face's value, to the rounding of the
+  ! Returns the points on a face of the region: those whose coordinate
+  ! along the face's axis is the face's value, to the rounding of the
   ! generated positions. A face with no point on it is invalid input.
   !===================================================================!
 
   function points_on_face(this, j) result(on_face)
 
     class(discrete_lagrangian), intent(in) :: this
-    integer                 , intent(in) :: j
-    integer, allocatable :: on_face(:)
+    integer                   , intent(in) :: j
+    integer, allocatable                   :: on_face(:)
 
     real(dp), allocatable :: distance(:)
-    real(dp) :: tolerance
-    integer :: ncells, d, axis, c
+    real(dp)              :: tolerance
+    integer               :: ncells, d, axis, c
 
     ncells = this % points % num_cells()
     d      = this % points % dimension
@@ -7916,14 +8811,14 @@ contains
   end function points_on_face
 
   !===================================================================!
-  ! THE ESTIMATE'S DERIVATIVES ALONG TIME at its instants, those of the
-  ! parabola through its values at three instants about each: the
-  ! first and the second derivative of every field, of its value's
-  ! coefficient; above the second, none. A march begun from the
-  ! instant before (continued) begins its first instant from them,
-  ! where the initial data state the rates, rather than from zero
-  ! rates, which a law quadratic in them reaches by a damped
-  ! iteration. tuple(:, :, k) is the instant first + k - 1.
+  ! Sets the estimate's derivatives along time at its instants, those
+  ! of the parabola through its values at three instants about each:
+  ! the first and the second derivative of every field, of its value's
+  ! coefficient; above the second, none. A march begun from the instant
+  ! before (continued) begins its first instant from them, where the
+  ! initial data state the rates, rather than from zero rates, which a
+  ! law quadratic in them reaches by a damped iteration. tuple(:, :, k)
+  ! is the instant first + k - 1.
   !===================================================================!
 
   subroutine estimated_rates(this, tuple, first)
@@ -7933,7 +8828,7 @@ contains
     integer                   , intent(in)    :: first
 
     real(dp) :: s(3), w1(3), w2(3), tk
-    integer :: n, k, j, f, o, i
+    integer  :: n, k, j, f, o, i
 
     n = size(tuple, 3)
     if (n < 3) return
@@ -7956,25 +8851,27 @@ contains
   end subroutine estimated_rates
 
   !===================================================================!
-  ! A TUPLE EXTRAPOLATED ALONG TIME by h: of every unknown that is a
-  ! function of no coordinate of space and of the second degree in
-  ! time at least, the value and each derivative along time below the
-  ! top one replaced by the taylor polynomial, at h, of the
-  ! derivatives above it and below the top - of the field, or of each
-  ! coefficient of the basis of a projection.
+  ! Extrapolates a tuple along time by h: of every unknown that is a
+  ! function of no coordinate of space and of the second degree in time
+  ! at least, the value and each derivative along time below the top
+  ! one replaced by the Taylor polynomial, at h, of the derivatives
+  ! above it and below the top, of the field or of each coefficient of
+  ! the basis of a projection.
   !
-  ! The top derivative is not read: at the instant ahead of a step of
-  ! a tableau the law alone determines it, from the value and the
-  ! rates the weights b form, the error of their stiff modes
-  ! multiplied by those modes' stiffness - 2e2 where the acceleration
-  ! is 8 on the beam of case 8 on its hub - and the polynomial that
-  ! read it began Newton 1e4 times further from the solution than the
-  ! tuple itself. Nor is a field of space extrapolated: its stiff
-  ! modes' rates times h and their stiffness begin Newton at six times
-  ! the residual of the tuple itself, its test relative to that
-  ! residual then ends at the edge of the rounding, and the misfit of
-  ! case 8 varies by 5e-15 between designs 1e-9 apart where it varies
-  ! by 8e-16 from the tuple.
+  !      q^(j)(t + h) = q^(j) + h q^(j+1) + h^2/2 q^(j+2) + ...,
+  !                     the top derivative not read
+  !
+  ! The top derivative is not read: at the instant ahead of a step of a
+  ! tableau the law alone determines it, from the value and the rates
+  ! the weights b form, the error of their stiff modes multiplied by
+  ! those modes' stiffness (2e2 where the acceleration is 8 on the beam
+  ! of case 8 on its hub), and the polynomial that read it began Newton
+  ! 1e4 times further from the solution than the tuple itself. Nor is a
+  ! field of space extrapolated: its stiff modes' rates times h and
+  ! their stiffness begin Newton at six times the residual of the tuple
+  ! itself, its test relative to that residual then ends at the edge of
+  ! the rounding, and the misfit of case 8 varies by 5e-15 between
+  ! designs 1e-9 apart where it varies by 8e-16 from the tuple.
   !===================================================================!
 
   subroutine extrapolated(this, tuple, h)
@@ -7984,7 +8881,7 @@ contains
     real(dp)                  , intent(in)    :: h
 
     integer, allocatable :: chain(:)
-    integer :: f, k, a, top, nk
+    integer              :: f, k, a, top, nk
 
     nk = 1
     if (allocated(this % elements)) nk = this % elements % num_coefficients()
@@ -8004,12 +8901,19 @@ contains
 
   contains
 
-    ! the components of the chain, from the value up, each the sum of
-    ! those above it times h^i / i!
+    !-----------------------------------------------------------------!
+    ! Sets the components of the chain, from the value up, each the
+    ! sum of those above it times h^i / i!
+    !
+    !      q^(j) <- q^(j) + h q^(j+1) + h^2/2! q^(j+2) + ...
+    !-----------------------------------------------------------------!
+
     subroutine taylor(chain)
+
       integer, intent(in) :: chain(0:)
-      real(dp) :: term(size(tuple, 2)), factor
-      integer :: j, i
+      real(dp)            :: term(size(tuple, 2)), factor
+      integer             :: j, i
+
       do j = 0, ubound(chain, 1) - 1
          term   = tuple(chain(j), :)
          factor = 1.0_dp
@@ -8019,34 +8923,38 @@ contains
          end do
          tuple(chain(j), :) = term
       end do
+
     end subroutine taylor
 
   end subroutine extrapolated
 
   !===================================================================!
-  ! THE ROWS OF THE UNKNOWNS OF TIME ALONE in a block. Such an unknown
-  ! is stored at every point, its equation stated at the first point
-  ! of each moment; at every other point the component the equation
-  ! determines equals the one at the point before, and every
+  ! Appends the rows of the unknowns of time alone in a block. Such an
+  ! unknown is stored at every point, its equation stated at the first
+  ! point of each moment; at every other point the component the
+  ! equation determines equals the one at the point before, and every
   ! coefficient of the basis but the value is zero at every order, so
   ! that the basis forms the unknown itself at every quadrature point.
   ! Appended to the prescribed rows, none where the history or a face
   ! condition takes the row; added lists them.
+  !
+  !      point     1          2            3            ...
+  !      row       equation   q_2 - q_1    q_3 - q_2
   !===================================================================!
 
   subroutine time_alone_rows_of(this, depth, nm, instant_moment, at, primary, fixed_rows, rows, columns, weights, &
        & constants, added)
 
     class(discrete_lagrangian), intent(in)    :: this
-    integer                 , intent(in)    :: depth, nm, instant_moment(:), at(:), primary(:), fixed_rows(:)
-    integer , allocatable   , intent(inout) :: rows(:), columns(:)
-    real(dp), allocatable   , intent(inout) :: weights(:), constants(:)
-    integer , allocatable   , intent(out)   :: added(:)
+    integer                   , intent(in)    :: depth, nm, instant_moment(:), at(:), primary(:), fixed_rows(:)
+    integer , allocatable     , intent(inout) :: rows(:), columns(:)
+    real(dp), allocatable     , intent(inout) :: weights(:), constants(:)
+    integer , allocatable     , intent(out)   :: added(:)
 
     logical , allocatable :: taken(:)
     integer , allocatable :: r(:), c(:)
     real(dp), allocatable :: w(:)
-    integer :: ncells, nk, f, a, m, p, k, row, component, e, o
+    integer               :: ncells, nk, f, a, m, p, k, row, component, e, o
 
     ncells = this % points % num_cells()
     nk     = this % elements % num_coefficients()
@@ -8096,27 +9004,34 @@ contains
 
   contains
 
+    !-----------------------------------------------------------------!
+    ! Appends the entry (row, column, weight)
+    !-----------------------------------------------------------------!
+
     subroutine add(row, column, weight)
+
       integer , intent(in) :: row, column
       real(dp), intent(in) :: weight
+
       e    = e + 1
       r(e) = row
       c(e) = column
       w(e) = weight
+
     end subroutine add
 
   end subroutine time_alone_rows_of
 
   !===================================================================!
-  ! THE FIRST POINT OF A MOMENT AS A NODE OF EVERY ELEMENT: no basis
-  ! function, so that the tuple at a quadrature point is formed as
-  ! before, and, at the derivative index past the basis's last, a test
-  ! function that is the weight of each quadrature point. The equation
-  ! of an unknown of time alone, tested so, is its integral over the
-  ! cells, stated at the first point of the moment. At the index after
-  ! it, a test function that is one at the first quadrature point of
-  ! the first cell and zero elsewhere: an equation tested so is stated
-  ! by its value there.
+  ! Sets the first point of a moment as a node of every element: no
+  ! basis function, so that the tuple at a quadrature point is formed
+  ! as before, and, at the derivative index past the basis's last, a
+  ! test function that is the weight of each quadrature point. The
+  ! equation of an unknown of time alone, tested so, is its integral
+  ! over the cells, stated at the first point of the moment. At the
+  ! index after it, a test function that is one at the first quadrature
+  ! point of the first cell and zero elsewhere: an equation tested so
+  ! is stated by its value there.
   !===================================================================!
 
   pure subroutine with_first_point(el)
@@ -8125,7 +9040,7 @@ contains
 
     real(dp), allocatable :: basis(:,:,:,:,:), test(:,:,:,:,:)
     integer , allocatable :: node(:,:)
-    integer :: d, nn
+    integer               :: d, nn
 
     d  = ubound(el % test, 1) + 1
     nn = el % num_nodes()
@@ -8147,8 +9062,8 @@ contains
   end subroutine with_first_point
 
   !===================================================================!
-  ! THE FIXED ROWS of a block: every component at the history instants,
-  ! from the tuples already solved.
+  ! Returns the fixed rows of a block: every component at the history
+  ! instants, from the tuples already solved
   !===================================================================!
 
   subroutine fixed_rows_of(this, first, last, depth, instant_moment, at, lb, tuple, fixed_rows, fixed)
@@ -8157,10 +9072,10 @@ contains
     integer                   , intent(in)  :: first, last, depth, instant_moment(:), at(:)
     type(lower_bounds)        , intent(in)  :: lb
     real(dp)                  , intent(in)  :: tuple(:,:,lb % instant:)
-    integer , allocatable   , intent(out) :: fixed_rows(:)
-    real(dp), allocatable   , intent(out) :: fixed(:)
+    integer , allocatable     , intent(out) :: fixed_rows(:)
+    real(dp), allocatable     , intent(out) :: fixed(:)
 
-    integer :: stride, ncells, ninst, count, k, c, i, j, f, m, e, instant, comp, degree
+    integer  :: stride, ncells, ninst, count, k, c, i, j, f, m, e, instant, comp, degree
     real(dp) :: given, slope
 
     stride = this % rule % num_components()
@@ -8185,45 +9100,37 @@ contains
   end subroutine fixed_rows_of
 
   !===================================================================!
-  ! THE MOMENT WHOSE ROWS A FACE CONDITION OCCUPIES. At the block's
-  ! first instant the components of a field are determined by nothing
-  ! - no family reads back past the first instant - so a condition at
-  ! the manifold's first instant occupies the rows there. A condition
-  ! at the manifold's last instant, whose components the family's
-  ! relations determine from the instants before, occupies the free
-  ! rows at the block's first instant instead: the two-point problem,
-  ! the rows at one end and the columns at the other. It therefore
-  ! requires a block without history whose instants reach the last
-  ! instant; a chain of several blocks cannot satisfy it, and is
-  ! refused.
-  !===================================================================!
-
-  !===================================================================!
-  ! THE FACE ROWS of a block, each condition's affine relation in
-  ! place of the row of the component it determines, with its value at
-  ! zero state as the row's constant.
+  ! Returns the face rows of a block, each condition's affine relation
+  ! in place of the row of the component it determines, with its value
+  ! at zero state as the row's constant.
   !
   ! On a face of the time factor, the first or the last instant of the
   ! manifold when it is one of the block's own, at every cell: the row
   ! of the component read with coefficient one. A face at a history
   ! instant is fixed by the history already.
   !
-  ! On a face of the region, at every moment of the block after its history but the
-  ! manifold's first instant, where the initial data and the physics
-  ! at every point determine the jet, and but the explicit moments,
-  ! where the family's quadrature of the moments before, which satisfy
-  ! the condition, determines the values. Each condition takes the row of
-  ! the physics at one of the points nearest the face, so the physics
-  ! is stated on the points away from it. A condition on the value takes
-  ! the physics row at the face's own point. A condition on a space
-  ! derivative takes the row of the difference relation of that
-  ! derivative at the face's point, and the relation moves to the
-  ! physics row of the next point: the same equations, each point's
-  ! block keeping an entry on its own components. The condition is its
-  ! affine relation in the components at the face's point, with its
-  ! value at zero state as the constant. Invalid input: a face with no
-  ! point on it, or more conditions on a face than the region has
-  ! points.
+  ! On a face of the region, at every moment of the block after its
+  ! history but the manifold's first instant, where the initial data
+  ! and the physics at every point determine the jet, and but the
+  ! explicit moments, where the family's quadrature of the moments
+  ! before, which satisfy the condition, determines the values. Each
+  ! condition takes the row of the physics at one of the points nearest
+  ! the face, so the physics is stated on the points away from it. A
+  ! condition on the value takes the physics row at the face's own
+  ! point. A condition on a space derivative takes the row of the
+  ! difference relation of that derivative at the face's point, and the
+  ! relation moves to the physics row of the next point: the same
+  ! equations, each point's block keeping an entry on its own
+  ! components. The condition is its affine relation in the components
+  ! at the face's point, with its value at zero state as the constant.
+  !
+  !      points        face   1      2         3 ...
+  !      u = g         row of the physics at 1
+  !      u_x = g       row of the difference relation at 1, the
+  !                    relation moved to the physics row at 2
+  !
+  ! Invalid input: a face with no point on it, or more conditions on a
+  ! face than the region has points.
   !===================================================================!
 
   subroutine face_rows_of(this, first, last, depth, nm, instant_moment, at, primary, positions, rows_along, &
@@ -8234,15 +9141,15 @@ contains
     real(dp)                  , intent(in)  :: positions(:,:)
     type(stencil)             , intent(in)  :: rows_along(:,:)
     logical                   , intent(in)  :: implicit_moment(:)
-    integer , allocatable   , intent(out) :: rows(:), columns(:)
-    real(dp), allocatable   , intent(out) :: weights(:), constants(:)
+    integer , allocatable     , intent(out) :: rows(:), columns(:)
+    real(dp), allocatable     , intent(out) :: weights(:), constants(:)
 
     integer , allocatable :: column_of(:), target(:), row_point(:), row_offset(:), field(:), determined(:,:)
     real(dp), allocatable :: slopes(:), w(:)
-    real(dp) :: given
-    integer :: ncells, j, i, m, k, e, face_point, row, space, f, along(2), bound, entries, instant, base
-    logical :: acting
-    logical, allocatable :: taken(:), claimed(:)
+    real(dp)              :: given
+    integer               :: ncells, j, i, m, k, e, face_point, row, space, f, along(2), bound, entries, instant, base
+    logical               :: acting
+    logical, allocatable  :: taken(:), claimed(:)
 
     ! an equation on a time face enters a column per component at each
     ! cell; one on a face of the region enters at each moment at most
@@ -8358,26 +9265,40 @@ contains
 
   contains
 
+    !-----------------------------------------------------------------!
+    ! Appends the entry (row, column, weight) and the row's constant
+    !-----------------------------------------------------------------!
+
     subroutine add(row, column, weight, constant)
+
       integer , intent(in) :: row, column
       real(dp), intent(in) :: weight, constant
+
       entries            = entries + 1
       rows(entries)      = row
       columns(entries)   = column
       weights(entries)   = weight
       constants(entries) = constant
+
     end subroutine add
 
-    ! a condition that reads the unknowns of time alone and no other
+    !-----------------------------------------------------------------!
+    ! Returns whether a condition reads the unknowns of time alone and
+    ! no other
+    !-----------------------------------------------------------------!
+
     logical function of_time_alone(equation)
+
       type(continuous_field), intent(in) :: equation
-      type(expression) :: form
-      integer :: f
+      type(expression)                   :: form
+      integer                            :: f
+
       form = equation % graph(1)
       of_time_alone = any(this % manifold % of_time_alone(1:this % manifold % num_unknowns))
       do f = 1, this % manifold % num_unknowns
          if (.not. this % manifold % of_time_alone(f) .and. form % highest_order_read(f) >= 0) of_time_alone = .false.
       end do
+
     end function of_time_alone
 
     !-----------------------------------------------------------------!
@@ -8400,8 +9321,8 @@ contains
       integer               , intent(in) :: instant, columns_at, rows_at
 
       real(dp), allocatable :: position(:), constant_of(:)
-      integer  :: e, q, i0, k0, i, k, r, cr, row_field, row_order, column_field, column_order, start, row
-      real(dp) :: tau
+      integer               :: e, q, i0, k0, i, k, r, cr, row_field, row_order, column_field, column_order, start, row
+      real(dp)              :: tau
 
       allocate(constant_of(maxval(at) + this % rule % num_components()), source=0.0_dp)
       start = entries
@@ -8461,8 +9382,8 @@ contains
       integer, intent(in) :: j
 
       integer, allocatable :: on_face(:)
-      integer :: i, m, k, n, c, coefficient, start_space
-      logical :: initial, history, explicit
+      integer              :: i, m, k, n, c, coefficient, start_space
+      logical              :: initial, history, explicit
 
       start_space = merge(FIRST_COORDINATE + 1, FIRST_COORDINATE, this % manifold % with_time)
       on_face = this % points_on_face(j)
@@ -8512,7 +9433,7 @@ contains
     subroutine taken_at_first_instant()
 
       integer, allocatable :: on_face(:)
-      integer :: jj, ii, n, coefficient, start_space, m1
+      integer              :: jj, ii, n, coefficient, start_space, m1
 
       start_space = merge(FIRST_COORDINATE + 1, FIRST_COORDINATE, this % manifold % with_time)
       m1 = instant_moment(1)
@@ -8535,23 +9456,29 @@ contains
   end subroutine face_rows_of
 
   !===================================================================!
-  ! THE DISAGREEMENT OF ANOTHER REPRESENTATION with a solution: for
-  ! each law of a stated representation along space, d^k w - w_(k) = 0
-  ! in the row of the component w_(k), the other concretion's
+  ! Returns the disagreement of another representation with a solution:
+  ! for each law of a stated representation along space, d^k w - w_(k)
+  ! = 0 in the row of the component w_(k), the other concretion's
   ! derivative of the solution's values less the solution's component
   ! at every point of every instant, times the law's multiplier there,
   ! negated. The solution satisfies its own representation; were the
   ! other one exact, the solution's rows would be perturbed by these
   ! mismatches, and the multiplier of a row is -dJ/d(its datum), so the
-  ! contributions, one per point, sum to an estimate of
-  ! J(other) - J(solution). On an open line the row of a law is the
-  ! trapezoid relation of a segment, and its mismatch is that relation
-  ! evaluated on the other concretion's jet of the solution's values,
-  ! at the segment's upper point; at the first instant the rows are the
-  ! closed ones. Invalid input: a solution without the multipliers of a
-  ! representation along space. Without other, the disagreement along
-  ! time with the enrichment of the residual's chain, or with the chain
-  ! of families given, below, and with derivatives its derivative in
+  ! contributions, one per point, sum to an estimate of J(other) -
+  ! J(solution).
+  !
+  !      contribution(p) = -mu(p) (D^k w(p) - w_(k)(p))
+  !      contribution(1) + contribution(2) + ...
+  !                      ~ J(other) - J(solution)
+  !
+  ! On an open line the row of a law is the trapezoid relation of a
+  ! segment, and its mismatch is that relation evaluated on the other
+  ! concretion's jet of the solution's values, at the segment's upper
+  ! point; at the first instant the rows are the closed ones. Invalid
+  ! input: a solution without the multipliers of a representation along
+  ! space. Without other, the disagreement along time with the
+  ! enrichment of the residual's chain, or with the chain of families
+  ! given (time_disagreement), and with derivatives its derivative in
   ! each column of the expansion above zero, of order one along each;
   ! with by, the blocks of the enrichment are solved by the minimizer
   ! of by.
@@ -8559,20 +9486,20 @@ contains
 
   function disagreement(this, solution, other, schemes, derivatives, by) result(contribution)
 
-    class(discrete_lagrangian)     , intent(in) :: this
-    type(discrete_field)           , intent(in) :: solution
-    class(derivative_approximation), intent(in), optional :: other
-    type(chain)                    , intent(in), optional :: schemes
+    class(discrete_lagrangian)     , intent(in)            :: this
+    type(discrete_field)           , intent(in)            :: solution
+    class(derivative_approximation), intent(in), optional  :: other
+    type(chain)                    , intent(in), optional  :: schemes
     real(dp), allocatable          , intent(out), optional :: derivatives(:,:)
-    type(discrete_minimizer)       , intent(in), optional :: by
-    real(dp), allocatable :: contribution(:)
+    type(discrete_minimizer)       , intent(in), optional  :: by
+    real(dp), allocatable                                  :: contribution(:)
 
-    type(stencil) :: rows, lower_rows
-    type(discrete_field) :: multipliers
+    type(stencil)         :: rows, lower_rows
+    type(discrete_field)  :: multipliers
     real(dp), allocatable :: values(:), derivative(:), lower(:)
-    real(dp) :: h
-    integer :: ncells, ninst, j, i, k, c, f, law(3), point, axis
-    logical :: stated, open_line
+    real(dp)              :: h
+    integer               :: ncells, ninst, j, i, k, c, f, law(3), point, axis
+    logical               :: stated, open_line
 
     if (.not. present(other)) then
        contribution = this % time_disagreement(solution, schemes, derivatives, by=by)
@@ -8630,22 +9557,23 @@ contains
   end function disagreement
 
   !===================================================================!
-  ! THE CHAIN OF THE ENRICHMENT: each family of the residual's chain
-  ! one order higher (enrichment), except where the enriched family of
-  ! a block would read history before the first instant - bdf(p + 1)
-  ! from block p + 1 - which keeps the residual's own family, the error
-  ! of its steps not estimated. A family of one step of the higher
-  ! order in its place, the tabulated DIRK, is singular on the rotor's
-  ! joints, whose conditions it meets at its stages alone.
+  ! Returns the chain of the enrichment: each family of the residual's
+  ! chain one order higher (enrichment), except where the enriched
+  ! family of a block would read history before the first instant
+  ! (bdf(p + 1) from block p + 1), which keeps the residual's own
+  ! family, the error of its steps not estimated. A family of one step
+  ! of the higher order in its place, the tabulated DIRK, is singular
+  ! on the rotor's joints, whose conditions it meets at its stages
+  ! alone.
   !===================================================================!
 
   function chain_of_enrichment(this) result(schemes)
 
     class(discrete_lagrangian), intent(in) :: this
-    type(chain) :: schemes
+    type(chain)                            :: schemes
 
     type(discrete_lagrangian) :: enriched
-    integer :: b, first, last, depth
+    integer                   :: b, first, last, depth
 
     schemes = enrichment(this % schemes)
     select type (this)
@@ -8661,32 +9589,37 @@ contains
   end function chain_of_enrichment
 
   !===================================================================!
-  ! THE DISAGREEMENT ALONG TIME of a solution Q with the enrichment of
-  ! the residual's chain - the same Lagrangian on the solution's
-  ! instants and design, its chain the chain of the enrichment, marked
-  ! + - the estimate of the error of the objective,
+  ! Returns the disagreement along time of a solution Q with the
+  ! enrichment of the residual's chain (the same Lagrangian on the
+  ! solution's instants and design, its chain the chain of the
+  ! enrichment, marked +): the estimate of the error of the objective,
   !
   !    J+(Q+) - J(Q) ~ eta = J+(P Q) - J(Q) + mu+ . R+(P Q),
   !
   ! to second order in the error, mu+ the reverse sweep of R+ at P Q,
   ! A^T mu+ = -dJ+, the convention L = J + mu . R of every sweep. P Q
   ! is the solution's tuple at every instant; a staged block of the
-  ! enrichment takes the stages of its steps solved from the
-  ! solution's instants behind it, so that its stage rows are met and
-  ! R+ is, at the rows of its instants, the local error of a step from
-  ! the solution. Each row's product goes to the point of its moment,
-  ! a stage's to the instant its step reaches, and the objective over
-  ! each step - its integral by the enrichment's rule at P Q less that
-  ! by the step's own rule at Q - to the instant the step reaches: one
-  ! contribution per point, summing to eta; under a projection on the
-  ! cells, to the point of the first node of each element. For a
+  ! enrichment takes the stages of its steps solved from the solution's
+  ! instants behind it, so that its stage rows are met and R+ is, at
+  ! the rows of its instants, the local error of a step from the
+  ! solution.
+  !
+  !      a row's product mu+ R+       to the point of its moment
+  !      a stage's product            to the instant its step reaches
+  !      the objective over a step,   to the instant the step reaches
+  !        the enrichment's rule at
+  !        P Q less the step's own
+  !        rule at Q
+  !
+  ! One contribution per point, summing to eta; under a projection on
+  ! the cells, to the point of the first node of each element. For a
   ! smooth maximum S = m + log(I) / rho the parts of I by the two
   ! rules, each over rho I of its own, are scaled to the difference of
-  ! the two values, S+ - S. A difference node by node would set
-  ! against each other the weights two rules divide between
-  ! neighbouring instants.
+  ! the two values, S+ - S. A difference node by node would set against
+  ! each other the weights two rules divide between neighbouring
+  ! instants.
   !
-  ! WITH A CHAIN GIVEN in place of the enrichment, + is that chain on
+  ! With a chain given in place of the enrichment, + is that chain on
   ! the same instants, and the contribution of a step is the change of
   ! J_h were that step's family replaced by the chain's there: J_h(+) -
   ! J_h, the first-order change in each step's family, and with it the
@@ -8699,13 +9632,14 @@ contains
   !===================================================================!
 
   function time_disagreement(this, solution, schemes, derivative, by) result(contribution)
-    type(discrete_minimizer), intent(in), optional :: by
 
-    class(discrete_lagrangian), intent(in) :: this
-    type(discrete_field)      , intent(in) :: solution
-    type(chain)               , intent(in), optional :: schemes
-    real(dp), allocatable   , intent(out), optional :: derivative(:,:)
-    real(dp), allocatable :: contribution(:)
+    type(discrete_minimizer)  , intent(in), optional  :: by
+
+    class(discrete_lagrangian), intent(in)            :: this
+    type(discrete_field)      , intent(in)            :: solution
+    type(chain)               , intent(in), optional  :: schemes
+    real(dp), allocatable     , intent(out), optional :: derivative(:,:)
+    real(dp), allocatable                             :: contribution(:)
 
     type(discrete_lagrangian) :: base, plus
     type(discrete_field) :: state, replay, value_field, value_plus
@@ -8958,8 +9892,9 @@ contains
   end function time_disagreement
 
   !===================================================================!
-  ! Whether the derivatives along space are relations on the segments
-  ! of a line, which leave rows open for the conditions on its faces.
+  ! Returns whether the derivatives along space are relations on the
+  ! segments of a line, which leave rows open for the conditions on its
+  ! faces
   !===================================================================!
 
   logical function open_line(this)
@@ -8975,31 +9910,51 @@ contains
 
   end function open_line
 
-  ! whether a block of the sweeps is the whole line at one moment: on
-  ! an open line, and for a law projected on the cells of a line
+  !===================================================================!
+  ! Returns whether a block of the sweeps is the whole line at one
+  ! moment: on an open line, and for a law projected on the cells of a
+  ! line
+  !===================================================================!
+
   logical function whole_line(this)
+
     class(discrete_lagrangian), intent(in) :: this
+
     whole_line = this % open_line()
     if (allocated(this % elements)) whole_line = whole_line .or. this % points % dimension == 1
+
   end function whole_line
 
-  ! whether the instances of a block's law projected on the cells are
-  ! divided over the images (residual_operator, divided): over several
-  ! images, on a line every image solves whole, every block alike
+  !===================================================================!
+  ! Returns whether the instances of a block's law projected on the
+  ! cells are divided over the images (residual_operator, divided):
+  ! over several images, on a line every image solves whole, every
+  ! block alike
+  !===================================================================!
+
   logical function instances_divided(this)
+
     class(discrete_lagrangian), intent(in) :: this
+
     instances_divided = num_images() > 1 .and. this % manifold % with_space .and. this % whole_line()
+
   end function instances_divided
 
   !===================================================================!
-  ! THE SEGMENT ROWS of a block, at its implicit moments: for each
-  ! field, each space coordinate and each order k of its chain, the
-  ! trapezoid relation between the components of orders k - 1 and k at
-  ! the two ends of every segment, in the row of the component of order
-  ! k at the segment's upper point. The points of the line lie in
-  ! ascending order. Invalid input: a region of several coordinates,
-  ! points that do not ascend, or a mixed component, whose chain along
-  ! the line would need conditions of its own at the ends.
+  ! Returns the segment rows of a block, at its implicit moments: for
+  ! each field, each space coordinate and each order k of its chain,
+  ! the trapezoid relation between the components of orders k - 1 and k
+  ! at the two ends of every segment, in the row of the component of
+  ! order k at the segment's upper point. The points of the line lie in
+  ! ascending order.
+  !
+  !      x_i ------ h ------ x_(i+1)
+  !      u^(k-1)_(i+1) - u^(k-1)_i - h (u^(k)_i + u^(k)_(i+1)) / 2 = 0,
+  !      in the row of u^(k) at x_(i+1)
+  !
+  ! Invalid input: a region of several coordinates, points that do not
+  ! ascend, or a mixed component, whose chain along the line would need
+  ! conditions of its own at the ends.
   !===================================================================!
 
   subroutine segment_rows_of(this, nm, at, implicit_moment, rows, columns, weights)
@@ -9007,10 +9962,10 @@ contains
     class(discrete_lagrangian), intent(in)  :: this
     integer                   , intent(in)  :: nm, at(:)
     logical                   , intent(in)  :: implicit_moment(:)
-    integer , allocatable   , intent(out) :: rows(:), columns(:)
-    real(dp), allocatable   , intent(out) :: weights(:)
+    integer , allocatable     , intent(out) :: rows(:), columns(:)
+    real(dp), allocatable     , intent(out) :: weights(:)
 
-    integer :: ncells, m, f, c, k, i, lower, upper, row, here, next, e, entries
+    integer  :: ncells, m, f, c, k, i, lower, upper, row, here, next, e, entries
     real(dp) :: h
 
     ncells = this % points % num_cells()
@@ -9058,10 +10013,10 @@ contains
   end subroutine segment_rows_of
 
   !===================================================================!
-  ! WHERE THE CONDITIONS ON ONE FACE OF THE REGION ARE STATED: the
-  ! face's point, and for equation i of condition j the point whose
-  ! physics row it displaces, the point and the offset within its
-  ! tuple of the row the condition occupies, the field, and the space
+  ! Returns where the conditions on one face of the region are stated:
+  ! the face's point, and for equation i of condition j the point whose
+  ! physics row it displaces, the point and the offset within its tuple
+  ! of the row the condition occupies, the field, and the space
   ! derivative it determines (the order zero for a value). Conditions
   ! on the value come first, on the face's own point; the conditions
   ! stated before on the same face take the nearer points. Invalid
@@ -9074,13 +10029,13 @@ contains
     class(discrete_lagrangian), intent(in)  :: this
     integer                   , intent(in)  :: j, primary(:)
     integer                   , intent(out) :: face_point
-    integer , allocatable   , intent(out) :: target(:), row_point(:), row_offset(:), field(:), determined(:,:)
+    integer , allocatable     , intent(out) :: target(:), row_point(:), row_offset(:), field(:), determined(:,:)
 
     integer , allocatable :: nearest(:), column_of(:)
     real(dp), allocatable :: distance(:), slopes(:)
     logical , allocatable :: taken(:)
-    real(dp) :: given
-    integer :: ncells, d, n, i, k, used, axis, pass, f, along(2), top
+    real(dp)              :: given
+    integer               :: ncells, d, n, i, k, used, axis, pass, f, along(2), top
 
     ncells = this % points % num_cells()
     d      = this % points % dimension
@@ -9167,34 +10122,38 @@ contains
   end subroutine space_face_placement
 
   !===================================================================!
-  ! A CONDITION AS AN AFFINE RELATION of the components of the rule's
-  ! tuple at one point: the sum over k of slopes(k) times the component
-  ! columns(k) equals given, given = -g at zero state. The components
-  ! are in the order of the condition's own tuple; leaves(:, k) is
-  ! the field, the coordinate and the order of each. With explicit,
-  ! the condition is stated by its derivative along time of the least
-  ! order that reads a component of top degree, as initial_form states
-  ! a law: at an explicit moment the family fixes the components below
-  ! the top degree, and the condition there fixes the top one. Invalid
-  ! input: a condition that reads no component of the unknowns.
+  ! Returns a condition as an affine relation of the components of the
+  ! rule's tuple at one point, given = -g at zero state:
+  !
+  !      slopes(1) q(columns(1)) + slopes(2) q(columns(2)) + ...
+  !                                                      = given
+  !
+  ! The components are in the order of the condition's own tuple;
+  ! leaves(:, k) is the field, the coordinate and the order of each.
+  ! With explicit, the condition is stated by its derivative along time
+  ! of the least order that reads a component of top degree, as
+  ! initial_form states a law: at an explicit moment the family fixes
+  ! the components below the top degree, and the condition there fixes
+  ! the top one. Invalid input: a condition that reads no component of
+  ! the unknowns.
   !===================================================================!
 
   subroutine condition_relation(this, equation, values, position, columns, slopes, given, leaves, explicit)
 
-    class(discrete_lagrangian), intent(in)  :: this
-    type(continuous_field)    , intent(in)  :: equation
-    real(dp)                  , intent(in)  :: values(:), position(:)
-    integer , allocatable   , intent(out) :: columns(:), leaves(:,:)
-    real(dp), allocatable   , intent(out) :: slopes(:)
-    real(dp)                  , intent(out) :: given
+    class(discrete_lagrangian), intent(in)           :: this
+    type(continuous_field)    , intent(in)           :: equation
+    real(dp)                  , intent(in)           :: values(:), position(:)
+    integer , allocatable     , intent(out)          :: columns(:), leaves(:,:)
+    real(dp), allocatable     , intent(out)          :: slopes(:)
+    real(dp)                  , intent(out)          :: given
     logical                   , intent(in), optional :: explicit
 
-    type(expression) :: g
+    type(expression)                     :: g
     type(expression_vertex), allocatable :: v(:)
-    integer , allocatable :: reads(:)
-    real(dp), allocatable :: q(:), grad(:)
-    real(dp) :: value
-    integer :: k, i, along, o
+    integer , allocatable                :: reads(:)
+    real(dp), allocatable                :: q(:), grad(:)
+    real(dp)                             :: value
+    integer                              :: k, i, along, o
 
     g = equation % graph(1)
     if (present(explicit)) then
@@ -9230,26 +10189,26 @@ contains
   end subroutine condition_relation
 
   !===================================================================!
-  ! A condition on a face of the region as that relation, with the
-  ! field of its last component, and the coordinate and the order of
-  ! the space derivative of highest order it reads (the order zero
+  ! Returns a condition on a face of the region as that relation, with
+  ! the field of its last component, and the coordinate and the order
+  ! of the space derivative of highest order it reads (the order zero
   ! when it reads none); with explicit, of the condition's derivative
-  ! along time (condition_relation).
+  ! along time (condition_relation)
   !===================================================================!
 
   subroutine space_face_relation(this, equation, position, columns, slopes, given, field, determined, explicit)
 
-    class(discrete_lagrangian), intent(in)  :: this
-    type(continuous_field)    , intent(in)  :: equation
-    real(dp)                  , intent(in)  :: position(:)
-    integer , allocatable   , intent(out) :: columns(:)
-    real(dp), allocatable   , intent(out) :: slopes(:)
-    real(dp)                  , intent(out) :: given
-    integer                   , intent(out) :: field, determined(2)
+    class(discrete_lagrangian), intent(in)           :: this
+    type(continuous_field)    , intent(in)           :: equation
+    real(dp)                  , intent(in)           :: position(:)
+    integer , allocatable     , intent(out)          :: columns(:)
+    real(dp), allocatable     , intent(out)          :: slopes(:)
+    real(dp)                  , intent(out)          :: given
+    integer                   , intent(out)          :: field, determined(2)
     logical                   , intent(in), optional :: explicit
 
     integer, allocatable :: leaves(:,:)
-    integer :: k
+    integer              :: k
 
     call this % condition_relation(equation, this % points % expansion % values(), position, columns, slopes, given, &
          & leaves, explicit)
@@ -9261,6 +10220,25 @@ contains
     end do
 
   end subroutine space_face_relation
+
+  !===================================================================!
+  ! Returns the moment whose rows a face condition occupies. At the
+  ! block's first instant the components of a field are determined by
+  ! nothing (no family reads back past the first instant), so a
+  ! condition at the manifold's first instant occupies the rows there.
+  ! A condition at the manifold's last instant, whose components the
+  ! family's relations determine from the instants before, occupies the
+  ! free rows at the block's first instant instead: the two-point
+  ! problem, the rows at one end and the columns at the other. It
+  ! therefore requires a block without history whose instants reach the
+  ! last instant; a chain of several blocks cannot satisfy it, and is
+  ! refused.
+  !
+  !      instants   1 ............................ N
+  !      condition  at 1   --> the rows at instant 1
+  !                 at N   --> the free rows at instant 1, the
+  !                            two-point problem
+  !===================================================================!
 
   integer function face_row_moment(this, instant, first, last, depth, instant_moment) result(m)
 
@@ -9282,10 +10260,10 @@ contains
   end function face_row_moment
 
   !===================================================================!
-  ! A condition on a face of the time factor as that relation, and the
-  ! component it determines: of the last field declared among those
-  ! read with coefficient +1 or -1 - the adjoint's, declared after the
-  ! state, at the far face - the component of highest order, the
+  ! Returns a condition on a face of the time factor as that relation,
+  ! and the component it determines: of the last field declared among
+  ! those read with coefficient +1 or -1 (the adjoint's, declared after
+  ! the state, at the far face), the component of highest order, the
   ! relation negated when its coefficient is -1. Invalid input: a
   ! derivative along space, or no component of coefficient +1 or -1.
   !===================================================================!
@@ -9295,14 +10273,14 @@ contains
     class(discrete_lagrangian), intent(in)  :: this
     type(continuous_field)    , intent(in)  :: equation
     real(dp)                  , intent(in)  :: values(:), position(:)
-    integer , allocatable   , intent(out) :: columns(:)
-    real(dp), allocatable   , intent(out) :: slopes(:)
+    integer , allocatable     , intent(out) :: columns(:)
+    real(dp), allocatable     , intent(out) :: slopes(:)
     real(dp)                  , intent(out) :: given
     integer                   , intent(out) :: row
 
     integer, allocatable :: leaves(:,:)
-    real(dp) :: sign
-    integer :: k, row_field, row_degree
+    real(dp)             :: sign
+    integer              :: k, row_field, row_degree
 
     call this % condition_relation(equation, values, position, columns, slopes, given, leaves)
     row_field  = 0
@@ -9329,11 +10307,17 @@ contains
 
   end subroutine face_relation
 
-  ! the instant of a face at a time of the interval
+  !===================================================================!
+  ! Returns the instant of a face at a time of the interval, to a
+  ! relative 1e-12; a time that is not an instant stops the program
+  !===================================================================!
+
   integer function face_instant(this, time)
+
     class(discrete_lagrangian), intent(in) :: this
     real(dp)                  , intent(in) :: time
-    integer :: k
+    integer                                :: k
+
     face_instant = 0
     do k = 1, this % points % num_instants()
        if (abs(this % points % instant(k) - time) <= 1.0e-12_dp * max(1.0_dp, abs(time))) face_instant = k
@@ -9341,23 +10325,28 @@ contains
     if (face_instant == 0) then
        error stop 'operation_lagrangian: a face condition is stated at a time that is not an instant'
     end if
+
   end function face_instant
 
   !===================================================================!
-  ! THE GAUGE ROWS: for each condition on the time factor, the
+  ! Returns the gauge rows: for each condition on the time factor, the
   ! integral of one parent unknown over the region, at every moment
   ! after the history: the sum over the cells of the volume times the
   ! unknown's value, in place of the unknown's own row at the first
-  ! cell. Invalid input: a condition on the time factor that is not
-  ! such an integral.
+  ! cell.
+  !
+  !      row of u at cell 1:   V_1 u_1 + V_2 u_2 + ... + V_n u_n = 0
+  !
+  ! Invalid input: a condition on the time factor that is not such an
+  ! integral.
   !===================================================================!
 
   subroutine gauge_rows_of(this, nm, history_last, at, primary, rows, columns, weights)
 
     class(discrete_lagrangian), intent(in)  :: this
-    integer                 , intent(in)  :: nm, history_last, at(:), primary(:)
-    integer , allocatable   , intent(out) :: rows(:), columns(:)
-    real(dp), allocatable   , intent(out) :: weights(:)
+    integer                   , intent(in)  :: nm, history_last, at(:), primary(:)
+    integer , allocatable     , intent(out) :: rows(:), columns(:)
+    real(dp), allocatable     , intent(out) :: weights(:)
 
     integer :: ncells, count, j, i, m, c, e, f
 

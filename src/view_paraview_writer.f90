@@ -1,9 +1,9 @@
 !=====================================================================!
-! The paraview writer: a mesh and its cell fields as one .vtu file,
-! the UnstructuredGrid format paraview reads.
+! Module that states the paraview writer: a mesh and its cell fields
+! as one .vtu file, the UnstructuredGrid format paraview reads.
 !
-! WHAT THE CALLER SUPPLIES. The mesh is cell-centred - cells as
-! vertices, faces as edges, measurements as fields - and stores no
+! What the caller supplies. The mesh is cell-centred (cells as
+! vertices, faces as edges, measurements as fields) and stores no
 ! corners, so the corners are passed beside it:
 !
 !      m                    the mesh: its cell count and cell_volume()
@@ -17,8 +17,8 @@
 !                           4 tet, 5 hex, 6 prism, 7 pyramid), or
 !                           polygon_cell, or hypercube_cell
 !
-! and the fields to write are passed to the call to write, one column per
-! label; the cell volume is always written first, under 'volume'.
+! and the fields to write are passed to the call to write, one column
+! per label; the cell volume is always written first, under 'volume'.
 !
 !      use view_paraview_writer, only : paraview_writer, hypercube_cell
 !      w = paraview_writer(m, coordinates, cell_vertices, &
@@ -29,13 +29,13 @@
 ! util_string; both are optional and omitted together. A numbered
 ! series of files is read by paraview as steps in time.
 !
-! CELLS ALONE. Without a mesh, the cells are those the corner lists
+! Cells alone. Without a mesh, the cells are those the corner lists
 ! give and no volume is written: a surface, or the bodies of a
 ! mechanism moved to an instant.
 !
 !      w = paraview_writer(coordinates, corners, cell_types)
 !
-! A TIME SERIES. time_series writes the collection paraview reads as
+! A time series. time_series writes the collection paraview reads as
 ! the instants of a motion, each file with its time:
 !
 !      call time_series('rotor.pvd', files, times)
@@ -44,9 +44,9 @@
 ! within the elements: a third of the size, for the many files of a
 ! time series.
 !
-! FROM A GMSH FILE. mesh_from_gmsh discards the corners it reads, so
-! a caller that requires the plot reads them again through the
-! loader and passes them on:
+! From a gmsh file. mesh_from_gmsh discards the corners it reads, so a
+! caller that requires the plot reads them again through the loader
+! and passes them on:
 !
 !      allocate(gl, source=gmsh_loader(file))
 !      call gl % mesh_data(num_vertices, ..., vertices, ..., &
@@ -56,28 +56,30 @@
 !      w = paraview_writer(m, vertices, cell_vertices, &
 !                          num_cell_vertices, cell_types)
 !
-! THE HYPERCUBE. The writer's convention for a cell in any dimension:
-! a cell of 2^ndim corners in tensor order, the first coordinate
-! varying fastest - corner k (from 0) is at the upper end of axis a
-! when bit a-1 of k is set. In two dimensions
+! The hypercube. The writer's convention for a cell in any dimension: a
+! cell of 2^ndim corners in tensor order, the first coordinate varying
+! fastest; corner k (from 0) is at the upper end of axis a when bit
+! a-1 of k is set. In two dimensions
 !
-!      3 ---- 4          corners  1 = (lo, lo)   2 = (hi, lo)
-!      |      |                   3 = (lo, hi)   4 = (hi, hi)
-!      1 ---- 2
+!      tensor order                       paraview's quadrangle cycle
+!      3 ---- 4     1 = (lo, lo)          4 ---- 3
+!      |      |     2 = (hi, lo)          |      |
+!      1 ---- 2     3 = (lo, hi)          1 ---- 2
+!                   4 = (hi, hi)
 !
-! which is NOT paraview's quadrangle cycle; the writer reorders. A
+! which is not paraview's quadrangle cycle; the writer reorders. A
 ! mapped (curved) cell is still a hypercube here: the order is the
 ! parametric one, the coordinates are the images under the map.
 !
-! THE DIMENSION. Paraview draws three coordinates, so the writer
-! draws the axes requested
+! The dimension. Paraview draws three coordinates, so the writer draws
+! the axes requested
 !
 !      axes  = [1, 2, 3]     the default: the first three, or fewer
 !      axes  = [1, 3]        the xz view of a three-dimensional mesh
 !      axes  = [3, 1]        x from the third coordinate, y from the first
 !
-! and the coordinates not drawn are either omitted - a projection,
-! every cell drawn, flat - or fixed - a slice
+! and the coordinates not drawn are either omitted (a projection, every
+! cell drawn, flat) or fixed (a slice)
 !
 !      slice = [0.5]                one value per coordinate not
 !      slice = [0.25, 0.75]         drawn, in coordinate order
@@ -86,66 +88,78 @@
 ! contains its value (the extent is closed, so a slice on a face
 ! retains the cells on both sides) and draws each one's cross-section
 ! there: for a four-dimensional mesh, axes = [1,2,3] with one value
-! draws hexahedra, axes = [1,2] with two values draws quadrangles,
-! one axis with three values draws lines. The cross-section is
-! computed for hypercube cells only - the hypercube one dimension
-! down, its corners interpolated between the two opposite faces at
-! the parameter the value has in the cell's extent, exact when the
-! cell is rectangular and first order when it is mapped. Any other
-! cell type has a clipped polytope for a section, which this writer
-! does not compute, so a slice through it is rejected; a hypercube above
-! three dimensions is drawn only through a slice.
+! draws hexahedra, axes = [1,2] with two values draws quadrangles, one
+! axis with three values draws lines. The cross-section is computed for
+! hypercube cells only: the hypercube one dimension down, its corners
+! interpolated between the two opposite faces at the parameter the
+! value has in the cell's extent, exact when the cell is rectangular
+! and first order when it is mapped. Any other cell type has a clipped
+! polytope for a section, which this writer does not compute, so a
+! slice through it is rejected; a hypercube above three dimensions is
+! drawn only through a slice.
 !
 !      w = paraview_writer(m, coordinates, cell_vertices, &
 !                          num_cell_vertices, cell_types, &
 !                          axes=[1, 2, 3], slice=[0.5_dp])
 !
-! THE PRECONDITIONS. Every array must fit the mesh's cells and the
-! points, the drawn axes must be distinct coordinates, a slice must
-! fix every coordinate not drawn, and a hypercube must have 2^ndim
-! corners; the constructor stops the program otherwise.
+! The preconditions. Every array must fit the mesh's cells and the
+! points, the drawn axes must be distinct coordinates, a slice must fix
+! every coordinate not drawn, and a hypercube must have 2^ndim corners;
+! the constructor stops the program otherwise.
 !
-! THE FILE. Ascii .vtu, points always three wide, Float64 cell data
-! (the cell volume of the mesh, then the labelled fields), the
-! drawn cells only - a slice writes fewer cells than the mesh has,
-! each with its own points.
+! The file. Ascii .vtu, points always three wide, Float64 cell data
+! (the cell volume of the mesh, then the labelled fields), the drawn
+! cells only: a slice writes fewer cells than the mesh has, each with
+! its own points.
+!
+!      <VTKFile type="UnstructuredGrid"> <UnstructuredGrid> <Piece>
+!        <Points>      three coordinates per point
+!        <Cells>       connectivity (0-based), offsets, types
+!        <CellData>    volume, then the labelled fields
+!      </Piece> </UnstructuredGrid> </VTKFile>
 !
 ! Author: Komahan Boopathy (komahan@gatech.edu)
 !=====================================================================!
 
 module view_paraview_writer
 
-  use util_precision , only : dp
+  use util_precision    , only : dp
   use view_mesh_geometry, only : elements, gmsh_kinds, face_kind
-  use util_string    , only : string
-  use field_stored   , only : stored_field
-  use view_mesh      , only : mesh, require
-  use relation_binary, only : ragged
-  use operation_field, only : discrete_field
+  use util_string       , only : string
+  use field_stored      , only : stored_field
+  use view_mesh         , only : mesh, require
+  use relation_binary   , only : ragged
+  use operation_field   , only : discrete_field
   use operation_manifold, only : discrete_manifold
 
   implicit none
 
   private
+
   public :: paraview_writer
   public :: polygon_cell, hypercube_cell
   public :: paraview, time_series
 
-  ! the writer's conventions, since gmsh defines no such elements
+  ! The writer's conventions, since gmsh defines no such elements
   integer, parameter :: polygon_cell   = -1  ! an agglomerated polygon
   integer, parameter :: hypercube_cell = -2  ! 2^ndim corners in tensor order
 
-  ! the paraview cell types absent from the element table: the
-  ! empty cell, which no element maps to, and the polygon
+  ! The paraview cell types absent from the element table: the empty
+  ! cell, which no element maps to, and the polygon
   integer, parameter :: vtk_empty_cell = 0
   integer, parameter :: vtk_polygon    = 7
 
-  !===================================================================!
-  ! This datatype writes a mesh and its cell fields to paraview. It
-  ! stores what is drawn: three coordinates per point, each drawn
-  ! cell's points in order, ragged, its paraview type, and the mesh
-  ! cell it draws - a slice draws fewer cells than the mesh has.
-  !===================================================================!
+  !-------------------------------------------------------------------!
+  ! Type that models the writer of a mesh and its cell fields. It
+  ! stores what is drawn: three coordinates per point, each drawn cell's
+  ! points in order, ragged, its paraview type, and the mesh cell it
+  ! draws; a slice draws fewer cells than the mesh has.
+  !
+  !      points(3, p)                                the drawn points
+  !      cell_points(first_point(i) : first_point(i+1) - 1)
+  !                                                  drawn cell i's points
+  !      types(i), cells(i)                          its type, its mesh cell
+  !-------------------------------------------------------------------!
 
   type :: paraview_writer
 
@@ -155,7 +169,7 @@ module view_paraview_writer
      integer , allocatable :: types(:)
      integer , allocatable :: cells(:)
 
-     ! the mesh's own count and volumes, one per mesh cell
+     ! The mesh's own count and volumes, one per mesh cell
      integer               :: num_cells = 0
      real(dp), allocatable :: volumes(:)
 
@@ -166,10 +180,8 @@ module view_paraview_writer
 
   end type paraview_writer
 
-  !===================================================================!
-  ! This interface admits multiple constructors.
-  !===================================================================!
-
+  ! The constructors: of a mesh and padded corners, of a mesh and
+  ! ragged corners, and of cells alone
   interface paraview_writer
      module procedure construct
      module procedure construct_ragged
@@ -179,9 +191,10 @@ module view_paraview_writer
 contains
 
   !===================================================================!
-  ! A DISCRETE FIELD ON A MANIFOLD, one file per instant: the cells
-  ! of the mesh drawn from their corners, every component a cell
-  ! field named as the field names it, <name>_<instant>.vtu. Invalid
+  ! Writes a discrete field on a manifold, one file per instant: the
+  ! cells of the mesh drawn from their corners, every component a cell
+  ! field named as the field names it, <name>_<instant>.vtu, the
+  ! instant written in four digits, name_0001.vtu first. Invalid
   ! input: a field on a manifold without a region, or on a mesh built
   ! without its corners.
   !===================================================================!
@@ -191,13 +204,13 @@ contains
     type(discrete_field), intent(in) :: field
     character(len=*)    , intent(in) :: name
 
-    type(paraview_writer) :: writer
+    type(paraview_writer)     :: writer
     type(string), allocatable :: labels(:)
     real(dp)    , allocatable :: value(:,:)
-    character(len=250) :: filename
-    integer :: k, c, f, ncells
+    character(len=250)        :: filename
+    integer                   :: k, c, f, ncells
 
-    ! every image has the whole field; one writes it
+    ! Every image has the whole field; one writes it
     if (this_image() /= 1) return
 
     select type (points => field % on)
@@ -233,8 +246,8 @@ contains
   end subroutine paraview
 
   !===================================================================!
-  ! The paraview cell type of a gmsh element number, read from the
-  ! element table, and of the agglomerated polygon. A number the
+  ! Returns the paraview cell type of a gmsh element number, read from
+  ! the element table, and of the agglomerated polygon. A number the
   ! table assigns no paraview type stops the program: a polyhedron needs
   ! its faces listed, which write does not do.
   !===================================================================!
@@ -255,8 +268,8 @@ contains
   end function element_type
 
   !===================================================================!
-  ! The paraview type of a hypercube of n axes: the element of
-  ! dimension n with 2^n vertices - a point, a line, a quadrangle, a
+  ! Returns the paraview type of a hypercube of n axes: the element of
+  ! dimension n with 2^n vertices, a point, a line, a quadrangle, a
   ! hexahedron. Paraview draws nothing above three.
   !===================================================================!
 
@@ -270,8 +283,8 @@ contains
   end function hypercube_type
 
   !===================================================================!
-  ! This is the constructor for the paraview writer. The corners may
-  ! be passed padded - one fixed width, a count per cell - or as a
+  ! Creates the writer of a mesh and its padded corners. The corners
+  ! may be passed padded, one fixed width and a count per cell, or as a
   ! ragged list; the padded form is the ragged one with unused entries.
   !===================================================================!
 
@@ -293,21 +306,21 @@ contains
   end function construct
 
   !===================================================================!
-  ! The writer from the ragged corners. The preconditions: the corner lists
-  ! must fit the mesh's cells and lie among the points, the drawn
-  ! axes must be distinct coordinates, and a slice must fix every
+  ! Creates the writer from the ragged corners. The preconditions: the
+  ! corner lists must fit the mesh's cells and lie among the points, the
+  ! drawn axes must be distinct coordinates, and a slice must fix every
   ! other one.
   !===================================================================!
 
   impure type(paraview_writer) function construct_ragged(m, coordinates, &
        & corners, cell_types, axes, slice) result (this)
 
-    type(mesh), intent(in)           :: m
-    real(dp)  , intent(in)           :: coordinates(:,:)    ! (ndim, point)
-    type(ragged), intent(in)         :: corners             ! each cell's points, in order
-    integer   , intent(in)           :: cell_types(:)
-    integer   , intent(in), optional :: axes(:)
-    real(dp)  , intent(in), optional :: slice(:)
+    type(mesh)  , intent(in)           :: m
+    real(dp)    , intent(in)           :: coordinates(:,:)    ! (ndim, point)
+    type(ragged), intent(in)           :: corners             ! each cell's points, in order
+    integer     , intent(in)           :: cell_types(:)
+    integer     , intent(in), optional :: axes(:)
+    real(dp)    , intent(in), optional :: slice(:)
 
     type(stored_field)   :: volume
     integer              :: ndim, num_points, c, k, n
@@ -330,7 +343,7 @@ contains
        end if
     end do
 
-    ! the axes drawn, and the ones not drawn in coordinate order
+    ! The axes drawn, and the ones not drawn in coordinate order
     if (present(axes)) then
        projection_axes = axes
     else
@@ -363,8 +376,9 @@ contains
   end function construct_ragged
 
   !===================================================================!
-  ! The writer of cells alone, the corner lists giving the cells, the
-  ! coordinates of three or fewer axes drawn as they are; no volume.
+  ! Creates the writer of cells alone, the corner lists giving the
+  ! cells, the coordinates of three or fewer axes drawn as they are; no
+  ! volume
   !===================================================================!
 
   impure type(paraview_writer) function construct_cells(coordinates, corners, cell_types) result (this)
@@ -385,8 +399,12 @@ contains
   end function construct_cells
 
   !===================================================================!
-  ! THE TIME SERIES: the collection of the files of the instants, each
-  ! with its time.
+  ! Writes the time series: the collection of the files of the
+  ! instants, each with its time
+  !
+  !      <VTKFile type="Collection">
+  !        <DataSet timestep="t_k" part="0" file="files(k)"/>   per file
+  !      </VTKFile>
   !===================================================================!
 
   impure subroutine time_series(filename, files, times)
@@ -412,9 +430,9 @@ contains
   end subroutine time_series
 
   !===================================================================!
-  ! The projection: every point, its drawn coordinates first and
+  ! Forms the projection: every point, its drawn coordinates first and
   ! zeros after; every cell, its corners as given, a hypercube's
-  ! reordered to paraview's order along the drawn axes.
+  ! reordered to paraview's order along the drawn axes
   !===================================================================!
 
   subroutine projected(this, coordinates, corners, cell_types, projection_axes)
@@ -426,7 +444,7 @@ contains
     integer              , intent(in)    :: projection_axes(:)
 
     integer, allocatable :: list(:)
-    integer :: ndim, num_points, c, k, n, at
+    integer              :: ndim, num_points, c, k, n, at
 
     ndim       = size(coordinates, 1)
     num_points = size(coordinates, 2)
@@ -461,9 +479,10 @@ contains
   end subroutine projected
 
   !===================================================================!
-  ! The slice: the cells whose extent along every fixed axis contains
-  ! the value there, each drawn as its cross-section - a hypercube of
-  ! the drawn axes with its own points, shared with no other cell.
+  ! Forms the slice: the cells whose extent along every fixed axis
+  ! contains the value there, each drawn as its cross-section, a
+  ! hypercube of the drawn axes with its own points, shared with no
+  ! other cell
   !===================================================================!
 
   subroutine sectioned(this, coordinates, corners, projection_axes, fixed, slice)
@@ -475,12 +494,12 @@ contains
     integer              , intent(in)    :: fixed(:)
     real(dp)             , intent(in)    :: slice(:)
 
-    integer :: num_projected_corners, num_section_cells, c, i, j, k
+    integer               :: num_projected_corners, num_section_cells, c, i, j, k
     real(dp), allocatable :: section(:,:)
 
     num_projected_corners = 2 ** size(projection_axes)
 
-    ! the retained cells first, so the arrays are sized once
+    ! The retained cells first, so the arrays are sized once
     this % cells = pack([(c, c = 1, this % num_cells)], &
          & [(within(coordinates(:, corners % list(c)), fixed, slice), c = 1, this % num_cells)])
     num_section_cells = size(this % cells)
@@ -497,7 +516,7 @@ contains
        do j = 1, num_projected_corners
           k = (i - 1) * num_projected_corners + j
           this % points(1:size(projection_axes), k) = section(projection_axes, j)
-          this % cell_points(k)           = k
+          this % cell_points(k)                     = k
        end do
        this % first_point(i) = (i - 1) * num_projected_corners + 1
        this % types(i)       = hypercube_type(size(projection_axes))
@@ -507,9 +526,9 @@ contains
   end subroutine sectioned
 
   !===================================================================!
-  ! Whether a cell's extent along every fixed axis contains the slice
-  ! value there; the extent is closed, so a slice on a face retains
-  ! the cells on both sides.
+  ! Returns whether a cell's extent along every fixed axis contains the
+  ! slice value there; the extent is closed, so a slice on a face
+  ! retains the cells on both sides
   !===================================================================!
 
   pure logical function within(corners, fixed, slice)
@@ -530,9 +549,9 @@ contains
   end function within
 
   !===================================================================!
-  ! The cross-section of one hypercube: each fixed axis is cut in
-  ! turn, and the corners that remain are put in paraview's order
-  ! along the drawn axes.
+  ! Returns the cross-section of one hypercube: each fixed axis is cut
+  ! in turn, and the corners that remain are put in paraview's order
+  ! along the drawn axes
   !===================================================================!
 
   pure function sectioned_corners(corners, fixed, slice, projection_axes) result (section)
@@ -544,7 +563,7 @@ contains
     real(dp), allocatable :: section(:,:)
 
     integer, allocatable :: remaining(:)
-    integer :: f, j, k
+    integer              :: f, j, k
 
     section = corners
     remaining = [(k, k = 1, size(corners, 1))]
@@ -560,11 +579,20 @@ contains
   end function sectioned_corners
 
   !===================================================================!
-  ! One cut: the hypercube's corners, in tensor order with bit j-1
-  ! running along the axis cut, become the hypercube one dimension
+  ! Returns one cut: the hypercube's corners, in tensor order with bit
+  ! j-1 running along the axis cut, become the hypercube one dimension
   ! down, each corner interpolated between the two faces at the
   ! parameter the slice value has in the cell's extent. A cell flat
   ! along the axis is its own section.
+  !
+  !      k1 = k0 + 2^(j-1)   *-----------*     the upper face
+  !                          |           |
+  !      value  - - - - - -  x - - - - - x     (1 - t) x_k0 + t x_k1
+  !                          |           |
+  !      k0                  *-----------*     the lower face
+  !
+  !      t = (value - lo) / (hi - lo); k0 is k with a zero bit inserted
+  !      at position j-1
   !===================================================================!
 
   pure function cross_section(corners, axis, j, value) result (section)
@@ -594,10 +622,13 @@ contains
   end function cross_section
 
   !===================================================================!
-  ! The permutation from tensor order over the remaining axes to
-  ! paraview's order: the corners re-indexed with the drawn axes as
-  ! the leading bits, in the order drawn, then paraview's cycle of
-  ! the quadrangle and of the hexahedron's two faces.
+  ! Returns the permutation from tensor order over the remaining axes
+  ! to paraview's order: the corners re-indexed with the drawn axes as
+  ! the leading bits, in the order drawn, then paraview's cycle of the
+  ! quadrangle and of the hexahedron's two faces,
+  !
+  !      quadrangle     1 2 4 3
+  !      hexahedron     1 2 4 3 | 5 6 8 7
   !===================================================================!
 
   pure function hypercube_order(n, remaining, projection_axes) result (perm)
@@ -607,9 +638,9 @@ contains
     integer, allocatable :: perm(:)
 
     integer, allocatable :: order(:), tensor(:), ordering(:)
-    integer :: c, q, r, k
+    integer              :: c, q, r, k
 
-    ! the drawn axes that remain, then the rest of the remaining
+    ! The drawn axes that remain, then the rest of the remaining
     order = pack(projection_axes, [(any(remaining == projection_axes(k)), k = 1, size(projection_axes))])
     order = [order, pack(remaining, [(all(projection_axes /= remaining(k)), k = 1, size(remaining))])]
 
@@ -636,23 +667,23 @@ contains
   end function hypercube_order
 
   !===================================================================!
-  ! Write the mesh and the optional cell fields to a .vtu file in the
-  ! UnstructuredGrid format.
+  ! Writes the mesh and the optional cell fields to a .vtu file in the
+  ! UnstructuredGrid format, ascii
   !===================================================================!
 
   impure subroutine write(this, filename, phic, solution_labels)
 
-    ! These are the arguments.
-    class(paraview_writer) , intent(in)           :: this
-    character(len=*)       , intent(in)           :: filename
-    real(dp)               , intent(in), optional :: phic(:,:) ! (icell, ivar)
-    type(string)           , intent(in), optional :: solution_labels(:)
+    ! These are the arguments
+    class(paraview_writer), intent(in)           :: this
+    character(len=*)      , intent(in)           :: filename
+    real(dp)              , intent(in), optional :: phic(:,:) ! (icell, ivar)
+    type(string)          , intent(in), optional :: solution_labels(:)
 
-    ! These are the locals.
-    integer :: ierr
-    integer :: fhandle
-    integer :: iresult
-    integer :: num_projection_axes
+    ! These are the locals; num_projection_axes counts the drawn cells
+    integer            :: ierr
+    integer            :: fhandle
+    integer            :: iresult
+    integer            :: num_projection_axes
     character(len=250) :: message
 
     num_projection_axes = size(this % cells)
@@ -662,7 +693,7 @@ contains
        call require(size(phic, 2) == size(solution_labels), 'one label per field')
     end if
 
-    ! Open the output file for formatted writing.
+    ! Open the output file for formatted writing
     open(newunit=fhandle, file=trim(filename), iostat=ierr, action='write', &
          & form='formatted', status='replace')
     if (ierr .ne. 0) then
@@ -672,7 +703,7 @@ contains
     end if
 
     !-----------------------------------------------------------------!
-    ! Write the basic header information.
+    ! Write the basic header information
     !-----------------------------------------------------------------!
 
     write(fhandle, '(a)') '<VTKFile type="UnstructuredGrid" version="0.1" byte_order="LittleEndian">'
@@ -681,7 +712,7 @@ contains
          & '" NumberOfCells="', num_projection_axes, '">'
 
     !-----------------------------------------------------------------!
-    ! Write the vertices.
+    ! Write the vertices
     !-----------------------------------------------------------------!
 
     write_points: block
@@ -705,19 +736,20 @@ contains
       write(fhandle, '(a)') '<Cells>'
 
       !---------------------------------------------------------------!
-      ! Write the cell-to-vertex connectivities.
+      ! Write the cell-to-vertex connectivities
       !---------------------------------------------------------------!
 
       write(fhandle, '(a)') '<DataArray type="Int32" Name="connectivity" format="ascii">'
       do icell = 1, num_projection_axes
-         ! Correct for paraview's 0-based numbering.
+         ! Correct for paraview's 0-based numbering
          write(fhandle, '(*(1x,i0))') (this % cell_points(jvertex) - 1, &
               & jvertex = this % first_point(icell), this % first_point(icell + 1) - 1)
       end do
       write(fhandle, '(a)') '</DataArray>'
 
       !---------------------------------------------------------------!
-      ! Write the cell-to-vertex connectivity offsets.
+      ! Write the cell-to-vertex connectivity offsets: the end of each
+      ! cell's points, counted from zero
       !---------------------------------------------------------------!
 
       write(fhandle, '(a)') '<DataArray type="Int32" Name="offsets" format="ascii">'
@@ -727,7 +759,7 @@ contains
       write(fhandle, '(a)') '</DataArray>'
 
       !---------------------------------------------------------------!
-      ! Write the cell types.
+      ! Write the cell types
       !---------------------------------------------------------------!
 
       write(fhandle, '(a)') '<DataArray type="UInt8" Name="types" format="ascii">'
@@ -741,12 +773,12 @@ contains
       write(fhandle, '(a)') '<PointData></PointData>'
 
       !---------------------------------------------------------------!
-      ! Write the cell data.
+      ! Write the cell data
       !---------------------------------------------------------------!
 
       write(fhandle, '(a)') '<CellData>'
 
-      ! Export the cell volumes, of a writer with a mesh.
+      ! Export the cell volumes, of a writer with a mesh
       if (allocated(this % volumes)) then
          write(fhandle, '(a)') '<DataArray type="Float64" Name="volume" format="ascii">'
          do icell = 1, num_projection_axes
@@ -770,7 +802,7 @@ contains
 
     end block write_cells
 
-    ! Close the opened tags.
+    ! Close the opened tags
     write(fhandle, '(a)') '</Piece>'
     write(fhandle, '(a)') '</UnstructuredGrid>'
     write(fhandle, '(a)') '</VTKFile>'
@@ -780,10 +812,12 @@ contains
   end subroutine write
 
   !===================================================================!
-  ! The file with its data in binary: the same points, cells and cell
-  ! fields as write, each array its byte count, an unsigned 32-bit
+  ! Writes the file with its data in binary: the same points, cells and
+  ! cell fields as write, each array its byte count, an unsigned 32-bit
   ! integer, and its bytes, little endian, encoded together in base64
   ! within the element; and a vector at every point when given.
+  !
+  !      base64( [ byte count, 4 bytes | the array's bytes ] )
   !===================================================================!
 
   impure subroutine write_binary(this, filename, phic, solution_labels, point_vectors, vector_label)
@@ -794,7 +828,7 @@ contains
     character(len=*)      , intent(in)           :: filename
     real(dp)              , intent(in), optional :: phic(:,:)
     type(string)          , intent(in), optional :: solution_labels(:)
-    ! a vector at every point, (3, points), under its label
+    ! A vector at every point, (3, points), under its label
     real(dp)              , intent(in), optional :: point_vectors(:,:)
     character(len=*)      , intent(in), optional :: vector_label
 
@@ -859,26 +893,36 @@ contains
 
   contains
 
-    ! the byte count and the bytes, in base64
+    !-----------------------------------------------------------------!
+    ! Returns the byte count and the bytes, in base64
+    !-----------------------------------------------------------------!
+
     function encoded(bytes) result(text)
-      integer(int8), intent(in) :: bytes(:)
+      integer(int8)   , intent(in)  :: bytes(:)
       character(len=:), allocatable :: text
       text = base64([transfer(int(size(bytes), int32), [0_int8]), bytes])
     end function encoded
 
   end subroutine write_binary
 
-  ! the bytes in base64: each three bytes four characters of the
-  ! alphabet, the last group padded with =
+  !===================================================================!
+  ! Returns the bytes in base64: each three bytes four characters of
+  ! the alphabet, the last group padded with =
+  !
+  !      bytes          b1          b2          b3
+  !      bits           aaaaaabb    bbbbcccc    ccdddddd
+  !      characters     a           b           c           d
+  !===================================================================!
+
   pure function base64(bytes) result(text)
 
     use iso_fortran_env, only : int8
 
-    integer(int8), intent(in) :: bytes(:)
+    integer(int8)   , intent(in)  :: bytes(:)
     character(len=:), allocatable :: text
 
     character(len=64), parameter :: alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
-    integer :: n, i, k, b1, b2, b3, c
+    integer                      :: n, i, k, b1, b2, b3, c
 
     n = size(bytes)
     allocate(character(len=4 * ((n + 2) / 3)) :: text)

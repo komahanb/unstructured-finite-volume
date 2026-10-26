@@ -1,9 +1,31 @@
 !=====================================================================!
-! This module reads gmsh mesh files in the MSH 4.1 format (gmsh 4.x,
+! Module that reads gmsh mesh files in the MSH 4.1 format (gmsh 4.x,
 ! e.g. 4.15). The format is documented here:
 ! http://gmsh.info/doc/texinfo/gmsh.html#MSH-file-format
 !
+! The sections the parser reads, each opened by $Name and closed by
+! $EndName:
+!
+!      $MeshFormat      version  file-type  data-size
+!      $PhysicalNames   count, then  dimension  tag  "name"  per line
+!      $Entities        numPoints numCurves numSurfaces numVolumes,
+!                       then one line per entity:
+!                         point     tag x y z numPhys phys ...
+!                         other     tag bbox(6) numPhys phys ...
+!      $Nodes           numBlocks numNodes minTag maxTag, then per block
+!                         entityDim entityTag parametric numNodesInBlock
+!                         one node tag per line
+!                         one x y z per line
+!      $Elements        numBlocks numElements minTag maxTag, then per block
+!                         entityDim entityTag elementType numElementsInBlock
+!                         elementTag node1 node2 ...  per line
+!      $Periodic        numLinks, then per link
+!                         entityDim entityTag entityTagMaster
+!                         numAffine affine(16)
+!                         numPairs, then  nodeTag nodeTagMaster  per line
+!
 ! 4.1 differs from the legacy 2.2 in three ways the parser handles:
+!
 !   - $Entities: an element line no longer lists a physical tag; the
 !     element belongs to a geometric entity that stores the tag. So the
 !     per-element tag is a lookup:
@@ -11,8 +33,8 @@
 !        element -> (entityDim, entityTag) -> physical tag
 !
 !   - $Nodes is block-structured: per entity block, all node tags then
-!     all coordinates (node tags may be sparse - mapped through a table
-!     from number to position).
+!     all coordinates. Node tags may be sparse, and are mapped through a
+!     table from number to position.
 !   - $Elements is block-structured: per entity block, element lines
 !     with no per-element tag list.
 !
@@ -24,48 +46,42 @@
 
 module view_gmsh_loader
 
-  ! Import the dependencies.
-  use util_precision  , only : dp
-  use view_mesh_loader , only : mesh_loader
-  use util_file            , only : file
-  use util_string          , only : string
-  use view_mesh_geometry   , only : element_dimension, &
+  use util_precision    , only : dp
+  use view_mesh_loader  , only : mesh_loader
+  use util_file         , only : file
+  use util_string       , only : string
+  use view_mesh_geometry, only : element_dimension, &
        & element_num_vertices, widest_element
-  use util_verbosity      , only : verbosity
+  use util_verbosity    , only : verbosity
 
   implicit none
 
   private
+
   public :: gmsh_loader
 
-  !-------------------------------------------------------------------!
-  ! The sections the parser reads, in the order they are numbered.
-  !-------------------------------------------------------------------!
-
+  ! The sections the parser reads, in the order they are numbered
   integer, parameter :: num_sections = 6
   integer, parameter :: MESH = 1, PHYSICAL_NAMES = 2, ENTITIES = 3, NODES = 4, ELEMENTS = 5, PERIODIC = 6
   character(len=13), parameter :: sections(num_sections) = &
        & [character(len=13) :: 'MeshFormat', 'PhysicalNames', 'Entities', 'Nodes', 'Elements', 'Periodic']
 
-  !-------------------------------------------------------------------!
-  ! The interface to construct a mesh_loader for GMSH.
-  !-------------------------------------------------------------------!
-
+  ! The interface to construct a mesh_loader for gmsh
   interface gmsh_loader
      module procedure create
   end interface gmsh_loader
 
   !-------------------------------------------------------------------!
-  ! The gmsh_loader datatype.
+  ! Type that models the gmsh loader: the mesh file it reads
   !-------------------------------------------------------------------!
 
   type, extends(mesh_loader) :: gmsh_loader
 
-     type(file) :: file ! The mesh file.
+     type(file) :: file ! The mesh file
 
    contains
 
-     ! Implement the deferred procedure from the interface.
+     ! Implement the deferred procedures from the interface
      procedure :: mesh_data
      procedure :: periodic_links
 
@@ -74,26 +90,29 @@ module view_gmsh_loader
 contains
 
   !===================================================================!
-  ! Constructor: point at the .msh file and size the line buffer.
+  ! Creates a loader of a .msh file. MSH 4.1 lines are long (entity
+  ! bounding boxes, coordinate triples), well past the default
+  ! 100-character buffer, so the file reads whole lines of up to 4096.
   !===================================================================!
 
   impure type(gmsh_loader) function create(filename) result (this)
 
     type(character(*)), intent(in) :: filename
 
-    !----------------------------------------------------------------!
-    ! MSH 4.1 lines are long (entity bounding boxes, coordinate
-    ! triples), well past the default 100-character buffer, so the
-    ! file reads whole lines.
-    !----------------------------------------------------------------!
-
     this % file = file(filename, 4096)
 
   end function create
 
-  !====================================================================!
-  ! Supply all the information needed to create a mesh object.
-  !====================================================================!
+  !===================================================================!
+  ! Supplies all the information needed to create a mesh object. The
+  ! elements are classified by their dimension relative to the
+  ! highest present:
+  !
+  !      element dimension    is a        in 3d          in 2d
+  !      the highest          cell        tetrahedron    triangle
+  !      one lower            face        triangle       line
+  !      two lower            edge        line           point
+  !===================================================================!
 
   impure subroutine mesh_data(this, &
        & num_vertices, vertex_numbers, vertex_tags , vertices ,  &
@@ -103,16 +122,16 @@ contains
        & cell_types  , face_types    , edge_types  , &
        & num_tags    , tag_numbers   , tag_physical_dimensions, tag_info )
 
-    ! The arguments.
-    class(gmsh_loader)  , intent(in)   :: this
+    ! The arguments
+    class(gmsh_loader), intent(in) :: this
 
-    ! The vertices.
+    ! The vertices
     integer , intent(out)              :: num_vertices
     integer , intent(out), allocatable :: vertex_numbers(:)
     integer , intent(out), allocatable :: vertex_tags(:)
     real(dp), intent(out), allocatable :: vertices(:,:)
 
-    ! The edges.
+    ! The edges
     integer, intent(out)              :: num_edges
     integer, intent(out), allocatable :: edge_numbers(:)
     integer, intent(out), allocatable :: edge_tags(:)
@@ -120,7 +139,7 @@ contains
     integer, intent(out), allocatable :: num_edge_vertices(:)
     integer, intent(out), allocatable :: edge_types(:)
 
-    ! The faces.
+    ! The faces
     integer, intent(out)              :: num_faces
     integer, intent(out), allocatable :: face_numbers(:)
     integer, intent(out), allocatable :: face_tags(:)
@@ -128,7 +147,7 @@ contains
     integer, intent(out), allocatable :: num_face_vertices(:)
     integer, intent(out), allocatable :: face_types(:)
 
-    ! The cells.
+    ! The cells
     integer, intent(out)              :: num_cells
     integer, intent(out), allocatable :: cell_numbers(:)
     integer, intent(out), allocatable :: cell_tags(:)
@@ -136,27 +155,27 @@ contains
     integer, intent(out), allocatable :: num_cell_vertices(:)
     integer, intent(out), allocatable :: cell_types(:)
 
-    ! These tag the boundaries and the domain with integers and strings.
+    ! These tag the boundaries and the domain with integers and strings
     integer     , intent(out)              :: num_tags
     integer     , allocatable, intent(out) :: tag_numbers(:)
     integer     , allocatable, intent(out) :: tag_physical_dimensions(:)
     type(string), allocatable, intent(out) :: tag_info(:)
 
-    ! Local variables.
+    ! The lines of the file
     type(string), allocatable, dimension(:) :: lines
 
-    ! The section markers: the line each section starts and ends on.
+    ! The section markers: the line each section starts and ends on
     integer :: section_start(num_sections), section_end(num_sections), s
 
-    ! The entity table: each entity's dimension, tag and physical tag.
+    ! The entity table: each entity's dimension, tag and physical tag
     integer, allocatable :: ent_dim(:), ent_tag(:), ent_phys(:)
 
     integer :: mesh_dim
 
-    ! the position in vertex_numbers of each node number
+    ! The position in vertex_numbers of each node number
     integer, allocatable :: position(:)
 
-    ! Load the mesh into memory.
+    ! Load the mesh into memory
     if (verbosity .ge. 1) write(*,'(a,a)') "Loading mesh file :", this % file % filename
     call this % file % read_lines(lines)
 
@@ -176,7 +195,7 @@ contains
 
       if (verbosity .ge. 1) write(*,'(a)') "Reading mesh information..."
 
-      ! The first line of $MeshFormat contains the version number.
+      ! The first line of $MeshFormat contains the version number
       associate(mlines => lines(section_start(MESH)+1:section_start(MESH)+1))
         call mlines(1) % tokenize(" ", num_tokens, tokens)
         if (floor(tokens(1) % as_real()) .ne. 4) then
@@ -201,28 +220,26 @@ contains
 
       associate(tag_lines => lines(section_start(PHYSICAL_NAMES)+1:section_end(PHYSICAL_NAMES)-1))
 
-        ! Set the intent(out) variable for the number of tags present.
+        ! Set the intent(out) variable for the number of tags present
         num_tags = tag_lines(1) % as_integer()
 
-        ! Allocate space for the other two return variables.
+        ! Allocate space for the other two return variables
         allocate(tag_info(num_tags))
         allocate(tag_numbers(num_tags), tag_physical_dimensions(num_tags), source=0)
 
         do iline = 1, num_tags
 
-           ! Tokenize on the space delimiter.
+           ! Tokenize on the space delimiter
            call tag_lines(iline+1) % tokenize(" ", num_tokens, tokens)
 
-           ! The first token is the physical dimension; the second is the tag number.
+           ! The first token is the physical dimension; the second is
+           ! the tag number
            tag_physical_dimensions(iline) = tokens(1) % as_integer()
            tag_numbers(iline)             = tokens(2) % as_integer()
 
-           !----------------------------------------------------------!
            ! The name is the quoted string on the line. Take everything
            ! between the first and last double quote so names with
            ! spaces (e.g. "outer boundary") are preserved.
-           !----------------------------------------------------------!
-
            associate(s => tag_lines(iline+1) % str)
              tag_info(iline) = string(s(index(s,'"')+1 : index(s,'"',back=.true.)-1))
            end associate
@@ -243,14 +260,22 @@ contains
 
     end block process_tags
 
-    !----------------------------------------------------------------!
+    !-----------------------------------------------------------------!
     ! Build the entity table from $Entities. An element takes its
     ! physical tag from the entity it belongs to (a 4.1 change). The
     ! header counts the points, curves, surfaces and volumes, and the
     ! lines follow in that order; a point line reads tag x y z numPhys
     ! phys..., the others tag bbox(6) numPhys phys..., so numPhys is
-    ! token 5 of a point and token 8 otherwise.
-    !----------------------------------------------------------------!
+    ! token 5 of a point and token 8 otherwise:
+    !
+    !      point    tag  x  y  z  numPhys  phys
+    !      token    1    2  3  4  5        6
+    !      other    tag  xmin ymin zmin xmax ymax zmax  numPhys  phys
+    !      token    1    2    3    4    5    6    7     8        9
+    !
+    ! An entity of no physical group has physical tag zero; of several,
+    ! the first.
+    !-----------------------------------------------------------------!
 
     process_entities: block
 
@@ -285,11 +310,11 @@ contains
 
     end block process_entities
 
-    !----------------------------------------------------------------!
+    !-----------------------------------------------------------------!
     ! $Nodes is block-structured: per block, all node tags then all
     ! coordinates. Node tags can be sparse and are mapped through a
     ! table from number to position, formed once.
-    !----------------------------------------------------------------!
+    !-----------------------------------------------------------------!
 
     process_nodes: block
 
@@ -312,23 +337,21 @@ contains
 
       do ib = 1, numblocks
 
-         ! The block header reads: entityDim entityTag parametric numNodesInBlock.
+         ! The block header reads: entityDim entityTag parametric
+         ! numNodesInBlock
          call lines(il) % tokenize(" ", num_tokens, tokens)
          k  = tokens(4) % as_integer()
          il = il + 1
 
-         !------------------------------------------------------------!
          ! The node tags are listed one integer per line, so they are
          ! read directly; tokenize requires a delimiter and a single
-         ! value contains none.
-         !------------------------------------------------------------!
-
+         ! value contains none
          do i = 1, k
             read(lines(il) % str, *) vertex_numbers(ivert+i)
             il = il + 1
          end do
 
-         ! Read the matching coordinates.
+         ! Read the matching coordinates
          do i = 1, k
             read(lines(il) % str, *) vertices(1, ivert+i), vertices(2, ivert+i), vertices(3, ivert+i)
             il = il + 1
@@ -349,12 +372,17 @@ contains
 
     position = position_of_number(vertex_numbers)
 
-    !----------------------------------------------------------------!
+    !-----------------------------------------------------------------!
     ! $Elements is block-structured. The top dimension contains the
-    ! cells, one lower the faces, two lower the edges (so 2d and 3d
-    ! are both handled). The physical tag of each element comes from
-    ! its block's entity.
-    !----------------------------------------------------------------!
+    ! cells, one lower the faces, two lower the edges (so 2d and 3d are
+    ! both handled). The physical tag of each element comes from its
+    ! block's entity. Three passes over the blocks:
+    !
+    !      A    the mesh's top dimension, from the element types present
+    !      B    the cells, faces and edges counted, and their arrays
+    !           allocated as wide as the widest element of each
+    !      C    each element recorded, its nodes mapped to positions
+    !-----------------------------------------------------------------!
 
     process_elements: block
 
@@ -371,7 +399,8 @@ contains
       numblocks = tokens(1) % as_integer()
       il0       = section_start(ELEMENTS) + 2
 
-      ! Pass A finds the mesh (top) dimension from the element types present.
+      ! Pass A finds the mesh (top) dimension from the element types
+      ! present
       mesh_dim = 0
       il = il0
       do ib = 1, numblocks
@@ -382,7 +411,7 @@ contains
          il = il + 1 + k
       end do
 
-      ! Pass B counts the cells, faces and edges by relative dimension.
+      ! Pass B counts the cells, faces and edges by relative dimension
       num_cells = 0
       num_faces = 0
       num_edges = 0
@@ -409,7 +438,7 @@ contains
       end if
 
       ! Allocate space for the cells, the faces and the edges, each as
-      ! wide as the widest element of its dimension.
+      ! wide as the widest element of its dimension
       allocate(cell_numbers(num_cells), num_cell_vertices(num_cells), cell_tags(num_cells), &
            & cell_types(num_cells), cell_vertices(widest_element(3), num_cells), source=0)
       allocate(face_numbers(num_faces), num_face_vertices(num_faces), face_tags(num_faces), &
@@ -417,12 +446,14 @@ contains
       allocate(edge_numbers(num_edges), num_edge_vertices(num_edges), edge_tags(num_edges), &
            & edge_types(num_edges), edge_vertices(widest_element(1), num_edges), source=0)
 
-      ! Pass C fills the arrays, taking the physical tag from the block's entity.
+      ! Pass C fills the arrays, taking the physical tag from the
+      ! block's entity
       filled = 0
       il = il0
       do ib = 1, numblocks
 
-         ! The block header reads: entityDim entityTag elementType numElementsInBlock.
+         ! The block header reads: entityDim entityTag elementType
+         ! numElementsInBlock
          call lines(il) % tokenize(" ", num_tokens, tokens)
          bdim  = tokens(1) % as_integer()
          btag  = tokens(2) % as_integer()
@@ -463,7 +494,7 @@ contains
 
       if (allocated(tokens)) deallocate(tokens)
 
-      ! Warn when no face has a physical tag.
+      ! Warn when no face has a physical tag
       if (count(face_tags .ne. 0) .eq. 0) then
          write(*,*) "no face has a physical tag - the mesh cannot be used for simulation"
       end if
@@ -476,10 +507,10 @@ contains
 
   contains
 
-    !==================================================================!
-    ! Return the physical tag of the entity (edim, etag), or 0 if it
-    ! belongs to no physical group.
-    !==================================================================!
+    !-----------------------------------------------------------------!
+    ! Returns the physical tag of the entity (edim, etag), or 0 if it
+    ! belongs to no physical group
+    !-----------------------------------------------------------------!
 
     pure integer function entity_phys(edim, etag)
 
@@ -493,11 +524,11 @@ contains
 
     end function entity_phys
 
-    !==================================================================!
-    ! Record one element line - its number, then its nodes - at
-    ! position `at` of one of the three element lists, the nodes
-    ! mapped from file tags to positions in vertex_numbers.
-    !==================================================================!
+    !-----------------------------------------------------------------!
+    ! Records one element line, its number and then its nodes, at
+    ! position at of one of the three element lists, the nodes mapped
+    ! from file tags to positions in vertex_numbers
+    !-----------------------------------------------------------------!
 
     pure subroutine record(tokens, etype, phys, nv, at, numbers, types, tags, counts, vertices)
 
@@ -519,37 +550,45 @@ contains
 
   end subroutine mesh_data
 
-  !====================================================================!
-  ! THE PERIODIC LINKS of the file's $Periodic section, when present:
-  ! each link identifies one entity with a master entity under a
-  ! translation, master + translation = image, and lists the vertex
+  !===================================================================!
+  ! Returns the periodic links of the file's $Periodic section, when
+  ! present: each link identifies one entity with a master entity under
+  ! a translation, master + translation = image, and lists the vertex
   ! pairs (image, master) it identifies. The vertices are positions in
   ! vertex_numbers, the array mesh_data returns. A link whose affine
-  ! transformation is not a translation is invalid input: the mesh
-  ! then identifies entities under a rotation, which the periodic
-  ! face shift does not represent.
+  ! transformation is not a translation is invalid input: the mesh then
+  ! identifies entities under a rotation, which the periodic face shift
+  ! does not represent.
   !
   !      first(l), last(l)   the pairs of link l, positions in image/master
   !      translation(:, l)   the three components of the translation
-  !====================================================================!
+  !
+  ! The affine matrix is stated by rows, so the translation is its last
+  ! column, entries 4, 8 and 12; the rest must be the identity:
+  !
+  !      | 1  0  0  t_x |
+  !      | 0  1  0  t_y |
+  !      | 0  0  1  t_z |
+  !      | 0  0  0  1   |
+  !===================================================================!
 
   impure subroutine periodic_links(this, vertex_numbers, first, last, image, master, translation)
 
-    class(gmsh_loader)  , intent(in)  :: this
-    integer             , intent(in)  :: vertex_numbers(:)
-    integer, allocatable, intent(out) :: first(:), last(:), image(:), master(:)
+    class(gmsh_loader)   , intent(in)  :: this
+    integer              , intent(in)  :: vertex_numbers(:)
+    integer , allocatable, intent(out) :: first(:), last(:), image(:), master(:)
     real(dp), allocatable, intent(out) :: translation(:,:)
 
     type(string), allocatable :: lines(:), tokens(:)
-    integer :: section_start(num_sections), section_end(num_sections)
-    integer :: num_links, num_tokens, il, l, num_affine, num_pairs, i, at, tag_image, tag_master
-    real(dp), allocatable :: affine(:)
-    integer , allocatable :: position(:)
-    real(dp), parameter :: identity(16) = [1.0_dp, 0.0_dp, 0.0_dp, 0.0_dp, &
-         &                                 0.0_dp, 1.0_dp, 0.0_dp, 0.0_dp, &
-         &                                 0.0_dp, 0.0_dp, 1.0_dp, 0.0_dp, &
-         &                                 0.0_dp, 0.0_dp, 0.0_dp, 1.0_dp]
-    character(len=250) :: message
+    integer                   :: section_start(num_sections), section_end(num_sections)
+    integer                   :: num_links, num_tokens, il, l, num_affine, num_pairs, i, at, tag_image, tag_master
+    real(dp)    , allocatable :: affine(:)
+    integer     , allocatable :: position(:)
+    real(dp)    , parameter   :: identity(16) = [1.0_dp, 0.0_dp, 0.0_dp, 0.0_dp, &
+         &                                       0.0_dp, 1.0_dp, 0.0_dp, 0.0_dp, &
+         &                                       0.0_dp, 0.0_dp, 1.0_dp, 0.0_dp, &
+         &                                       0.0_dp, 0.0_dp, 0.0_dp, 1.0_dp]
+    character(len=250)        :: message
 
     call this % file % read_lines(lines)
     call find_tags(lines, section_start, section_end)
@@ -564,7 +603,7 @@ contains
     read(lines(il) % str, *) num_links
     allocate(first(num_links), last(num_links), translation(3, num_links))
 
-    ! one pass counts the pairs, the second records them
+    ! One pass counts the pairs, the second records them
     num_pairs = 0
     il = il + 1
     do l = 1, num_links
@@ -581,13 +620,13 @@ contains
     il = section_start(PERIODIC) + 2
     do l = 1, num_links
 
-       ! the link's line reads: entityDim entityTag entityTagMaster
+       ! The link's line reads: entityDim entityTag entityTagMaster
        call lines(il) % tokenize(" ", num_tokens, tokens)
        tag_image  = tokens(2) % as_integer()
        tag_master = tokens(3) % as_integer()
        il = il + 1
 
-       ! the affine line reads: numAffine, then the 4 x 4 matrix by rows
+       ! The affine line reads: numAffine, then the 4 x 4 matrix by rows
        call lines(il) % tokenize(" ", num_tokens, tokens)
        num_affine = tokens(1) % as_integer()
        if (num_affine /= 16) then
@@ -606,7 +645,7 @@ contains
        end if
        il = il + 1
 
-       ! the pairs: nodeTag nodeTagMaster, one per line
+       ! The pairs: nodeTag nodeTagMaster, one per line
        read(lines(il) % str, *) num_pairs
        il = il + 1
        first(l) = at + 1
@@ -626,11 +665,11 @@ contains
 
   end subroutine periodic_links
 
-  !====================================================================!
-  ! Scan the file for the start and end line of each section the
-  ! parser reads: $Name opens a section and $EndName closes it. A
-  ! section absent from the file has both lines zero.
-  !====================================================================!
+  !===================================================================!
+  ! Returns the start and end line of each section the parser reads:
+  ! $Name opens a section and $EndName closes it. A section absent from
+  ! the file has both lines zero.
+  !===================================================================!
 
   pure subroutine find_tags(lines, section_start, section_end)
 
@@ -655,22 +694,29 @@ contains
 
   end subroutine find_tags
 
-  !====================================================================!
-  ! The position of each node number in the list of numbers, the first
-  ! where a number repeats: a table indexed by number, so that reading
-  ! an element's nodes is linear in the elements; and a number's
-  ! position in it, zero for a number the list does not contain.
-  !====================================================================!
+  !===================================================================!
+  ! Returns the position of each node number in the list of numbers,
+  ! the first where a number repeats: a table indexed by number, so
+  ! that reading an element's nodes is linear in the elements.
+  !
+  !      numbers           [ 7  3  12 ]
+  !      position(1:12)    [ 0 0 2 0 0 0 1 0 0 0 0 3 ]
+  !===================================================================!
 
   pure function position_of_number(numbers) result(position)
-    integer, intent(in) :: numbers(:)
+    integer, intent(in)  :: numbers(:)
     integer, allocatable :: position(:)
-    integer :: i
+    integer              :: i
     allocate(position(max(0, maxval(numbers))), source=0)
     do i = size(numbers), 1, -1
        if (numbers(i) >= 1) position(numbers(i)) = i
     end do
   end function position_of_number
+
+  !===================================================================!
+  ! Returns a number's position in the table, zero for a number the
+  ! list does not contain
+  !===================================================================!
 
   pure integer function located(position, number)
     integer, intent(in) :: position(:), number
